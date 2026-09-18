@@ -1,0 +1,84 @@
+/* ProseMirror-static 富文本内容样式（源项目 prosemirror.scss 的精简版） */
+.ProseMirror-static {
+  font-size: 20px;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  position: relative;
+}
+
+.ProseMirror-static p {
+  margin: 0;
+}
+.ProseMirror-static p + p {
+  margin-top: 0.5em;
+}
+.ProseMirror-static ul,
+.ProseMirror-static ol {
+  margin: 0;
+  padding-left: 1.4em;
+}
+.ProseMirror-static ul {
+  list-style: disc;
+}
+.ProseMirror-static ol {
+  list-style: decimal;
+}
+.ProseMirror-static li p {
+  margin: 0;
+}
+.ProseMirror-static blockquote {
+  border-left: 3px solid #ccc;
+  margin: 0.5em 0;
+  padding-left: 1em;
+}
+.ProseMirror-static code {
+  background-color: rgba(0, 0, 0, 0.06);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+}
+.ProseMirror-static pre {
+  background-color: rgba(0, 0, 0, 0.06);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+}
+.ProseMirror-static h1 {
+  font-size: 2em;
+  margin: 0.67em 0;
+}
+.ProseMirror-static h2 {
+  font-size: 1.5em;
+  margin: 0.83em 0;
+}
+.ProseMirror-static h3 {
+  font-size: 1.17em;
+  margin: 1em 0;
+}
+.ProseMirror-static h4 {
+  font-size: 1em;
+  margin: 1.33em 0;
+}
+.ProseMirror-static a {
+  color: #2f81f7;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ProseMirror-static img {
+  max-width: 100%;
+}
+.ProseMirror-static hr {
+  border: none;
+  border-top: 2px solid rgba(0, 0, 0, 0.1);
+  margin: 1em 0;
+}
+.ProseMirror-static table {
+  border-collapse: collapse;
+}
+.ProseMirror-static table td {
+  border: 1px solid #ccc;
+  padding: 4px 8px;
+}
+.ProseMirror-static mark {
+  background-color: #ffe58f;
+}

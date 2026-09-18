@@ -1,0 +1,326 @@
+/* 精简版 animate.css —— 用于幻灯片元素动画 */
+.animate__animated {
+  animation-duration: 1s;
+  animation-duration: var(--animate-duration);
+  animation-fill-mode: both;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translate3d(0, 100%, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translate3d(0, -100%, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes fadeInLeft {
+  from { opacity: 0; transform: translate3d(-100%, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes fadeInRight {
+  from { opacity: 0; transform: translate3d(100%, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes zoomIn {
+  from { opacity: 0; transform: scale3d(0.3, 0.3, 0.3); }
+  50% { opacity: 1; }
+}
+@keyframes bounceIn {
+  from, 20%, 40%, 60%, 80%, to { animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1); }
+  0% { opacity: 0; transform: scale3d(0.3, 0.3, 0.3); }
+  20% { transform: scale3d(1.1, 1.1, 1.1); }
+  40% { transform: scale3d(0.9, 0.9, 0.9); }
+  60% { opacity: 1; transform: scale3d(1.03, 1.03, 1.03); }
+  80% { transform: scale3d(0.97, 0.97, 0.97); }
+  to { opacity: 1; transform: scale3d(1, 1, 1); }
+}
+@keyframes slideInUp {
+  from { transform: translate3d(0, 100%, 0); visibility: visible; }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes slideInDown {
+  from { transform: translate3d(0, -100%, 0); visibility: visible; }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes slideInLeft {
+  from { transform: translate3d(-100%, 0, 0); visibility: visible; }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes slideInRight {
+  from { transform: translate3d(100%, 0, 0); visibility: visible; }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes rotateIn {
+  from { transform: rotate3d(0, 0, 1, -200deg); opacity: 0; }
+  to { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+@keyframes backInDown {
+  0% { transform: translateY(-1200px) scale(0.7); opacity: 0.7; }
+  80% { transform: translateY(0px) scale(0.7); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes backInLeft {
+  0% { transform: translateX(-2000px) scale(0.7); opacity: 0.7; }
+  80% { transform: translateX(0px) scale(0.7); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes backInRight {
+  0% { transform: translateX(2000px) scale(0.7); opacity: 0.7; }
+  80% { transform: translateX(0px) scale(0.7); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes backInUp {
+  0% { transform: translateY(1200px) scale(0.7); opacity: 0.7; }
+  80% { transform: translateY(0px) scale(0.7); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes flipInX {
+  from { transform: perspective(400px) rotate3d(1, 0, 0, 90deg); animation-timing-function: ease-in; opacity: 0; }
+  40% { transform: perspective(400px) rotate3d(1, 0, 0, -20deg); animation-timing-function: ease-in; }
+  60% { transform: perspective(400px) rotate3d(1, 0, 0, 10deg); opacity: 1; }
+  80% { transform: perspective(400px) rotate3d(1, 0, 0, -5deg); }
+  to { transform: perspective(400px); }
+}
+@keyframes lightSpeedInLeft {
+  from { transform: translate3d(-100%, 0, 0) skewX(-30deg); opacity: 0; }
+  60% { transform: skewX(20deg); opacity: 1; }
+  80% { transform: skewX(-5deg); }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes lightSpeedInRight {
+  from { transform: translate3d(100%, 0, 0) skewX(-30deg); opacity: 0; }
+  60% { transform: skewX(20deg); opacity: 1; }
+  80% { transform: skewX(-5deg); }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes rollIn {
+  from { opacity: 0; transform: translate3d(-100%, 0, 0) rotate3d(0, 0, 1, -120deg); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes jackInTheBox {
+  from { opacity: 0; transform: scale(0.1) rotate(30deg); transform-origin: center bottom; }
+  50% { transform: rotate(-10deg); }
+  70% { transform: rotate(3deg); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes fadeOutUp {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translate3d(0, -100%, 0); }
+}
+@keyframes fadeOutDown {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translate3d(0, 100%, 0); }
+}
+@keyframes fadeOutLeft {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translate3d(-100%, 0, 0); }
+}
+@keyframes fadeOutRight {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translate3d(100%, 0, 0); }
+}
+@keyframes zoomOut {
+  from { opacity: 1; }
+  50% { opacity: 0; transform: scale3d(0.3, 0.3, 0.3); }
+  to { opacity: 0; }
+}
+@keyframes bounceOut {
+  20% { transform: scale3d(0.9, 0.9, 0.9); }
+  50%, 55% { opacity: 1; transform: scale3d(1.1, 1.1, 1.1); }
+  to { opacity: 0; transform: scale3d(0.3, 0.3, 0.3); }
+}
+@keyframes slideOutUp {
+  from { transform: translate3d(0, 0, 0); }
+  to { visibility: hidden; transform: translate3d(0, -100%, 0); }
+}
+@keyframes slideOutDown {
+  from { transform: translate3d(0, 0, 0); }
+  to { visibility: hidden; transform: translate3d(0, 100%, 0); }
+}
+@keyframes slideOutLeft {
+  from { transform: translate3d(0, 0, 0); }
+  to { visibility: hidden; transform: translate3d(-100%, 0, 0); }
+}
+@keyframes slideOutRight {
+  from { transform: translate3d(0, 0, 0); }
+  to { visibility: hidden; transform: translate3d(100%, 0, 0); }
+}
+@keyframes rotateOut {
+  from { opacity: 1; }
+  to { transform: rotate3d(0, 0, 1, 200deg); opacity: 0; }
+}
+@keyframes backOutDown {
+  0% { transform: scale(1); opacity: 1; }
+  20% { transform: translateY(0px) scale(0.7); opacity: 0.7; }
+  100% { transform: translateY(700px) scale(0.7); opacity: 0.7; }
+}
+@keyframes backOutLeft {
+  0% { transform: scale(1); opacity: 1; }
+  20% { transform: translateX(0px) scale(0.7); opacity: 0.7; }
+  100% { transform: translateX(-2000px) scale(0.7); opacity: 0.7; }
+}
+@keyframes backOutRight {
+  0% { transform: scale(1); opacity: 1; }
+  20% { transform: translateX(0px) scale(0.7); opacity: 0.7; }
+  100% { transform: translateX(2000px) scale(0.7); opacity: 0.7; }
+}
+@keyframes backOutUp {
+  0% { transform: scale(1); opacity: 1; }
+  20% { transform: translateY(0px) scale(0.7); opacity: 0.7; }
+  100% { transform: translateY(-700px) scale(0.7); opacity: 0.7; }
+}
+@keyframes flipOutX {
+  from { transform: perspective(400px); }
+  30% { transform: perspective(400px) rotate3d(1, 0, 0, -20deg); opacity: 1; }
+  to { transform: perspective(400px) rotate3d(1, 0, 0, 90deg); opacity: 0; }
+}
+@keyframes lightSpeedOutLeft {
+  from { opacity: 1; }
+  to { transform: translate3d(-100%, 0, 0) skewX(30deg); opacity: 0; }
+}
+@keyframes lightSpeedOutRight {
+  from { opacity: 1; }
+  to { transform: translate3d(100%, 0, 0) skewX(30deg); opacity: 0; }
+}
+@keyframes rollOut {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translate3d(100%, 0, 0) rotate3d(0, 0, 1, 120deg); }
+}
+
+@keyframes pulse {
+  from { transform: scale3d(1, 1, 1); }
+  50% { transform: scale3d(1.05, 1.05, 1.05); }
+  to { transform: scale3d(1, 1, 1); }
+}
+@keyframes shakeX {
+  from, to { transform: translate3d(0, 0, 0); }
+  10%, 30%, 50%, 70%, 90% { transform: translate3d(-10px, 0, 0); }
+  20%, 40%, 60%, 80% { transform: translate3d(10px, 0, 0); }
+}
+@keyframes shakeY {
+  from, to { transform: translate3d(0, 0, 0); }
+  10%, 30%, 50%, 70%, 90% { transform: translate3d(0, -10px, 0); }
+  20%, 40%, 60%, 80% { transform: translate3d(0, 10px, 0); }
+}
+@keyframes headShake {
+  0% { transform: translateX(0); }
+  6.5% { transform: translateX(-6px) rotateY(-9deg); }
+  18.5% { transform: translateX(5px) rotateY(7deg); }
+  31.5% { transform: translateX(-3px) rotateY(-5deg); }
+  43.5% { transform: translateX(2px) rotateY(3deg); }
+  50% { transform: translateX(0); }
+}
+@keyframes heartBeat {
+  0% { transform: scale(1); }
+  14% { transform: scale(1.3); }
+  28% { transform: scale(1); }
+  42% { transform: scale(1.3); }
+  70% { transform: scale(1); }
+}
+@keyframes tada {
+  from { transform: scale3d(1, 1, 1); }
+  10%, 20% { transform: scale3d(0.9, 0.9, 0.9) rotate3d(0, 0, 1, -3deg); }
+  30%, 50%, 70%, 90% { transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, 3deg); }
+  40%, 60%, 80% { transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, -3deg); }
+  to { transform: scale3d(1, 1, 1); }
+}
+@keyframes wobble {
+  from { transform: translate3d(0, 0, 0); }
+  15% { transform: translate3d(-25%, 0, 0) rotate3d(0, 0, 1, -5deg); }
+  30% { transform: translate3d(20%, 0, 0) rotate3d(0, 0, 1, 3deg); }
+  45% { transform: translate3d(-15%, 0, 0) rotate3d(0, 0, 1, -3deg); }
+  60% { transform: translate3d(10%, 0, 0) rotate3d(0, 0, 1, 2deg); }
+  75% { transform: translate3d(-5%, 0, 0) rotate3d(0, 0, 1, -1deg); }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes swing {
+  20% { transform: rotate3d(0, 0, 1, 15deg); }
+  40% { transform: rotate3d(0, 0, 1, -10deg); }
+  60% { transform: rotate3d(0, 0, 1, 5deg); }
+  80% { transform: rotate3d(0, 0, 1, -5deg); }
+  to { transform: rotate3d(0, 0, 1, 0deg); }
+}
+@keyframes rubberBand {
+  from { transform: scale3d(1, 1, 1); }
+  30% { transform: scale3d(1.25, 0.75, 1); }
+  40% { transform: scale3d(0.75, 1.25, 1); }
+  50% { transform: scale3d(1.15, 0.85, 1); }
+  65% { transform: scale3d(0.95, 1.05, 1); }
+  75% { transform: scale3d(1.05, 0.95, 1); }
+  to { transform: scale3d(1, 1, 1); }
+}
+@keyframes bounce {
+  from, 20%, 53%, to { animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1); transform: translate3d(0, 0, 0); }
+  40%, 43% { animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06); transform: translate3d(0, -30px, 0) scaleY(1.1); }
+  70% { animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06); transform: translate3d(0, -15px, 0) scaleY(1.05); }
+  80% { transition-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1); transform: translate3d(0, 0, 0) scaleY(0.95); }
+  90% { transform: translate3d(0, -4px, 0) scaleY(1.02); }
+}
+@keyframes flash {
+  from, 50%, to { opacity: 1; }
+  25%, 75% { opacity: 0; }
+}
+
+.animate__fadeIn { animation-name: fadeIn; }
+.animate__fadeInUp { animation-name: fadeInUp; }
+.animate__fadeInDown { animation-name: fadeInDown; }
+.animate__fadeInLeft { animation-name: fadeInLeft; }
+.animate__fadeInRight { animation-name: fadeInRight; }
+.animate__zoomIn { animation-name: zoomIn; }
+.animate__bounceIn { animation-name: bounceIn; }
+.animate__slideInUp { animation-name: slideInUp; }
+.animate__slideInDown { animation-name: slideInDown; }
+.animate__slideInLeft { animation-name: slideInLeft; }
+.animate__slideInRight { animation-name: slideInRight; }
+.animate__rotateIn { animation-name: rotateIn; }
+.animate__backInDown { animation-name: backInDown; }
+.animate__backInLeft { animation-name: backInLeft; }
+.animate__backInRight { animation-name: backInRight; }
+.animate__backInUp { animation-name: backInUp; }
+.animate__flipInX { animation-name: flipInX; }
+.animate__lightSpeedInLeft { animation-name: lightSpeedInLeft; }
+.animate__lightSpeedInRight { animation-name: lightSpeedInRight; }
+.animate__rollIn { animation-name: rollIn; }
+.animate__jackInTheBox { animation-name: jackInTheBox; }
+
+.animate__fadeOut { animation-name: fadeOut; }
+.animate__fadeOutUp { animation-name: fadeOutUp; }
+.animate__fadeOutDown { animation-name: fadeOutDown; }
+.animate__fadeOutLeft { animation-name: fadeOutLeft; }
+.animate__fadeOutRight { animation-name: fadeOutRight; }
+.animate__zoomOut { animation-name: zoomOut; }
+.animate__bounceOut { animation-name: bounceOut; }
+.animate__slideOutUp { animation-name: slideOutUp; }
+.animate__slideOutDown { animation-name: slideOutDown; }
+.animate__slideOutLeft { animation-name: slideOutLeft; }
+.animate__slideOutRight { animation-name: slideOutRight; }
+.animate__rotateOut { animation-name: rotateOut; }
+.animate__backOutDown { animation-name: backOutDown; }
+.animate__backOutLeft { animation-name: backOutLeft; }
+.animate__backOutRight { animation-name: backOutRight; }
+.animate__backOutUp { animation-name: backOutUp; }
+.animate__flipOutX { animation-name: flipOutX; }
+.animate__lightSpeedOutLeft { animation-name: lightSpeedOutLeft; }
+.animate__lightSpeedOutRight { animation-name: lightSpeedOutRight; }
+.animate__rollOut { animation-name: rollOut; }
+
+.animate__pulse { animation-name: pulse; animation-timing-function: ease-in-out; }
+.animate__shakeX { animation-name: shakeX; }
+.animate__shakeY { animation-name: shakeY; }
+.animate__headShake { animation-name: headShake; animation-timing-function: ease-in-out; }
+.animate__heartBeat { animation-name: heartBeat; animation-duration: 1.3s; animation-duration: calc(var(--animate-duration) * 1.3); }
+.animate__tada { animation-name: tada; }
+.animate__wobble { animation-name: wobble; }
+.animate__swing { animation-name: swing; transform-origin: top center; }
+.animate__rubberBand { animation-name: rubberBand; }
+.animate__bounce { animation-name: bounce; transform-origin: center bottom; }
+.animate__flash { animation-name: flash; }

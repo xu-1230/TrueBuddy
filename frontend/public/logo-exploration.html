@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Logo Exploration — AI Teacher Assistant</title>
+    <style>
+      :root {
+        --ink: #111;
+        --paper: #fff;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        background: var(--paper);
+      }
+      body {
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        color: var(--ink);
+        -webkit-font-smoothing: antialiased;
+        text-rendering: geometricPrecision;
+        padding: 72px 56px 96px;
+      }
+      .board {
+        max-width: 1240px;
+        margin: 0 auto;
+      }
+      .meta {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        padding-bottom: 40px;
+        margin-bottom: 56px;
+        border-bottom: 1px solid #ececec;
+      }
+      .meta .k {
+        font-size: 11px;
+        letter-spacing: 2.4px;
+        text-transform: uppercase;
+        color: #9a9a9a;
+      }
+      .meta .t {
+        font-size: 13px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #444;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 64px 48px;
+      }
+      .item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        min-height: 248px;
+      }
+      .mark {
+        height: 96px;
+        width: auto;
+        display: block;
+      }
+      .mark.wide {
+        height: 64px;
+      }
+      .name {
+        font-size: 12px;
+        letter-spacing: 2.6px;
+        text-transform: uppercase;
+        font-weight: 600;
+        color: #1a1a1a;
+        position: relative;
+      }
+      .name sup {
+        font-size: 7px;
+        letter-spacing: 0;
+        color: #888;
+        position: relative;
+        top: -6px;
+        left: 2px;
+      }
+      @media (max-width: 980px) {
+        .grid {
+          grid-template-columns: repeat(2, 1fr);
+          gap: 56px 40px;
+        }
+        body {
+          padding: 48px 28px 72px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="board">
+      <div class="meta">
+        <span class="k">Logo Archive — Minimalist Identity Exploration</span>
+        <span class="t"
+          >AI Teacher Assistant · Book Studies · 24 Directions</span
+        >
+      </div>
+
+      <section class="grid">
+        <!-- 01 Abstract mascot · owl on book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Mento">
+            <circle cx="42" cy="36" r="18" fill="#111" />
+            <circle cx="78" cy="36" r="18" fill="#111" />
+            <circle cx="42" cy="36" r="6" fill="#fff" />
+            <circle cx="78" cy="36" r="6" fill="#fff" />
+            <polygon points="60,50 54,60 66,60" fill="#111" />
+            <polygon points="18,74 60,66 60,94 18,102" fill="#111" />
+            <polygon points="102,74 60,66 60,94 102,102" fill="#111" />
+          </svg>
+          <span class="name">Mento<sup>®</sup></span>
+        </div>
+
+        <!-- 02 Geometric badge · light from book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Lumen">
+            <g stroke="#111" stroke-width="7" stroke-linecap="round">
+              <line x1="60" y1="58" x2="60" y2="24" />
+              <line x1="44" y1="62" x2="32" y2="34" />
+              <line x1="76" y1="62" x2="88" y2="34" />
+            </g>
+            <polygon points="18,66 60,58 60,92 18,100" fill="#111" />
+            <polygon points="102,66 60,58 60,92 102,100" fill="#111" />
+          </svg>
+          <span class="name">Lumen</span>
+        </div>
+
+        <!-- 03 Negative space · guidance from book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Guide">
+            <polygon
+              points="60,22 92,56 76,56 76,82 100,98 60,88 20,98 44,82 44,56 28,56"
+              fill="#111"
+            />
+            <polygon
+              points="60,38 76,56 68,56 68,76 52,76 52,56 44,56"
+              fill="#fff"
+            />
+          </svg>
+          <span class="name">Guide</span>
+        </div>
+
+        <!-- 04 Letter fusion · A + i on book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Aide">
+            <polygon
+              points="60,20 92,92 28,92"
+              fill="none"
+              stroke="#111"
+              stroke-width="9"
+              stroke-linejoin="miter"
+            />
+            <circle cx="60" cy="58" r="6" fill="#111" />
+            <polygon points="38,74 60,68 60,90 38,96" fill="#111" />
+            <polygon points="82,74 60,68 60,90 82,96" fill="#111" />
+          </svg>
+          <span class="name">Aide</span>
+        </div>
+
+        <!-- 05 Circular symbol · orbit around book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Orbit">
+            <ellipse
+              cx="60"
+              cy="56"
+              rx="46"
+              ry="18"
+              fill="none"
+              stroke="#111"
+              stroke-width="6"
+              transform="rotate(-20 60 56)"
+            />
+            <polygon points="36,54 60,48 60,72 36,78" fill="#111" />
+            <polygon points="84,54 60,48 60,72 84,78" fill="#111" />
+            <circle cx="98" cy="40" r="7" fill="#111" />
+          </svg>
+          <span class="name">Orbit</span>
+        </div>
+
+        <!-- 06 Square module · book spines -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Bloc">
+            <rect x="24" y="34" width="16" height="62" fill="#111" />
+            <line
+              x1="24"
+              y1="44"
+              x2="40"
+              y2="44"
+              stroke="#fff"
+              stroke-width="3"
+            />
+            <rect
+              x="46"
+              y="22"
+              width="16"
+              height="74"
+              fill="none"
+              stroke="#111"
+              stroke-width="6"
+            />
+            <rect x="68" y="44" width="16" height="52" fill="#111" />
+            <line
+              x1="68"
+              y1="54"
+              x2="84"
+              y2="55"
+              stroke="#fff"
+              stroke-width="3"
+            />
+            <rect
+              x="90"
+              y="28"
+              width="16"
+              height="68"
+              fill="none"
+              stroke="#111"
+              stroke-width="6"
+            />
+          </svg>
+          <span class="name">Bloc<sup>™</sup></span>
+        </div>
+
+        <!-- 07 Arc text · over book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Cogni">
+            <defs>
+              <path id="arc7" d="M16 52 A44 44 0 0 1 104 52" fill="none" />
+            </defs>
+            <text
+              font-family="Helvetica,Arial,sans-serif"
+              font-size="14"
+              font-weight="700"
+              letter-spacing="3.4"
+              fill="#111"
+            >
+              <textPath href="#arc7" startOffset="50%" text-anchor="middle">
+                COGNI
+              </textPath>
+            </text>
+            <polygon points="30,68 60,62 60,92 30,100" fill="#111" />
+            <polygon points="90,68 60,62 60,92 90,100" fill="#111" />
+          </svg>
+          <span class="name">Cogni</span>
+        </div>
+
+        <!-- 08 Experimental wordmark · on book -->
+        <div class="item">
+          <svg class="mark wide" viewBox="0 0 200 120" aria-label="Nexa">
+            <text
+              x="100"
+              y="58"
+              font-family="Helvetica,Arial,sans-serif"
+              font-size="44"
+              font-weight="900"
+              letter-spacing="-2"
+              fill="#111"
+              text-anchor="middle"
+            >
+              NE
+              <tspan font-size="58" dy="2">X</tspan>
+              <tspan dy="-2">A</tspan>
+            </text>
+            <polyline
+              points="34,82 100,72 166,82"
+              fill="none"
+              stroke="#111"
+              stroke-width="6"
+            />
+            <polyline
+              points="34,82 100,92 166,82"
+              fill="none"
+              stroke="#111"
+              stroke-width="6"
+            />
+          </svg>
+          <span class="name">Nexa</span>
+        </div>
+
+        <!-- 09 Constructivist · forms + book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Forma">
+            <circle cx="32" cy="34" r="16" fill="#111" />
+            <rect
+              x="62"
+              y="20"
+              width="32"
+              height="32"
+              fill="none"
+              stroke="#111"
+              stroke-width="7"
+            />
+            <polygon points="18,68 60,60 60,92 18,100" fill="#111" />
+            <polygon points="102,68 60,60 60,92 102,100" fill="#111" />
+          </svg>
+          <span class="name">Forma</span>
+        </div>
+
+        <!-- 10 Linear symbol · spark from book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Spark">
+            <g stroke="#111" stroke-width="6" stroke-linecap="round">
+              <line x1="60" y1="56" x2="60" y2="18" />
+              <line x1="44" y1="60" x2="30" y2="28" />
+              <line x1="76" y1="60" x2="90" y2="28" />
+              <line x1="34" y1="58" x2="20" y2="44" />
+              <line x1="86" y1="58" x2="100" y2="44" />
+            </g>
+            <circle cx="60" cy="58" r="6" fill="#fff" />
+            <polygon points="18,66 60,58 60,92 18,100" fill="#111" />
+            <polygon points="102,66 60,58 60,92 102,100" fill="#111" />
+          </svg>
+          <span class="name">Spark</span>
+        </div>
+
+        <!-- 11 Bold block · book cut out -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Mass">
+            <rect x="20" y="20" width="80" height="80" fill="#111" />
+            <polygon points="32,56 60,48 60,86 32,94" fill="#fff" />
+            <polygon points="88,56 60,48 60,86 88,94" fill="#fff" />
+          </svg>
+          <span class="name">Mass</span>
+        </div>
+
+        <!-- 12 Graphic + text · book mark -->
+        <div class="item">
+          <svg class="mark wide" viewBox="0 0 220 120" aria-label="Tutor">
+            <polygon points="16,40 48,32 48,68 16,76" fill="#111" />
+            <polygon points="80,40 48,32 48,68 80,76" fill="#111" />
+            <polygon points="45,32 51,32 51,52 48,48 45,52" fill="#111" />
+            <text
+              x="90"
+              y="64"
+              font-family="Helvetica,Arial,sans-serif"
+              font-size="32"
+              font-weight="700"
+              fill="#111"
+            >
+              Tutor
+            </text>
+          </svg>
+          <span class="name">Tutor<sup>®</sup></span>
+        </div>
+
+        <!-- 13 Visual pun · two pages = two minds -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Minds">
+            <circle cx="46" cy="54" r="24" fill="#111" />
+            <circle cx="74" cy="54" r="24" fill="#111" />
+            <ellipse cx="60" cy="54" rx="8" ry="12" fill="#fff" />
+            <line
+              x1="22"
+              y1="92"
+              x2="98"
+              y2="92"
+              stroke="#111"
+              stroke-width="6"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span class="name">Minds</span>
+        </div>
+
+        <!-- 14 Repetition · echo from book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Echo">
+            <g fill="none" stroke="#111">
+              <circle cx="60" cy="44" r="30" stroke-width="5" opacity="0.22" />
+              <circle cx="60" cy="44" r="20" stroke-width="6" opacity="0.5" />
+            </g>
+            <polygon points="44,52 60,46 60,70 44,76" fill="#111" />
+            <polygon points="76,52 60,46 60,70 76,76" fill="#111" />
+          </svg>
+          <span class="name">Echo</span>
+        </div>
+
+        <!-- 15 Directional displacement · offset books -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Shift">
+            <rect
+              x="18"
+              y="30"
+              width="50"
+              height="22"
+              fill="none"
+              stroke="#111"
+              stroke-width="6"
+            />
+            <line
+              x1="28"
+              y1="36"
+              x2="28"
+              y2="46"
+              stroke="#111"
+              stroke-width="4"
+            />
+            <rect x="52" y="64" width="50" height="22" fill="#111" />
+            <line
+              x1="62"
+              y1="70"
+              x2="62"
+              y2="80"
+              stroke="#fff"
+              stroke-width="4"
+            />
+            <polygon points="104,64 104,52 116,75" fill="#111" />
+          </svg>
+          <span class="name">Shift</span>
+        </div>
+
+        <!-- 16 Symbol system · network over book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Node">
+            <polygon points="40,60 60,54 60,82 40,88" fill="#111" />
+            <polygon points="80,60 60,54 60,82 80,88" fill="#111" />
+            <g stroke="#111" stroke-width="5" fill="none">
+              <line x1="30" y1="32" x2="60" y2="54" />
+              <line x1="90" y1="32" x2="60" y2="54" />
+              <line x1="30" y1="96" x2="60" y2="82" />
+              <line x1="90" y1="96" x2="60" y2="82" />
+            </g>
+            <g fill="#111">
+              <circle cx="30" cy="32" r="8" />
+              <circle cx="90" cy="32" r="8" />
+              <circle cx="30" cy="96" r="8" />
+              <circle cx="90" cy="96" r="8" />
+            </g>
+          </svg>
+          <span class="name">Node</span>
+        </div>
+
+        <!-- 17 Minimal face · glasses on book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Visage">
+            <g fill="none" stroke="#111" stroke-width="7">
+              <circle cx="40" cy="44" r="16" />
+              <circle cx="80" cy="44" r="16" />
+            </g>
+            <line
+              x1="56"
+              y1="44"
+              x2="64"
+              y2="44"
+              stroke="#111"
+              stroke-width="7"
+            />
+            <polygon points="24,74 60,66 60,94 24,102" fill="#111" />
+            <polygon points="96,74 60,66 60,94 96,102" fill="#111" />
+          </svg>
+          <span class="name">Visage</span>
+        </div>
+
+        <!-- 18 Abstract animal · fox on book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Fox">
+            <polygon points="40,34 30,12 54,30" fill="#111" />
+            <polygon points="80,34 90,12 66,30" fill="#111" />
+            <polygon points="60,24 84,58 36,58" fill="#111" />
+            <polygon points="60,42 52,58 68,58" fill="#fff" />
+            <polygon points="18,66 60,58 60,92 18,100" fill="#111" />
+            <polygon points="102,66 60,58 60,92 102,100" fill="#111" />
+          </svg>
+          <span class="name">Fox</span>
+        </div>
+
+        <!-- 19 Product outline · open book slate -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Slate">
+            <polygon
+              points="14,34 60,26 60,98 14,106"
+              fill="none"
+              stroke="#111"
+              stroke-width="8"
+              stroke-linejoin="round"
+            />
+            <polygon
+              points="106,34 60,26 60,98 106,106"
+              fill="none"
+              stroke="#111"
+              stroke-width="8"
+              stroke-linejoin="round"
+            />
+            <g stroke="#111" stroke-width="5" stroke-linecap="round">
+              <line x1="24" y1="50" x2="50" y2="46" />
+              <line x1="24" y1="64" x2="50" y2="60" />
+              <line x1="24" y1="78" x2="50" y2="74" />
+              <line x1="70" y1="46" x2="96" y2="50" />
+              <line x1="70" y1="60" x2="96" y2="64" />
+              <line x1="70" y1="74" x2="96" y2="78" />
+            </g>
+          </svg>
+          <span class="name">Slate<sup>™</sup></span>
+        </div>
+
+        <!-- 20 Spatial structure · book as portal -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Frame">
+            <polygon
+              points="12,22 56,34 56,96 12,108"
+              fill="none"
+              stroke="#111"
+              stroke-width="8"
+              stroke-linejoin="round"
+            />
+            <polygon
+              points="108,22 64,34 64,96 108,108"
+              fill="none"
+              stroke="#111"
+              stroke-width="8"
+              stroke-linejoin="round"
+            />
+            <polygon points="40,50 80,50 72,80 48,80" fill="#111" />
+          </svg>
+          <span class="name">Frame</span>
+        </div>
+
+        <!-- 21 Functional action · book lifting arrow -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Lift">
+            <polygon
+              points="60,20 84,44 72,44 72,70 48,70 48,44 36,44"
+              fill="#111"
+            />
+            <polygon points="16,78 60,70 60,96 16,104" fill="#111" />
+            <polygon points="104,78 60,70 60,96 104,104" fill="#111" />
+          </svg>
+          <span class="name">Lift</span>
+        </div>
+
+        <!-- 22 Emotion graphics · pulse through book -->
+        <div class="item">
+          <svg class="mark wide" viewBox="0 0 140 120" aria-label="Pulse">
+            <polygon
+              points="12,38 70,30 70,98 12,106"
+              fill="none"
+              stroke="#111"
+              stroke-width="7"
+              stroke-linejoin="round"
+            />
+            <polygon
+              points="128,38 70,30 70,98 128,106"
+              fill="none"
+              stroke="#111"
+              stroke-width="7"
+              stroke-linejoin="round"
+            />
+            <polyline
+              points="14,66 40,66 50,40 60,92 70,66 128,66"
+              fill="none"
+              stroke="#111"
+              stroke-width="7"
+              stroke-linejoin="miter"
+              stroke-linecap="square"
+            />
+          </svg>
+          <span class="name">Pulse</span>
+        </div>
+
+        <!-- 23 Initial deformation · T figure on book -->
+        <div class="item">
+          <svg class="mark" viewBox="0 0 120 120" aria-label="Tau">
+            <circle cx="60" cy="22" r="12" fill="#111" />
+            <rect x="26" y="38" width="68" height="12" fill="#111" />
+            <rect x="53" y="50" width="14" height="26" fill="#111" />
+            <polygon points="18,74 60,66 60,92 18,100" fill="#111" />
+            <polygon points="102,74 60,66 60,92 102,100" fill="#111" />
+          </svg>
+          <span class="name">Tau</span>
+        </div>
+
+        <!-- 24 Slogan wordmark · book mark + teach·AI -->
+        <div class="item">
+          <svg class="mark wide" viewBox="0 0 250 120" aria-label="Teach AI">
+            <polygon points="8,42 32,36 32,68 8,74" fill="#111" />
+            <polygon points="56,42 32,36 32,68 56,74" fill="#111" />
+            <text
+              x="66"
+              y="64"
+              font-family="Helvetica,Arial,sans-serif"
+              font-size="38"
+              font-weight="700"
+              fill="#111"
+            >
+              teach
+            </text>
+            <circle cx="180" cy="52" r="9" fill="#111" />
+            <text
+              x="196"
+              y="64"
+              font-family="Helvetica,Arial,sans-serif"
+              font-size="38"
+              font-weight="900"
+              fill="#111"
+            >
+              AI
+            </text>
+          </svg>
+          <span class="name">teach·AI</span>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

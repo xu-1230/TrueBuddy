@@ -1,0 +1,2122 @@
+<template>
+  <div class="doc-studio">
+    <div class="studio-body">
+      <!-- ============ 左侧配置面板（查看模式下平滑收起） ============ -->
+      <aside
+        class="config-panel"
+        :class="{ 'config-panel--collapsed': viewing }"
+        :inert="viewing"
+      >
+        <div class="config-panel__scroll">
+          <!-- 模板文档选择 -->
+          <section class="panel-section">
+            <div class="section-head">
+              <span class="section-head__title">模板文档选择</span>
+              <span class="section-head__hint">PDF / Word / Markdown</span>
+            </div>
+
+            <!-- 模板槽位：始终只有一个。空态是上传框，有模板时原地显示文件信息，不额外占位 -->
+            <div class="template-slot">
+              <el-upload
+                v-model:file-list="fileList"
+                class="template-upload"
+                :class="{ 'template-upload--filled': templateDoc }"
+                drag
+                :auto-upload="false"
+                :show-file-list="false"
+                :disabled="uploading"
+                accept=".pdf,.doc,.docx,.md,.markdown"
+                @change="handleTemplateChange"
+              >
+                <!-- 上传中：单行加载提示 -->
+                <span v-if="uploading" class="template-upload__inner">
+                  <span class="template-upload__tile template-upload__tile--loading">
+                    <span class="template-upload__spinner"></span>
+                  </span>
+                  <span class="template-upload__title">正在上传模板文件…</span>
+                </span>
+
+                <!-- 已选模板：单行文件信息（与空态同为一行，高度固定） -->
+                <span
+                  v-else-if="templateDoc"
+                  class="template-upload__inner"
+                >
+                  <span
+                    class="template-upload__type"
+                    :class="`template-upload__type--${templateDoc.type.toLowerCase()}`"
+                    :title="templateDoc.type"
+                  >
+                    <el-icon><component :is="templateIcon" /></el-icon>
+                  </span>
+                  <span class="template-upload__name" :title="templateDoc.name">
+                    {{ templateDoc.name }}
+                  </span>
+                  <span class="template-upload__size">{{ templateDoc.size }}</span>
+                </span>
+
+                <!-- 空态：上传引导（单行：图标 + 文案） -->
+                <span v-else class="template-upload__inner">
+                  <span class="template-upload__tile">
+                    <el-icon><UploadFilled /></el-icon>
+                  </span>
+                  <span class="template-upload__title">点击或拖拽上传模板文件</span>
+                </span>
+              </el-upload>
+
+              <button
+                v-if="templateDoc && !uploading"
+                type="button"
+                class="template-slot__clear"
+                title="移除模板"
+                @click="removeTemplate"
+              >
+                <el-icon><Close /></el-icon>
+              </button>
+            </div>
+          </section>
+
+          <!-- 知识库选择 -->
+          <section class="panel-section">
+            <div class="section-head">
+              <span class="section-head__title">知识库选择</span>
+              <span class="section-head__hint">用于检索增强生成</span>
+            </div>
+            <el-select
+              v-model="selectedKbId"
+              class="kb-select"
+              popper-class="kb-select-popper"
+              placeholder="请选择知识库"
+              :loading="kbLoading"
+              clearable
+              no-data-text="暂无更多知识库"
+            >
+              <template #prefix>
+                <el-icon class="kb-select__prefix"><Collection /></el-icon>
+              </template>
+              <el-option
+                v-for="kb in kbOptions"
+                :key="kb.id"
+                :label="kb.name"
+                :value="kb.id"
+              >
+                <span class="kb-option">
+                  <span
+                    class="kb-option__tile"
+                    :class="{ 'kb-option__tile--active': selectedKbId === kb.id }"
+                  >
+                    <el-icon><Collection /></el-icon>
+                  </span>
+                  <span class="kb-option__main">
+                    <span class="kb-option__name">{{ kb.name }}</span>
+                    <span v-if="kb.description" class="kb-option__desc">
+                      {{ kb.description }}
+                    </span>
+                  </span>
+                  <span v-if="kb.isDefault" class="kb-option__tag">默认</span>
+                  <span v-else class="kb-option__count">{{ kb.documentCount ?? 0 }} 篇</span>
+                  <el-icon v-if="selectedKbId === kb.id" class="kb-option__check">
+                    <Check />
+                  </el-icon>
+                </span>
+              </el-option>
+              <template #footer>
+                <span>共 {{ kbOptions.length }} 个知识库</span>
+              </template>
+            </el-select>
+          </section>
+
+          <!-- AI 描述说明 -->
+          <section class="panel-section">
+            <div class="section-head">
+              <span class="section-head__title">AI 描述说明</span>
+              <span class="section-head__count">{{ description.length }}/{{ DESC_MAX }}</span>
+            </div>
+            <el-input
+              v-model="description"
+              type="textarea"
+              :rows="5"
+              :maxlength="DESC_MAX"
+              resize="none"
+              placeholder="请详细描述您想要生成的文档内容，例如：面向教育学的毕业论文，包含研究背景、文献综述、实验设计与结论…"
+            />
+          </section>
+
+          <!-- 高级 -->
+          <section class="panel-section">
+            <button
+              type="button"
+              class="section-head section-head--toggle"
+              @click="advancedOpen = !advancedOpen"
+            >
+              <span class="section-head__title">高级</span>
+              <el-icon class="section-head__arrow">
+                <ArrowDown v-if="advancedOpen" />
+                <ArrowRight v-else />
+              </el-icon>
+            </button>
+            <div v-show="advancedOpen" class="panel-section__body">
+              <div class="field">
+                <span class="field__label">清晰度</span>
+                <el-segmented v-model="quality" :options="qualityOptions" size="small" />
+              </div>
+            </div>
+          </section>
+
+
+        </div>
+
+        <footer class="config-panel__footer">
+          <SquircleButton
+            block
+            class="create-btn"
+            :height="42"
+            :disabled="!canGenerate"
+            @click="handleGenerate"
+          >
+            <span class="create-btn__inner">
+              <span>生成</span>
+              <span class="create-btn__cost">
+                <span class="coin"></span>
+                {{ COST }}
+              </span>
+            </span>
+          </SquircleButton>
+        </footer>
+      </aside>
+
+      <!-- ============ 右侧工作区 ============ -->
+      <section class="stage">
+        <Transition name="stage-swap" mode="out-in">
+        <div v-if="!viewing" key="browse" class="stage-body">
+          <!-- 展示框 -->
+          <div class="display-box">
+            <div class="display-box__toolbar">
+              <span class="display-box__badge">{{ displayBadge }}</span>
+              <div class="display-box__actions">
+                <button type="button" class="ghost-chip" @click="historyOpen = true">
+                  <el-icon><Clock /></el-icon>
+                  <span>历史记录查看</span>
+                </button>
+                <button
+                  type="button"
+                  class="ghost-chip"
+                  :disabled="!canGenerate"
+                  @click="handleGenerate"
+                >
+                  <el-icon><Refresh /></el-icon>
+                  再次生成
+                </button>
+              </div>
+            </div>
+            <div
+              class="display-box__canvas"
+              :class="{ 'display-box__canvas--results': resultDocs.length && !generating }"
+            >
+              <!-- 生成中（模拟后端处理耗时） -->
+              <div v-if="generating" class="result-state">
+                <span class="result-state__spinner"></span>
+                <p class="result-state__title">正在复刻模板文档…</p>
+                <p class="result-state__desc">后端正在生成多份候选文档，请稍候</p>
+              </div>
+
+              <!-- 多文档结果列表（模拟后端一次返回多个文件） -->
+              <div v-else-if="resultDocs.length" class="result-grid">
+                <article
+                  v-for="doc in resultDocs"
+                  :key="doc.id"
+                  class="result-card"
+                  :class="`result-card--${doc.tone}`"
+                  @click="openDoc(doc)"
+                >
+                  <div class="result-card__cover">
+                    <span class="result-card__lines">
+                      <span
+                        v-for="n in 5"
+                        :key="n"
+                        class="result-card__line"
+                        :style="{ width: lineWidth(n + 1) }"
+                      ></span>
+                    </span>
+                  </div>
+                  <h3 class="result-card__name" :title="doc.name">{{ doc.name }}</h3>
+                  <p class="result-card__summary">{{ doc.summary }}</p>
+                  <div class="result-card__foot">
+                    <span class="result-card__meta">{{ docMeta(doc) }}</span>
+                    <button type="button" class="result-card__view" @click.stop="openDoc(doc)">
+                      <el-icon><View /></el-icon>
+                      <span>查看</span>
+                    </button>
+                  </div>
+                </article>
+              </div>
+
+              <!-- 空状态 -->
+              <div v-else class="display-box__empty">
+                <el-icon class="display-box__icon"><Picture /></el-icon>
+                <p class="display-box__title">生成结果将在这里展示</p>
+                <p class="display-box__desc">
+                  上传模板文档、填写 AI 描述后点击左下角「生成」，将生成多份同版式文档
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ 查看模式：中间 docx 预览 + 右侧 AI 聊天面板 ============ -->
+        <div v-else key="viewing" class="stage-body stage-body--viewing">
+          <div class="viewer">
+            <div class="viewer__toolbar">
+              <button type="button" class="ghost-chip" @click="closeViewer">
+                <el-icon><Back /></el-icon>
+                <span>返回结果列表</span>
+              </button>
+              <button
+                type="button"
+                class="ghost-chip"
+                :class="{ 'ghost-chip--active': picking }"
+                :title="picking ? '退出元素选择' : '在文档中选择元素'"
+                @click="togglePicking"
+              >
+                <el-icon><Mouse /></el-icon>
+                <span>{{ picking ? '退出选择' : '选择元素' }}</span>
+              </button>
+              <span v-if="activeDoc" class="viewer__title" :title="activeDoc.name">
+                <el-icon><Document /></el-icon>
+                {{ activeDoc.name }}
+              </span>
+              <span v-if="pickedElement" class="viewer__picked" :title="pickedElement.label">
+                <el-icon><Mouse /></el-icon>
+                <span class="viewer__picked-text">{{ pickedElement.label }}</span>
+              </span>
+            </div>
+            <div class="viewer__canvas">
+              <DocxPreview
+                v-if="activeDoc"
+                :key="activeDoc.id"
+                :src="activeDoc.src"
+                :picking="picking"
+                @pick="handlePick"
+              />
+            </div>
+          </div>
+          <AiChatPanel :document-name="activeDoc ? activeDoc.name : ''" />
+        </div>
+        </Transition>
+      </section>
+    </div>
+
+    <!-- ============ 历史记录抽屉 ============ -->
+    <transition name="fade">
+      <div v-if="historyOpen" class="studio-overlay" @click="historyOpen = false"></div>
+    </transition>
+    <transition name="slide">
+      <aside v-if="historyOpen" class="history-drawer">
+        <header class="history-drawer__head">
+          <div class="history-drawer__title">
+            <el-icon><Clock /></el-icon>
+            <span>历史记录</span>
+          </div>
+          <button type="button" class="history-drawer__close" @click="historyOpen = false">
+            <el-icon><Close /></el-icon>
+          </button>
+        </header>
+        <div v-if="historyLoading" class="history-drawer__loading">
+          <span class="history-item__spinner"></span>
+          <span>正在加载历史记录…</span>
+        </div>
+        <ul class="history-drawer__list">
+          <li
+            v-for="record in historyRecords"
+            :key="record.id"
+            class="history-item"
+            :class="{
+              'is-active': activeHistoryId === record.id,
+              'is-loading': historyDetailLoadingId === record.id,
+              'is-no-doc': !record.docCount,
+            }"
+            role="button"
+            tabindex="0"
+            :title="record.docCount ? '点击查看该次生成的文档' : '该次生成没有产出文档'"
+            @click="openHistory(record)"
+            @keydown.enter="openHistory(record)"
+            @keydown.space.prevent="openHistory(record)"
+          >
+            <div class="history-item__main">
+              <span class="history-item__title">{{ record.title }}</span>
+              <span
+                class="history-item__status"
+                :class="record.status === '失败' ? 'is-failed' : 'is-success'"
+              >
+                {{ record.status }}
+              </span>
+            </div>
+            <div class="history-item__meta">
+              <span>{{ record.kb }}</span>
+              <span class="history-item__dot">·</span>
+              <span>{{ record.type }}</span>
+              <span class="history-item__dot">·</span>
+              <span>{{ record.time }}</span>
+              <span class="history-item__count">{{ record.docCount || 0 }} 份</span>
+              <span class="history-item__open">
+                <span
+                  v-if="historyDetailLoadingId === record.id"
+                  class="history-item__spinner"
+                ></span>
+                <el-icon v-else><ArrowRight /></el-icon>
+              </span>
+            </div>
+          </li>
+        </ul>
+        <el-empty
+          v-if="!historyRecords.length && !historyLoading"
+          :image-size="80"
+          description="暂无历史记录"
+          class="history-drawer__empty"
+        />
+      </aside>
+    </transition>
+  </div>
+</template>
+
+<script setup>
+import { computed, onMounted, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import {
+  ArrowDown,
+  ArrowRight,
+  Back,
+  Check,
+  Clock,
+  Close,
+  Collection,
+  Document,
+  EditPen,
+  Files,
+  Mouse,
+  Notebook,
+  Picture,
+  Refresh,
+  Tickets,
+  UploadFilled,
+  View,
+} from '@element-plus/icons-vue'
+import { getSpaceList } from '@/api/knowledgebase'
+import { uploadFile as uploadTemplateFile } from '@/api/file'
+import { generateDoc, getGenerationDetail, getGenerationHistory } from '@/api/doctemplate'
+import SquircleButton from './components/SquircleButton.vue'
+import DocxPreview from './components/DocxPreview.vue'
+import AiChatPanel from './components/AiChatPanel.vue'
+
+const COST = 50
+const DESC_MAX = 500
+const LINE_WIDTHS = [92, 74, 86, 62, 80, 68, 96, 56, 84, 72]
+/** 结果卡片配色轮转（后端按份序给出 tone 语义，此处映射为样式类） */
+const TONE_CYCLE = ['indigo', 'emerald', 'amber']
+/** 历史记录拉取条数 */
+const HISTORY_LIMIT = 20
+
+/* ---------- 模板文档（用户上传，作为生成基准；始终只保留一个） ---------- */
+const TEMPLATE_TYPE_MAP = {
+  doc: 'WORD',
+  docx: 'WORD',
+  pdf: 'PDF',
+  md: 'MARKDOWN',
+  markdown: 'MARKDOWN',
+}
+
+/** 模板类型 → 图标（已选模板的类型标识） */
+const TEMPLATE_ICON_MAP = {
+  WORD: Document,
+  PDF: Tickets,
+  MARKDOWN: Notebook,
+  FILE: Files,
+}
+
+/** 当前模板：上传新文件直接替换，因此只会存在一个 */
+const templateDoc = ref(null)
+const fileList = ref([])
+/** 模板文件是否正在上传 */
+const uploading = ref(false)
+
+const templateIcon = computed(
+  () => TEMPLATE_ICON_MAP[templateDoc.value?.type] ?? Files,
+)
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes)) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function resolveTemplateType(name) {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return TEMPLATE_TYPE_MAP[ext] ?? 'FILE'
+}
+
+/** el-upload 文件列表变化回调：真实上传后端，只保留最新上传的一份模板 */
+async function handleTemplateChange(uploadFile) {
+  const raw = uploadFile?.raw
+  if (!raw) return
+  const replaced = Boolean(templateDoc.value)
+  uploading.value = true
+  try {
+    // 真实上传：POST /infra/file/upload（MinIO 存储 + infra_file 落库）
+    const res = await uploadTemplateFile(raw)
+    const name = res?.name ?? raw.name
+    templateDoc.value = {
+      // 后端返回的文件 id：供后续「生成」流程引用模板文件
+      id: res?.id,
+      uid: uploadFile.uid,
+      name,
+      size: formatFileSize(res?.size ?? raw.size),
+      type: resolveTemplateType(name),
+      url: res?.url,
+      file: raw,
+    }
+    // 与 el-upload 内部列表保持一致，避免历史文件堆积
+    fileList.value = [uploadFile]
+    ElMessage.success(`${replaced ? '已替换' : '已添加'}模板文档：${name}`)
+  } catch (e) {
+    templateDoc.value = null
+    fileList.value = []
+    ElMessage.error(e?.message || '模板文件上传失败，请重试')
+  } finally {
+    uploading.value = false
+  }
+}
+
+function removeTemplate() {
+  const name = templateDoc.value?.name
+  templateDoc.value = null
+  fileList.value = []
+  if (name) ElMessage.info(`已移除模板文档：${name}`)
+}
+
+/* ---------- 知识库选择（来自 tb-module-knowledgebase 的空间列表） ---------- */
+/** 内置默认知识库：始终置于列表首位，且作为默认选中项 */
+const DEFAULT_KB = {
+  id: 'default',
+  name: '默认知识库',
+  description: '系统内置，未指定时使用',
+  isDefault: true,
+}
+
+const knowledgeBases = ref([])
+const selectedKbId = ref(DEFAULT_KB.id)
+const kbLoading = ref(false)
+
+/** 下拉选项：内置默认知识库 + 接口返回的知识库 */
+const kbOptions = computed(() => [DEFAULT_KB, ...knowledgeBases.value])
+
+/** 当前选中的知识库对象 */
+const selectedKnowledgeBase = computed(
+  () => kbOptions.value.find((kb) => kb.id === selectedKbId.value) ?? null,
+)
+
+async function loadKnowledgeBases() {
+  kbLoading.value = true
+  try {
+    knowledgeBases.value = await getSpaceList()
+  } catch (e) {
+    ElMessage.error('加载知识库列表失败')
+  } finally {
+    kbLoading.value = false
+  }
+}
+
+onMounted(() => {
+  loadKnowledgeBases()
+  loadHistory()
+})
+
+/* ---------- AI 描述 ---------- */
+const description = ref('')
+
+/* ---------- 高级 ---------- */
+const advancedOpen = ref(true)
+const qualityOptions = ['480p', '720p', '1080p']
+const quality = ref('720p')
+
+
+
+
+const canGenerate = computed(
+  () => Boolean(templateDoc.value && description.value.trim()) && !uploading.value,
+)
+
+/* ---------- 生成结果（后端一次返回多份复刻文档） ---------- */
+const generating = ref(false)
+const resultDocs = ref([])
+/** 当前结果列表来自哪条历史记录（null 表示来自本次生成） */
+const activeHistoryId = ref(null)
+
+const displayBadge = computed(() => {
+  if (resultDocs.value.length) {
+    return activeHistoryId.value
+      ? `历史记录 · 已载入 ${resultDocs.value.length} 份文档`
+      : `已生成 ${resultDocs.value.length} 份文档`
+  }
+  return templateDoc.value ? templateDoc.value.name : '未选择模板'
+})
+
+function lineWidth(index) {
+  return `${LINE_WIDTHS[(index - 1) % LINE_WIDTHS.length]}%`
+}
+
+/** 结果卡片 meta：标签 · 大小（有页数时追加页数） */
+function docMeta(doc) {
+  const parts = []
+  if (doc.tag) parts.push(doc.tag)
+  if (doc.size) parts.push(doc.size)
+  if (doc.pages) parts.push(`${doc.pages} 页`)
+  return parts.join(' · ')
+}
+
+/** 后端 DocFileVO → 结果卡片数据 */
+function mapDoc(doc, index) {
+  return {
+    id: doc.id ?? doc.fileId ?? `doc-${index}`,
+    name: doc.name || `文档${index + 1}`,
+    type: doc.type || 'WORD',
+    tone: TONE_CYCLE[index % TONE_CYCLE.length],
+    tag: doc.tag || '',
+    summary: doc.summary || '',
+    size: formatFileSize(doc.size),
+    pages: null,
+    createdAt: '',
+    src: doc.src,
+  }
+}
+
+/* ---------- 操作 ---------- */
+async function handleGenerate() {
+  if (!canGenerate.value) {
+    ElMessage.warning('请先上传模板文档并填写描述')
+    return
+  }
+  if (generating.value) return
+  generating.value = true
+  try {
+    const res = await generateDoc({
+      templateFileId: templateDoc.value.id,
+      // 内置默认知识库不启用检索增强，统一传 "default" 由后端判定
+      spaceId: selectedKbId.value === null || selectedKbId.value === undefined
+        ? 'default'
+        : String(selectedKbId.value),
+      description: description.value.trim(),
+      quality: quality.value,
+    })
+    resultDocs.value = (res?.docs ?? []).map(mapDoc)
+    // 本次生成的结果不再属于任何历史记录
+    activeHistoryId.value = null
+    if (!resultDocs.value.length) {
+      ElMessage.error(res?.errorMsg || '生成失败，请稍后重试')
+      return
+    }
+    if (res?.status === 2) {
+      ElMessage.warning(`部分文档生成失败：${res?.errorMsg || ''}`)
+    } else {
+      const kbText = selectedKnowledgeBase.value ? `，知识库「${selectedKnowledgeBase.value.name}」` : ''
+      ElMessage.success(
+        `已基于模板「${templateDoc.value.name}」${kbText}返回 ${resultDocs.value.length} 份文档`,
+      )
+    }
+    // 生成后刷新历史记录
+    loadHistory()
+  } catch (e) {
+    ElMessage.error(e?.message || '生成失败，请稍后重试')
+  } finally {
+    generating.value = false
+  }
+}
+
+/* ---------- 查看模式（docx-preview + AI 聊天面板） ---------- */
+const viewing = ref(false)
+const activeDoc = ref(null)
+
+/* 文档元素选择：由查看区工具栏的鼠标按钮切换，命中与高亮由 DocxPreview 负责 */
+const picking = ref(false)
+const pickedElement = ref(null)
+
+function openDoc(doc) {
+  activeDoc.value = doc
+  viewing.value = true
+  picking.value = false
+  pickedElement.value = null
+}
+
+function closeViewer() {
+  viewing.value = false
+  activeDoc.value = null
+  picking.value = false
+  pickedElement.value = null
+}
+
+function togglePicking() {
+  picking.value = !picking.value
+}
+
+function handlePick(payload) {
+  pickedElement.value = payload
+}
+
+
+/* ---------- 历史记录（后端真实生成记录） ---------- */
+const historyOpen = ref(false)
+const historyRecords = ref([])
+const historyLoading = ref(false)
+/** 正在拉取详情的历史记录 id（条目内联 loading + 防重复点击） */
+const historyDetailLoadingId = ref(null)
+
+async function loadHistory() {
+  historyLoading.value = true
+  try {
+    historyRecords.value = await getGenerationHistory(HISTORY_LIMIT)
+  } catch (e) {
+    // 历史加载失败不阻断主流程
+    ElMessage.error(e?.message || '加载历史记录失败')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+/**
+ * 点击历史记录 → 把该次生成的文件列表载入结果区（展示结果卡片列表，不进入文档预览）。
+ * 后端 /doc-template/detail 会为每个文件重新签发预签名地址，旧记录的文档同样可打开。
+ * 进入预览留给用户在结果列表里点具体卡片时触发。
+ */
+async function openHistory(record) {
+  if (!record?.id || historyDetailLoadingId.value) return
+  historyDetailLoadingId.value = record.id
+  try {
+    const res = await getGenerationDetail(record.id)
+    const docs = (res?.docs ?? []).map(mapDoc)
+    if (!docs.length) {
+      ElMessage.warning(res?.errorMsg || '该次生成没有可查看的文档')
+      return
+    }
+    resultDocs.value = docs
+    activeHistoryId.value = record.id
+    historyOpen.value = false
+    // 若当前正处于文档预览，先退回结果列表，保证载入的记录可见
+    if (viewing.value) closeViewer()
+    if (res?.status === 2) {
+      ElMessage.warning(`该次生成部分失败：${res?.errorMsg || ''}`)
+    } else {
+      ElMessage.success(`已载入历史记录「${record.title}」的 ${docs.length} 份文档`)
+    }
+  } catch (e) {
+    ElMessage.error(e?.message || '加载历史详情失败')
+  } finally {
+    historyDetailLoadingId.value = null
+  }
+}
+
+watch(historyOpen, (open) => {
+  if (open) loadHistory()
+})
+</script>
+
+<style scoped>
+/* ================= 主题变量 ================= */
+.doc-studio {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 2rem);
+  min-height: 640px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #f6f7f9;
+  color: #111827;
+  box-shadow: 0 10px 30px rgba(17, 24, 39, 0.06);
+
+  /* 主色：与项目统一（靛蓝） */
+  --primary: #6366f1;
+  --primary-dark: #4f46e5;
+  --primary-soft: #eef2ff;
+  --primary-soft-2: #e0e7ff;
+  /* 强调色：琥珀橙（暖色点缀） */
+  --accent: #f59e0b;
+  --accent-deep: #b45309;
+  --accent-soft: #fff7ed;
+  --accent-soft-2: #fde68a;
+
+  /* Element Plus 主色对齐项目靛蓝 */
+  --el-color-primary: #6366f1;
+  --el-color-primary-light-3: #8b8ef5;
+  --el-color-primary-light-5: #b1b3f9;
+  --el-color-primary-light-7: #d0d2fc;
+  --el-color-primary-light-8: #e0e1fd;
+  --el-color-primary-light-9: #eef2ff;
+  --el-color-primary-dark-2: #4f46e5;
+  --el-border-radius-base: 8px;
+  --el-slider-main-bg-color: #6366f1;
+}
+
+/* ================= 主体 ================= */
+/* 左右两栏由 .studio-body 统一留白，保证配置面板与工作区的上/下边界完全对齐 */
+.studio-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0.9rem;
+}
+
+/* ---------------- 左侧配置面板 ---------------- */
+.config-panel {
+  flex: 0 0 auto;
+  width: 344px;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: #ffffff;
+  /* 用 ring 代替 border：不占用内容宽度，收起时可整体淡出 */
+  box-shadow: 0 0 0 1px #e8e9ee;
+  overflow: hidden;
+  /* 查看模式：宽度与间距同步过渡，配合内层内容左移 */
+  transition: width 0.36s cubic-bezier(0.4, 0, 0.2, 1),
+    margin-right 0.36s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.26s ease;
+}
+
+.config-panel--collapsed {
+  width: 0;
+  margin-right: -0.9rem;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 固定内宽：收起动画期间文字不重排，多余部分由 overflow 裁掉 */
+.config-panel__scroll,
+.config-panel__footer {
+  min-width: 344px;
+}
+
+.config-panel__scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  padding: 1rem;
+  overflow-y: auto;
+  transition: transform 0.36s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.config-panel__footer {
+  transition: transform 0.36s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.config-panel--collapsed .config-panel__scroll,
+.config-panel--collapsed .config-panel__footer {
+  transform: translateX(-26px);
+}
+
+.panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.panel-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.section-head--toggle {
+  cursor: pointer;
+}
+
+.section-head__title {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: #374151;
+}
+
+/* 琥珀橙色条：统一的分节视觉标记 */
+.section-head__title::before {
+  content: '';
+  width: 3px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #fbbf24, #f59e0b);
+}
+
+.section-head__hint {
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+.section-head__count {
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+.section-head__arrow {
+  font-size: 14px;
+  color: #9ca3af;
+}
+
+/* ---------------- 模板文档选择 ---------------- */
+.template-slot {
+  position: relative;
+}
+
+/* 移除按钮：竖直居中于模板槽位右侧 */
+.template-slot__clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  z-index: 2;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #e8e9ee;
+  border-radius: 50%;
+  font-size: 12px;
+  color: #9ca3af;
+  background: #ffffff;
+  cursor: pointer;
+  transition: color 0.18s ease, background 0.2s ease, border-color 0.2s ease,
+    transform 0.18s ease;
+}
+
+.template-slot__clear:hover {
+  color: #b91c1c;
+  background: #fee2e2;
+  border-color: #fecaca;
+  transform: translateY(-50%) scale(1.08);
+}
+
+/* ---------------- 模板上传 ---------------- */
+.template-upload :deep(.el-upload) {
+  display: block;
+  width: 100%;
+}
+
+.template-upload :deep(.el-upload-dragger) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  width: 100%;
+  /* 固定高度 50px：空态与已选态完全一致，切换时面板不跳动 */
+  height: 50px;
+  padding: 0 0.7rem;
+  overflow: hidden;
+  border: 1.5px dashed #d9dce6;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fcfcfd, #f7f8fb);
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.template-upload :deep(.el-upload-dragger:hover) {
+  border-color: #a5b4fc;
+  background: linear-gradient(180deg, #fbfcff, var(--primary-soft));
+  box-shadow: 0 6px 14px rgba(99, 102, 241, 0.12);
+  transform: translateY(-1px);
+}
+
+.template-upload :deep(.el-upload-dragger.is-dragover) {
+  border-color: var(--primary);
+  border-style: solid;
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+  transform: translateY(-1px);
+}
+
+/* 键盘操作时的聚焦反馈 */
+.template-upload :deep(.el-upload:focus-visible .el-upload-dragger) {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+}
+
+/* 已选模板：仅换配色（虚线框 → 白底实线卡），高度仍是 50px */
+.template-upload--filled :deep(.el-upload-dragger) {
+  /* 右侧给移除按钮留位 */
+  padding-right: 2.1rem;
+  border-style: solid;
+  border-color: #e6e8f0;
+  background: #ffffff;
+}
+
+.template-upload--filled :deep(.el-upload-dragger:hover) {
+  border-color: #c7d2fe;
+  background: var(--primary-soft);
+}
+
+/* 两种状态均为单行横向排布 */
+.template-upload__inner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+/* 空态图标：小圆角方块 */
+.template-upload__tile {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--primary-dark);
+  background: linear-gradient(135deg, #eef2ff, #dbe2ff);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.14) inset;
+  transition: transform 0.2s ease;
+}
+
+.template-upload :deep(.el-upload-dragger:hover) .template-upload__tile {
+  transform: translateY(-1px);
+}
+
+/* 上传中：小圆角方块内显示旋转指示器 */
+.template-upload__tile--loading {
+  background: linear-gradient(135deg, #eef2ff, #dbe2ff);
+}
+
+.template-upload__spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #c7d2fe;
+  border-top-color: var(--primary);
+  animation: doc-studio-spin 0.8s linear infinite;
+}
+
+/* 已选态类型图标（按类型着色，与空态图标方块同尺寸） */
+.template-upload__type {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 15px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #818cf8, #6366f1);
+}
+
+.template-upload__type--pdf {
+  background: linear-gradient(135deg, #fb7185, #e11d48);
+}
+
+.template-upload__type--markdown {
+  background: linear-gradient(135deg, #38bdf8, #0284c7);
+}
+
+.template-upload__type--file {
+  background: linear-gradient(135deg, #a1a1aa, #71717a);
+}
+
+.template-upload__title {
+  min-width: 0;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-upload__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-upload__size {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  color: #9ca3af;
+}
+
+/* ---------------- 知识库选择 ---------------- */
+.doc-studio :deep(.kb-select) {
+  width: 100%;
+}
+
+.doc-studio :deep(.kb-select .el-select__wrapper) {
+  min-height: 40px;
+  padding: 0.3rem 0.75rem;
+  border-radius: 10px;
+  background: #f7f8fa;
+  box-shadow: 0 0 0 1px #e8e9ee inset;
+  font-size: 0.8rem;
+  transition: box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.doc-studio :deep(.kb-select .el-select__wrapper:hover) {
+  box-shadow: 0 0 0 1px #d5d7de inset;
+}
+
+.doc-studio :deep(.kb-select .el-select__wrapper.is-focused) {
+  background: #ffffff;
+  box-shadow: 0 0 0 1px var(--primary) inset;
+}
+
+.doc-studio :deep(.kb-select .el-select__placeholder) {
+  color: #9ca3af;
+}
+
+.kb-select__prefix {
+  flex: 0 0 auto;
+  font-size: 15px;
+  color: var(--primary);
+}
+
+/* 选项内容（teleport 后仍带 scopeId，可继续用 scoped 样式） */
+.kb-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 1px 0;
+}
+
+.kb-option__tile {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 15px;
+  color: var(--primary-dark);
+  background: linear-gradient(135deg, #eef2ff, #dbe2ff);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.12) inset;
+  transition: color 0.18s ease, background 0.18s ease;
+}
+
+.kb-option__tile--active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #818cf8, #6366f1);
+  box-shadow: none;
+}
+
+.kb-option__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.kb-option__name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-option__desc {
+  font-size: 0.68rem;
+  color: #9ca3af;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-option__count {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: #6b7280;
+  background: #f2f3f6;
+  transition: color 0.18s ease, background 0.18s ease;
+}
+
+/* 内置默认知识库标记 */
+.kb-option__tag {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 600;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-2);
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.kb-option__check {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--primary);
+}
+
+/* ---------------- 表单字段 ---------------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.field__label {
+  font-size: 0.74rem;
+  color: #6b7280;
+}
+
+.field__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.field__value {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--primary-dark);
+}
+
+.doc-studio :deep(.el-textarea__inner) {
+  background: #f7f8fa;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.7;
+  color: #111827;
+  box-shadow: 0 0 0 1px #e8e9ee inset;
+}
+
+.doc-studio :deep(.el-textarea__inner:hover) {
+  box-shadow: 0 0 0 1px #d5d7de inset;
+}
+
+.doc-studio :deep(.el-textarea__inner:focus) {
+  background: #ffffff;
+  box-shadow: 0 0 0 1px var(--primary) inset;
+}
+
+/* 分段控件浅色适配 */
+.doc-studio :deep(.el-segmented) {
+  --el-segmented-bg-color: #f2f3f6;
+  --el-segmented-color: #6b7280;
+  --el-segmented-item-selected-bg-color: #ffffff;
+  --el-segmented-item-selected-color: var(--primary-dark);
+  --el-segmented-item-hover-bg-color: #e9eaef;
+  --el-segmented-item-hover-color: #111827;
+  --el-segmented-item-active-bg-color: #e5e7eb;
+  padding: 3px;
+  border-radius: 9px;
+}
+
+.doc-studio :deep(.el-segmented__item),
+.doc-studio :deep(.el-segmented__item-selected) {
+  border-radius: 7px;
+}
+
+.doc-studio :deep(.el-segmented__item) {
+  font-size: 0.74rem;
+}
+
+.doc-studio :deep(.el-segmented__item-selected) {
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.1);
+}
+
+/* 滑块浅色适配 */
+.doc-studio :deep(.el-slider) {
+  padding: 0 6px;
+}
+
+.doc-studio :deep(.el-slider__button) {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #ffffff;
+  background: var(--primary);
+  box-shadow: 0 1px 4px rgba(99, 102, 241, 0.35);
+}
+
+/* ---------------- 底部按钮 ---------------- */
+.config-panel__footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem 1rem;
+  border-top: 1px solid #eceef2;
+  background: #ffffff;
+}
+
+/* ---------------- 创作按钮：Squircle 3D 按钮（SquircleButton 组件） ---------------- */
+.create-btn {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: #ffffff;
+}
+
+.create-btn__inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.create-btn__cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.coin {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #fde68a, #f59e0b);
+  box-shadow: 0 0 0 1.5px rgba(253, 230, 138, 0.45);
+}
+
+.reward-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 38px;
+  border: 1px solid #e8e9ee;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #6b7280;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.reward-btn .el-icon {
+  color: var(--accent);
+}
+
+.reward-btn:hover {
+  color: var(--accent-deep);
+  border-color: var(--accent-soft-2);
+  background: var(--accent-soft);
+}
+
+/* ================= 右侧工作区 ================= */
+.stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.stage-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0.9rem;
+}
+
+/* ---------------- 展示框 ---------------- */
+.display-box {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e8e9ee;
+  overflow: hidden;
+}
+
+.display-box__toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid #f0f1f4;
+}
+
+.display-box__badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-2);
+}
+
+.display-box__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ghost-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 30px;
+  padding: 0 0.7rem;
+  border: 1px solid #e8e9ee;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #4b5563;
+  font-size: 0.74rem;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.ghost-chip:hover:not(:disabled) {
+  color: var(--primary-dark);
+  border-color: #c7d2fe;
+  background: var(--primary-soft);
+}
+
+.ghost-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ghost-chip--active {
+  color: var(--primary-dark);
+  border-color: #a5b4fc;
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.display-box__canvas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background-color: #fbfbfc;
+  background-image: radial-gradient(#dfe2e8 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.display-box__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.display-box__icon {
+  font-size: 46px;
+  color: #fbbf24;
+}
+
+.display-box__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.display-box__desc {
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+/* ---------------- 生成中状态 ---------------- */
+.result-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  text-align: center;
+}
+
+.result-state__spinner {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 0.35rem;
+  border-radius: 50%;
+  border: 3px solid #e0e1fd;
+  border-top-color: var(--primary);
+  animation: doc-studio-spin 0.8s linear infinite;
+}
+
+.result-state__title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.result-state__desc {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+/* ---------------- 多文档结果卡片 ---------------- */
+.display-box__canvas--results {
+  display: block;
+  padding: 1.25rem;
+  overflow-y: auto;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
+  gap: 0.9rem;
+}
+
+.result-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  border: 1px solid #e8e9ee;
+  border-radius: 12px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.result-card:hover {
+  transform: translateY(-3px);
+  border-color: #c7d2fe;
+  box-shadow: 0 10px 24px rgba(99, 102, 241, 0.14);
+}
+
+.result-card__cover {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  height: 78px;
+  padding: 26px 10px 10px;
+  border-radius: 8px;
+  background: #fafbfc;
+  border: 1px solid #eef0f3;
+  overflow: hidden;
+}
+
+
+
+
+
+
+.result-card__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.result-card__line {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: #e5e7eb;
+}
+
+.result-card__name {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #111827;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.result-card__summary {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.6;
+  color: #6b7280;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.result-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.5rem;
+  border-top: 1px dashed #eef0f3;
+}
+
+.result-card__meta {
+  font-size: 0.68rem;
+  color: #9ca3af;
+}
+
+.result-card__view {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 26px;
+  padding: 0 0.6rem;
+  border: none;
+  border-radius: 7px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: linear-gradient(135deg, #6f70f3, #5457e5);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.result-card__view:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(99, 102, 241, 0.3);
+}
+
+/* ---------------- 查看模式 ---------------- */
+.stage-body--viewing {
+  align-items: stretch;
+}
+
+.viewer {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e8e9ee;
+  overflow: hidden;
+}
+
+.viewer__toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid #f0f1f4;
+  background: #ffffff;
+}
+
+.viewer__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer__title .el-icon {
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+
+
+
+/* 已选中的文档元素 */
+.viewer__picked {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  max-width: 240px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--primary-dark);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-soft-2);
+}
+
+.viewer__picked .el-icon {
+  flex: 0 0 auto;
+}
+
+.viewer__picked-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer__canvas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+@keyframes doc-studio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ================= 历史记录抽屉 ================= */
+.studio-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(17, 24, 39, 0.32);
+  backdrop-filter: blur(2px);
+}
+
+.history-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 21;
+  width: 360px;
+  max-width: 86%;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-left: 1px solid #eceef2;
+  box-shadow: -18px 0 40px rgba(17, 24, 39, 0.12);
+}
+
+.history-drawer__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid #eceef2;
+}
+
+.history-drawer__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.history-drawer__title .el-icon {
+  color: var(--accent);
+}
+
+.history-drawer__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.history-drawer__close:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.history-drawer__list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0.75rem;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.history-item {
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  background: #fafbfc;
+  border: 1px solid #eef0f3;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.history-item:hover {
+  border-color: #c7d2fe;
+  background: var(--primary-soft);
+}
+
+.history-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* 当前结果列表正来自这条记录 */
+.history-item.is-active {
+  border-color: var(--primary);
+  background: var(--primary-soft-2);
+}
+
+.history-item.is-loading {
+  border-color: #c7d2fe;
+  background: var(--primary-soft);
+}
+
+/* 该次生成没有产出文档：仅提示，不做跳转 */
+.history-item.is-no-doc {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.history-item.is-no-doc:hover {
+  border-color: #eef0f3;
+  background: #fafbfc;
+}
+
+.history-drawer__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.2rem 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.history-item__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.history-item__title {
+  min-width: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item__status {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.history-item__status.is-success {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.history-item__status.is-failed {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.history-item__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: #9ca3af;
+}
+
+.history-item__dot {
+  color: #d1d5db;
+}
+
+/* 产出份数：贴右显示，与右侧箭头一起构成「可查看」示意 */
+.history-item__count {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-weight: 600;
+  font-size: 0.68rem;
+}
+
+.history-item__open {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: #c7d2fe;
+  font-size: 0.8rem;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.history-item:hover .history-item__open {
+  color: var(--primary);
+  transform: translateX(2px);
+}
+
+.history-item__spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid #e0e1fd;
+  border-top-color: var(--primary);
+  animation: doc-studio-spin 0.8s linear infinite;
+}
+
+.history-drawer__empty {
+  margin-top: 4rem;
+}
+
+/* ================= 过渡动画 ================= */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-enter-active,
+.slide-leave-active {
+  transition: transform 0.26s ease;
+}
+
+.slide-enter-from,
+.slide-leave-to {
+  transform: translateX(100%);
+}
+
+/* ================= 滚动条 ================= */
+.config-panel__scroll::-webkit-scrollbar,
+.history-drawer__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.config-panel__scroll::-webkit-scrollbar-thumb,
+.history-drawer__list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #d8dade;
+}
+
+/* ================= 模式切换过渡 ================= */
+/* 中间工作区在「结果列表 / 文档查看」之间横向瞬滑（仅 X 轴，无纵向位移与缩放） */
+.stage-swap-enter-active {
+  transition: opacity 0.24s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stage-swap-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.stage-swap-enter-from {
+  opacity: 0;
+  transform: translateX(30px);
+}
+
+.stage-swap-leave-to {
+  opacity: 0;
+  transform: translateX(-22px);
+}
+
+/* 查看模式：聊天面板紧随其后自右侧滑入（同样仅 X 轴） */
+.stage-body--viewing .ai-chat {
+  animation: chat-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) 0.04s both;
+}
+
+@keyframes chat-in {
+  from {
+    opacity: 0;
+    transform: translateX(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ================= 响应式 ================= */
+@media (max-width: 1024px) {
+  .doc-studio {
+    height: auto;
+    min-height: 0;
+  }
+
+  .studio-body {
+    flex-direction: column;
+  }
+
+  /* 纵向排列时改为沿高度方向平滑收起 */
+  .config-panel {
+    width: auto;
+    max-height: 3000px;
+    margin-right: 0;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+      margin-bottom 0.36s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.26s ease;
+  }
+
+  .config-panel--collapsed {
+    width: auto;
+    max-height: 0;
+    margin-right: 0;
+    margin-bottom: -0.9rem;
+  }
+
+  .config-panel__scroll,
+  .config-panel__footer {
+    min-width: 0;
+  }
+
+  .config-panel__scroll {
+    overflow: visible;
+  }
+
+  .stage {
+    min-height: 520px;
+  }
+}
+
+@media (max-width: 720px) {
+  .stage-body {
+    flex-direction: column;
+  }
+
+  .viewer {
+    min-height: 380px;
+  }
+}
+</style>
+
+<style>
+/* ================= 知识库下拉浮层 =================
+   el-select 的下拉默认 teleport 到 body，脱离组件根节点，
+   scoped 样式与 :deep() 均无法命中，因此这里使用非 scoped 样式，
+   并通过 popper-class="kb-select-popper" 精确限定作用范围。
+   重复类名用于提升优先级，覆盖 Element Plus 默认的 .el-select__popper 样式。 */
+.el-popper.kb-select-popper.kb-select-popper {
+  padding: 0;
+  border: 1px solid #eceef2;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(17, 24, 39, 0.14);
+  overflow: hidden;
+}
+
+.el-popper.kb-select-popper .el-popper__arrow::before {
+  border: 1px solid #eceef2;
+  background: #ffffff;
+}
+
+.kb-select-popper .el-select-dropdown__list {
+  padding: 6px;
+}
+
+.kb-select-popper .el-select-dropdown__item {
+  height: auto;
+  margin: 0 0 2px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  line-height: 1.4;
+  color: #374151;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.kb-select-popper .el-select-dropdown__item:last-child {
+  margin-bottom: 0;
+}
+
+.kb-select-popper .el-select-dropdown__item.is-hovering,
+.kb-select-popper .el-select-dropdown__item:hover {
+  background: #eef2ff;
+}
+
+.kb-select-popper .el-select-dropdown__item.is-selected {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.kb-select-popper .el-select-dropdown__item.is-selected .kb-option__name {
+  color: #4f46e5;
+}
+
+.kb-select-popper .el-select-dropdown__item.is-selected .kb-option__count {
+  color: #4f46e5;
+  background: #ffffff;
+}
+
+.kb-select-popper .el-select-dropdown__item.is-selected .kb-option__tag {
+  color: #4f46e5;
+  background: #ffffff;
+  border-color: #c7d2fe;
+}
+
+.kb-select-popper .el-select-dropdown__empty {
+  padding: 18px 0;
+  font-size: 0.76rem;
+  color: #9ca3af;
+}
+
+.kb-select-popper .el-select-dropdown__footer {
+  padding: 6px 12px;
+  border-top: 1px solid #f1f2f5;
+  background: #fafbfc;
+  font-size: 0.68rem;
+  color: #9ca3af;
+  text-align: right;
+}
+</style>
+
