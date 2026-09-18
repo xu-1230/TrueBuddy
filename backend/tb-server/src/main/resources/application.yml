@@ -1,0 +1,99 @@
+spring:
+  application:
+    name: tb-server
+  servlet:
+    multipart:
+      # 知识库文档上传上限
+      max-file-size: 50MB
+      max-request-size: 50MB
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5432/tb
+    # 数据库账号密码：通过环境变量注入，缺失时回退为默认值（真实凭据禁止硬编码）
+    username: postgres
+    password:
+    driver-class-name: org.postgresql.Driver
+  ai:
+    openai:
+      api-key: sk-ca3e404a98e44cdaad87429d4e4b7879
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-flash
+          temperature: 0.7
+        retry:
+          max-attempts: 5
+          backoff:
+            initial-interval: 2s
+            max-interval: 30s
+            multiplier: 2
+      # 文本向量化模型（知识库 RAG 使用）：OpenAI 兼容接口
+      embedding:
+        base-url: ${OPENAI_EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
+        api-key: ${OPENAI_EMBEDDING_API_KEY:sk-b33590d5dc864abfaa16e7080c80a97f}
+        options:
+          model: ${OPENAI_EMBEDDING_MODEL:text-embedding-v3}
+          dimensions: 1024
+    vectorstore:
+      pgvector:
+        index-type: hnsw
+        distance-type: COSINE_DISTANCE
+        dimensions: 1024
+        initialize-schema: true
+    # MCP 客户端（stdio）：驱动 docx-mcp 完成「模板→HTML→改写→docx」复刻
+    mcp:
+      client:
+        enabled: true
+        name: tb-mcp-client
+        version: 1.0.0
+        # 同步客户端：便于后端确定性地程序化调用工具
+        type: SYNC
+        # docx 解析/生成较慢，放宽超时
+        request-timeout: 300s
+        # 暴露 MCP 工具为 Spring AI ToolCallback，供 DocxMcpGateway 按名调用
+        toolcallback:
+          enabled: true
+        stdio:
+          # 用户给定的 mcpServers 配置：docx-mcp（uv run --directory ... mcp run main.py）
+          servers-configuration: classpath:mcp-servers-config.json
+
+mybatis:
+  configuration:
+    # 下划线转驼峰（原生 MyBatis 默认关闭，需显式开启）
+    map-underscore-to-camel-case: true
+
+server:
+  port: 8086
+  servlet:
+    context-path: /api
+
+logging:
+  level:
+    org.example.backend: debug
+
+tb:
+  # 文档模板生成（模板复刻）
+  doctemplate:
+    # 生成文档临时目录（docx-mcp 进程需能读写该路径）
+    temp-dir: ${TB_DOCTEMPLATE_TEMP_DIR:${java.io.tmpdir}/tb-doctemplate}
+    # 单次生成份数上限（LLM 规划结果超出时截断）
+    max-doc-count: 5
+    # 提示词中正文段落清单上限（超出会截断并记 WARN；静默截断会导致漏改）
+    max-text-chars: 4000000
+    # 提示词中表格/嵌套表格段落清单上限（超出会截断并记 WARN）
+    max-digest-chars: 6000000
+    # 自检未通过时「补规则 → 重落盘」的最大轮次
+    max-fix-rounds: 2
+    # 严格自检：旧主题关键词仍有残留 / 新主题关键词缺失时标记为「部分成功」
+    strict-self-check: true
+  security:
+    permit-all-urls:
+      - /system/auth/login
+      - /test2/read-pptx
+      - /doc-template/**
+
+# MinIO 对象存储（知识库文件）
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:admin}
+  secret-key: ${MINIO_SECRET_KEY:admin123456}
+  bucket: ${MINIO_BUCKET:test-bucket}

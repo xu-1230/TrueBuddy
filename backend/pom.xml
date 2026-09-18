@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- 统一使用 Spring Boot 父工程管理依赖版本 -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.1</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>org.example</groupId>
+    <artifactId>backend</artifactId>
+    <version>${revision}</version>
+    <packaging>pom</packaging>
+    <name>backend</name>
+    <description>TrueBuddy 后端</description>
+
+    <modules>
+        <!-- 依赖版本管理 BOM -->
+        <module>tb-dependencies</module>
+        <!-- 框架组件 -->
+        <module>tb-framework</module>
+        <!-- 业务模块 -->
+        <module>tb-module-test</module>
+        <module>tb-module-test2</module>
+        <module>tb-module-knowledgebase</module>
+        <!-- 基础设施模块（通用文件上传等系统基础能力） -->
+        <module>tb-module-infra</module>
+        <!-- 文档模板生成模块（模板复刻：MCP docx 工具 + LLM + 知识库检索增强） -->
+        <module>tb-module-doctemplate</module>
+
+        <!-- 启动模块 -->
+        <module>tb-server</module>
+    </modules>
+
+    <properties>
+        <java.version>17</java.version>
+        <revision>0.0.1-SNAPSHOT</revision>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- 引入项目 BOM，统一管理三方依赖版本 -->
+            <dependency>
+                <groupId>org.example</groupId>
+                <artifactId>tb-dependencies</artifactId>
+                <version>${revision}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- 内部模块版本统一 -->
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <!-- 保证 ${revision} 在 install/deploy 时解析为真实版本 -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>1.4.1</version>
+                <configuration>
+                    <updatePomFile>true</updatePomFile>
+                    <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten.clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

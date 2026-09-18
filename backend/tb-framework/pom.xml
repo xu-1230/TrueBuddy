@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.example</groupId>
+        <artifactId>backend</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>tb-framework</artifactId>
+    <packaging>pom</packaging>
+    <name>tb-framework</name>
+    <description>TrueBuddy 后端框架组件（Java 框架拓展）</description>
+
+    <modules>
+        <module>tb-common</module>
+        <module>tb-spring-boot-starter-web</module>
+        <module>tb-spring-boot-starter-mybatis</module>
+        <module>tb-spring-boot-starter-security</module>
+    </modules>
+</project>

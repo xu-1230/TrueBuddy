@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.example</groupId>
+        <artifactId>backend</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>tb-server</artifactId>
+    <name>${project.artifactId}</name>
+    <description>服务启动模块：聚合所有业务模块</description>
+
+    <dependencies>
+
+        <!-- Web 基础 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- 业务模块 -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-test</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-test2</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-knowledgebase</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 基础设施模块：通用文件上传（MinIO） -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-infra</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 文档模板生成模块：模板复刻（MCP docx 工具 + LLM + 知识库检索增强） -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-doctemplate</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 打成可执行 jar（含所有依赖） -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

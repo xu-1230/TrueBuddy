@@ -1,0 +1,2 @@
+org.example.backend.framework.security.config.SecurityAutoConfiguration
+org.example.backend.framework.security.config.SecurityConfig
