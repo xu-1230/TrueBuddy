@@ -1,0 +1,37 @@
+# Environment variables and secrets.
+# NEVER commit real credentials. Template: .env.example
+.env
+.env.*
+!.env.example
+
+# Logs and temp files
+*.log
+tmp/
+
+# AI assistant toolchains (local planning docs, not part of the project)
+.trae/
+.codebuddy/
+.codeartsdoer/
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# Build output and dependency caches (defensive; sub-projects also ignore these)
+node_modules/
+dist/
+dist-ssr/
+target/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.uv_cache/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
