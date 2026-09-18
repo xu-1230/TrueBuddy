@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.example</groupId>
+        <artifactId>backend</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>tb-module-doctemplate</artifactId>
+    <name>tb-module-doctemplate</name>
+    <description>文档模板生成模块：模板复刻（MCP docx 工具 + LLM 内容生成 + 知识库检索增强）</description>
+
+    <dependencies>
+        <!-- Web 组件：提供 spring-boot-starter-web 注解 + CommonResult -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-spring-boot-starter-web</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 统一返回对象 CommonResult -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-common</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 基础设施模块：复用通用文件存储（MinIO）与 infra_file 元数据 -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-infra</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 知识库模块：复用检索增强（searchBySpace）能力 -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-knowledgebase</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <!-- 数据访问：与 tb-module-infra / knowledgebase 保持一致，使用 MyBatis 注解 Mapper -->
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- Spring AI MCP Client（stdio）：接入仓库内 docx-mcp（Python + uv） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-client</artifactId>
+            <version>2.0.0-M3</version>
+        </dependency>
+        <!-- Spring AI OpenAI 兼容对话模型（ChatClient 内容生成） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+            <version>2.0.0-M3</version>
+        </dependency>
+    </dependencies>
+</project>

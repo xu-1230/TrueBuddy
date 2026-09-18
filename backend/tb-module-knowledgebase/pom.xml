@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.example</groupId>
+        <artifactId>backend</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>tb-module-knowledgebase</artifactId>
+    <name>tb-module-knowledgebase</name>
+    <description>知识库模块：空间 / 文档 / 分片管理</description>
+
+    <dependencies>
+        <!-- Web 组件：提供 spring-boot-starter-web 注解 + CommonResult -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-spring-boot-starter-web</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 统一返回对象 CommonResult -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-common</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 基础设施模块：复用通用文件存储（MinIO）与 infra_file 元数据 -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-infra</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 数据访问：与 tb-module-test 保持一致，使用 MyBatis 注解 Mapper -->
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- Spring AI 向量存储（pgvector）：VectorStore / Document -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
+            <version>2.0.0-M3</version>
+        </dependency>
+        <!-- Spring AI OpenAI 兼容 embedding 模型（文本向量化） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+            <version>2.0.0-M3</version>
+        </dependency>
+        <!-- Apache Tika 文档解析（经 Spring AI reader 引入 tika-core / parsers） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-tika-document-reader</artifactId>
+            <version>2.0.0-M3</version>
+        </dependency>
+        <!-- MinIO 对象存储由 tb-module-infra 传递提供，此处不再直接依赖 -->
+    </dependencies>
+</project>
