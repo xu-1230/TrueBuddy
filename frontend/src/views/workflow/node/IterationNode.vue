@@ -1,8 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
-import { ElMessage } from 'element-plus'
-import { DataLine, MoreFilled, Refresh } from '@element-plus/icons-vue'
+import { Refresh } from '@element-plus/icons-vue'
 
 // 与 Vue Flow 内置节点保持一致：不把 label/selected 等透传属性渲染到 DOM 上
 defineOptions({ inheritAttrs: false })
@@ -10,53 +9,9 @@ defineOptions({ inheritAttrs: false })
 const props = defineProps({
   id: { type: String, required: true },
   data: { type: Object, default: () => ({}) },
-  /** 可添加的节点类型，由 WorkflowView 传入 */
-  catalog: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['add-node'])
-
-/* ===== 添加节点：节点类型选择面板 ===== */
-const pickerVisible = ref(false)
-const pickerAnchor = ref(null)
-const pickerPlacement = ref('bottom')
-
-/** 用 virtual-ref 让三个「添加节点」入口共用同一个面板 */
-const togglePicker = async (event, placement = 'bottom') => {
-  const anchor = event.currentTarget
-  const isSameAnchor = pickerAnchor.value === anchor
-  const wasVisible = pickerVisible.value
-  pickerVisible.value = false
-  // 再次点击同一个入口 = 收起
-  if (wasVisible && isSameAnchor) return
-  // 先关再开，保证切换入口时面板重新定位
-  await nextTick()
-  pickerAnchor.value = anchor
-  pickerPlacement.value = placement
-  pickerVisible.value = true
-}
-
-const handleDocumentMousedown = (event) => {
-  if (pickerAnchor.value?.contains(event.target)) return
-  if (event.target?.closest?.('.workflow-node-picker')) return
-  pickerVisible.value = false
-}
-
-watch(pickerVisible, (visible) => {
-  if (visible) {
-    document.addEventListener('mousedown', handleDocumentMousedown, true)
-  } else {
-    document.removeEventListener('mousedown', handleDocumentMousedown, true)
-  }
-})
-
-/** 选择节点类型后关闭面板，由外层负责创建节点 */
-const pickNode = (item) => {
-  pickerVisible.value = false
-  emit('add-node', { parentId: props.id, type: item.type })
-}
-
-const { getNodes, getEdges, updateNode, updateNodeData, updateNodeInternals, viewport } = useVueFlow()
+const { getNodes, updateNode, updateNodeInternals, viewport } = useVueFlow()
 
 /** 节点默认尺寸 */
 const DEFAULT_SIZE = { width: 480, height: 280 }
@@ -73,15 +28,41 @@ const size = computed(() => ({
 /** 画布四周内缩（.node-body 4px + .node-canvas 4px）与起止节点尺寸，需与 WorkflowView 保持一致 */
 const ITERATION_CANVAS_INSET = 8
 const ITERATION_BOUNDARY_SIZE = 52
-const ITERATION_BOUNDARY_TYPES = ['iteration-start', 'iteration-end']
+/** 起止节点与子节点之间的间距，需与 WorkflowView 的 ITERATION_BOUNDARY_GAP 保持一致 */
+const ITERATION_BOUNDARY_GAP = 12
+/** 内容下方额外留白，需与 WorkflowView 的 growIterationToFit 保持一致 */
+const ITERATION_CONTENT_BOTTOM_GAP = 16
 
 /** 当前迭代节点内部的全部子节点（含自带的起止节点） */
 const childNodes = computed(() => getNodes.value.filter((item) => item.parentNode === props.id))
 
-/** 用户添加的子节点，用于判断空状态 */
-const contentChildren = computed(() =>
-  childNodes.value.filter((item) => !ITERATION_BOUNDARY_TYPES.includes(item.type)),
-)
+/**
+ * 容纳现有子节点所需的最小尺寸（终点节点的位置由容器宽度决定，不参与计算）。
+ * 缩小时不能低于它：一旦 extent 变成 min > max 的反转区间，子节点会先挂在画布外，
+ * 之后只要一拖动就会被 clamp 到 header 上（实测 y 会从 134 直接跳到 24）。
+ * 公式与 WorkflowView 的 growIterationToFit 一致，保证「撑大」和「缩到最小」是两个互补的口径。
+ */
+const contentMinSize = computed(() => {
+  const parentPosition = node.value?.computedPosition ?? node.value?.position ?? { x: 0, y: 0 }
+  let contentRight = 0
+  let contentBottom = 0
+  for (const child of childNodes.value) {
+    if (child.type === 'iteration-end') continue
+    // 子节点的 computedPosition 是画布绝对坐标，减去父节点才是容器内的局部坐标
+    const position = child.computedPosition ?? child.position
+    contentRight = Math.max(contentRight, position.x - parentPosition.x + (child.dimensions?.width || 0))
+    contentBottom = Math.max(contentBottom, position.y - parentPosition.y + (child.dimensions?.height || 0))
+  }
+  return {
+    width:
+      contentRight +
+      ITERATION_CANVAS_INSET +
+      ITERATION_BOUNDARY_SIZE +
+      ITERATION_BOUNDARY_GAP + // 右侧给终点节点留位
+      ITERATION_BOUNDARY_GAP, // 再留一个间距，和 growIterationToFit 对齐
+    height: contentBottom + ITERATION_CONTENT_BOTTOM_GAP,
+  }
+})
 
 /** 终点节点贴着画布右内侧，容器尺寸变化时跟着挪 */
 const syncEndNodePosition = () => {
@@ -96,125 +77,6 @@ const syncEndNodePosition = () => {
 }
 
 watch(() => size.value.width, syncEndNodePosition, { immediate: true })
-
-/**
- * 迭代节点的子流程数据：内部子节点本身是 vue-flow 的 parentNode 嵌套结构，
- * 这里把它们镜像到节点 data.children / data.childEdges 上，便于查看与序列化。
- * 子节点的 position 保持相对父节点，与 vue-flow 内部一致。
- */
-const collectIterationData = (iterationId) => {
-  const innerNodes = getNodes.value.filter((item) => item.parentNode === iterationId)
-  const childIds = new Set(innerNodes.map((item) => item.id))
-
-  return {
-    children: innerNodes.map((item) => ({
-      id: item.id,
-      type: item.type,
-      position: { x: item.position.x, y: item.position.y },
-      width: item.width,
-      height: item.height,
-      zIndex: item.zIndex,
-      data: item.data,
-    })),
-    childEdges: getEdges.value
-      .filter((edge) => childIds.has(edge.source) && childIds.has(edge.target))
-      .map((edge) => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        sourceHandle: edge.sourceHandle,
-        targetHandle: edge.targetHandle,
-        type: edge.type,
-      })),
-  }
-}
-
-/** 把子流程同步到节点 data 上 */
-const syncIterationData = () => {
-  const { children: childNodes, childEdges } = collectIterationData(props.id)
-  updateNodeData(props.id, { children: childNodes, childEdges })
-}
-
-/** 子节点集合 / 位置的签名，变化时重新同步 data.children / data.childEdges */
-const childrenSignature = computed(() =>
-  childNodes.value
-    .map((item) => `${item.id}@${Math.round(item.position.x)},${Math.round(item.position.y)}`)
-    .join('|'),
-)
-
-watch(childrenSignature, syncIterationData, { immediate: true })
-
-/**
- * 生成用于查看 / 提交的图数据：迭代节点内部的子节点、子连线收进该节点的
- * data.children / data.childEdges，不再出现在外层的 nodes / edges 里。
- * 注意：vue-flow 渲染时必须把它们放在 nodes 数组中（靠 parentNode 定位），
- * 所以只在快照这一层做收拢。
- */
-const buildWorkflowSnapshot = () => {
-  const list = getNodes.value
-  const childIds = new Set(list.filter((item) => item.parentNode).map((item) => item.id))
-
-  const snapshotNodes = list
-    .filter((item) => !item.parentNode)
-    .map((item) => {
-      const snapshot = {
-        id: item.id,
-        type: item.type,
-        position: { x: item.position.x, y: item.position.y },
-        width: item.width,
-        height: item.height,
-        zIndex: item.zIndex,
-        data: item.data,
-      }
-      if (item.type === 'iteration') {
-        const { children: childNodes, childEdges } = collectIterationData(item.id)
-        snapshot.data = { ...item.data, children: childNodes, childEdges }
-      }
-      return snapshot
-    })
-
-  const snapshotEdges = getEdges.value
-    .filter((edge) => !childIds.has(edge.source) && !childIds.has(edge.target))
-    .map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      sourceHandle: edge.sourceHandle,
-      targetHandle: edge.targetHandle,
-      type: edge.type,
-    }))
-
-  return { nodes: snapshotNodes, edges: snapshotEdges }
-}
-
-/** JSON 序列化兜底：内部字段若有循环引用也不影响控制台输出 */
-const stringifySafe = (value) => {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch (error) {
-    return `JSON 序列化失败：${error.message}`
-  }
-}
-
-/** 调试用：打印「全部」nodes / edges，迭代节点内部的子节点 / 子连线只出现在 data.children 下 */
-const handleLogData = () => {
-  console.group('[workflow] 输出数据')
-  try {
-    syncIterationData()
-    const graph = buildWorkflowSnapshot()
-
-    console.log(`nodes(${graph.nodes.length})`, graph.nodes)
-    console.log(`edges(${graph.edges.length})`, graph.edges)
-    console.log('JSON', stringifySafe(graph))
-
-    ElMessage.success(`已输出 ${graph.nodes.length} 个节点 / ${graph.edges.length} 条连线`)
-  } catch (error) {
-    console.error('输出数据失败', error)
-    ElMessage.error('输出数据失败，详见控制台')
-  } finally {
-    console.groupEnd()
-  }
-}
 
 /**
  * 句柄的尺寸 / 位置变了（例如换了一套 Handle 样式）后，需要让 vue-flow 重新测量，
@@ -241,8 +103,18 @@ const handleResizeStart = (event) => {
 
   const handleMove = (moveEvent) => {
     const zoom = viewport.value?.zoom || 1
-    const width = Math.max(MIN_SIZE.width, startSize.width + (moveEvent.clientX - startX) / zoom)
-    const height = Math.max(MIN_SIZE.height, startSize.height + (moveEvent.clientY - startY) / zoom)
+    // 不能缩到装不下现有子节点，否则 Vue Flow 的 extent 会反转（min > max）
+    const minContent = contentMinSize.value
+    const width = Math.max(
+      MIN_SIZE.width,
+      minContent.width,
+      startSize.width + (moveEvent.clientX - startX) / zoom,
+    )
+    const height = Math.max(
+      MIN_SIZE.height,
+      minContent.height,
+      startSize.height + (moveEvent.clientY - startY) / zoom,
+    )
     updateNode(props.id, { width: Math.round(width), height: Math.round(height) })
   }
 
@@ -262,7 +134,6 @@ const handleResizeStart = (event) => {
 
 onBeforeUnmount(() => {
   stopResize?.()
-  document.removeEventListener('mousedown', handleDocumentMousedown, true)
 })
 </script>
 
@@ -294,23 +165,6 @@ onBeforeUnmount(() => {
       <!-- 源 Handle（右侧） -->
       <Handle id="out" type="source" :position="Position.Right" class="node-handle node-handle-source" />
 
-      <!-- hover 操作栏 -->
-      <div class="node-actionbar">
-        <div class="node-actionbar-inner">
-          <button
-            class="node-more-btn nodrag nopan nowheel"
-            type="button"
-            aria-label="输出 node / edge 数据"
-            @click="handleLogData"
-          >
-            <el-icon><DataLine /></el-icon>
-          </button>
-          <button class="node-more-btn nodrag nopan nowheel" type="button" aria-label="更多">
-            <el-icon><MoreFilled /></el-icon>
-          </button>
-        </div>
-      </div>
-
       <!-- 节点头部 -->
       <div class="node-header">
         <button class="node-title-btn" type="button" :aria-label="data.label">
@@ -325,59 +179,8 @@ onBeforeUnmount(() => {
 
       <!-- 内层画布：起止节点与子节点都是真实节点，由 Vue Flow 渲染在这块区域之上 -->
       <div class="node-body">
-        <div class="node-canvas">
-          <!-- 没有子节点时，「添加节点」跟在起点节点后面 -->
-          <button
-            v-if="!contentChildren.length"
-            class="iteration-add iteration-add--inline nodrag nopan"
-            type="button"
-            aria-haspopup="dialog"
-            @click.stop="togglePicker($event, 'top')"
-          >
-            <span class="iteration-add-plus">+</span>
-            添加节点
-          </button>
-
-          <!-- 已有子节点时，按钮沉底 -->
-          <div v-else class="iteration-slot">
-            <button
-              class="iteration-add nodrag nopan"
-              type="button"
-              aria-haspopup="dialog"
-              @click.stop="togglePicker($event, 'top')"
-            >
-              <span class="iteration-add-plus">+</span>
-              添加节点
-            </button>
-          </div>
-        </div>
+        <div class="node-canvas"></div>
       </div>
-
-      <!-- 添加节点：节点类型选择面板（用 virtual-ref 定位） -->
-      <el-popover
-        :visible="pickerVisible"
-        :virtual-ref="pickerAnchor"
-        virtual-triggering
-        :placement="pickerPlacement"
-        :popper-style="{ width: '200px', padding: '4px' }"
-        popper-class="workflow-node-picker"
-      >
-        <div class="node-picker">
-          <div class="node-picker-title">添加节点</div>
-          <button
-            v-for="item in catalog"
-            :key="item.type"
-            class="node-picker-item"
-            type="button"
-            @click="pickNode(item)"
-          >
-            <span class="node-picker-icon" :style="{ backgroundColor: item.color }">
-              <el-icon><component :is="item.icon" /></el-icon>
-            </span>
-            <span class="node-picker-label">{{ item.label }}</span>
-          </button>
-        </div>
-      </el-popover>
     </div>
   </div>
 </template>
@@ -485,10 +288,6 @@ onBeforeUnmount(() => {
 
 .node-canvas {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-start;
   width: 100%;
   height: 100%;
   min-width: 240px;
@@ -499,48 +298,6 @@ onBeforeUnmount(() => {
   background-image: radial-gradient(circle, #dcdfe6 1px, transparent 1px);
   background-size: 14px 14px;
   background-position: -1px -1px;
-}
-
-/* ===== 添加节点按钮 ===== */
-.iteration-slot {
-  display: flex;
-  justify-content: center;
-  width: 100%;
-  margin-top: auto;
-}
-
-/* 空状态：按钮跟在起点节点后面（对齐子节点落点 / 起点节点中心） */
-.iteration-add--inline {
-  position: absolute;
-  left: 100px;
-  top: 78px;
-  transform: translateY(-50%);
-}
-
-.iteration-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 32px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  font-size: 14px;
-  color: #1d2129;
-  cursor: pointer;
-  transition: box-shadow 0.2s, color 0.2s;
-}
-
-.iteration-add:hover {
-  color: #2563eb;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-}
-
-.iteration-add-plus {
-  font-size: 16px;
-  line-height: 1;
 }
 
 /* ===== Handle（与 InputNode 等其他节点保持一致） ===== */
@@ -555,53 +312,6 @@ onBeforeUnmount(() => {
 
 .node-card:hover .node-handle {
   opacity: 1;
-}
-
-/* ===== hover 操作栏 ===== */
-.node-actionbar {
-  position: absolute;
-  top: -28px;
-  right: 0;
-  display: flex;
-  height: 28px;
-  padding-bottom: 4px;
-  visibility: hidden;
-}
-
-.node-card:hover .node-actionbar {
-  visibility: visible;
-}
-
-.node-actionbar-inner {
-  display: flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 2px;
-  border-radius: 8px;
-  border: 0.5px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(5px);
-  color: #9aa1ad;
-}
-
-.node-more-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
-.node-more-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #4e5969;
 }
 
 /* ===== 调整尺寸按钮 ===== */

@@ -1,11 +1,9 @@
 <script setup>
 import { markRaw, nextTick, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Box, Refresh } from '@element-plus/icons-vue'
 import { VueFlow, useVueFlow, MarkerType } from '@vue-flow/core'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
-import './styles/nodePicker.css'
 
 import StartNode from './node/StartNode.vue'
 import InputNode from './node/InputNode.vue'
@@ -14,10 +12,10 @@ import LlmNode from './node/LlmNode.vue'
 import IterationNode from './node/IterationNode.vue'
 import IterationStartNode from './node/IterationStartNode.vue'
 import IterationEndNode from './node/IterationEndNode.vue'
+import ConnectionLine from './ConnectionLine.vue'
 
 
 const {
-  addNodes,
   addEdges,
   removeNodes,
   updateNode,
@@ -33,6 +31,15 @@ const {
 
 /** 内层点阵画布的四周内缩：.node-body 4px + .node-canvas 4px */
 const ITERATION_CANVAS_INSET = 8
+/**
+ * 节点盒子到点阵画布之间还有两层 1px 描边：.node-wrapper 的透明描边 + .node-card 的灰边框。
+ * 算可移动范围时要一并扣掉，否则子节点能压到点阵画布外面（上/左/下各多出 2px）。
+ */
+const ITERATION_BORDER_INSET = 2
+/** 迭代节点头部高度：.node-header 12 + 24 + 8 */
+const ITERATION_HEADER_HEIGHT = 44
+/** 迭代节点默认尺寸（与 IterationNode.vue 的 DEFAULT_SIZE 保持一致） */
+const ITERATION_DEFAULT_SIZE = { width: 480, height: 280 }
 /** 迭代起止节点尺寸 */
 const ITERATION_BOUNDARY_SIZE = 52
 /** 起止节点与子节点之间的间距 */
@@ -45,13 +52,23 @@ const ITERATION_START_POSITION = { x: ITERATION_CANVAS_INSET, y: 52 }
  */
 const ITERATION_CHILD_ORIGIN = { x: 100, y: 52 }
 /**
- * 迭代节点内部子节点的可移动范围 = 内层点阵画布，[top, right, bottom, left] 对应
- * IterationNode.vue 的样式：header 44px、.node-body 左右 4px / 下 4px、.node-card 下 4px；
- * 右侧额外留出终点节点 + 间距，避免子节点压在终点上。
+ * 迭代节点内部子节点的可移动范围 = 内层点阵画布，[top, right, bottom, left] 依次对应
+ * IterationNode.vue 的样式：描边 2px、header 44px、.node-body 左右 4px / 下 4px、.node-card 下 4px。
+ * 这里刻意「整块画布都放开」：子节点能一直拖到点阵画布右边（不会被终点节点那 72px 卡住），
+ * 松手时再由 growIterationToFit 把容器撑大、让终点节点让位（见 onNodeDragStop）。
  * 用 { range: 'parent', padding } 的形式，容器尺寸变化时会自动跟随，无需再同步。
  */
 const ITERATION_RIGHT_RESERVE = ITERATION_CANVAS_INSET + ITERATION_BOUNDARY_SIZE + ITERATION_BOUNDARY_GAP
-const ITERATION_CHILD_EXTENT = { range: 'parent', padding: [44, ITERATION_RIGHT_RESERVE, 8, 4] }
+const ITERATION_CANVAS_PADDING = [
+  ITERATION_BORDER_INSET + ITERATION_HEADER_HEIGHT, // 上：描边 2px + header 44px
+  ITERATION_BORDER_INSET + 4, // 右：描边 2px + .node-body 4px
+  ITERATION_BORDER_INSET + 8, // 下：描边 2px + .node-body 4px + .node-card 4px
+  ITERATION_BORDER_INSET + 4, // 左：描边 2px + .node-body 4px
+]
+const ITERATION_CHILD_EXTENT = {
+  range: 'parent',
+  padding: ITERATION_CANVAS_PADDING,
+}
 /** 迭代节点内部子节点的层级，需高于容器本身，避免被子节点被容器覆盖 */
 const ITERATION_CHILD_Z_INDEX = 1
 /**
@@ -138,9 +155,8 @@ const initialNodes = ref([
     targetPosition: 'left',
     blocks: [],
   },
-  { id:"4", type: 'start', data: { label: '测试6666666666666666'}, position: { x: 100, y: 100 }},
-  { id:"6", type: 'start', data: { label: '测试6666666666666666'}, position: { x: -20, y: 180 }},
-
+  // { id:"4", type: 'start', data: { label: '测试6666666666666666'}, position: { x: 100, y: 100 }},
+  // { id:"6", type: 'start', data: { label: '测试6666666666666666'}, position: { x: -20, y: 180 }},
   {
     id: 'llm-1',
     type: 'llm',
@@ -182,17 +198,15 @@ const initialNodes = ref([
     },
     position: { x: 360, y: 100 },
   },
-
   {
     id: '100002',
     type: 'iteration',
-    data: { label: '迭代 2', children: [], childEdges: [] },
+    data: { label: '迭代 2' },
     position: { x: 120, y: 340 },
-    width: 480,
-    height: 280,
+    width: ITERATION_DEFAULT_SIZE.width,
+    height: ITERATION_DEFAULT_SIZE.height,
   },
   ...createIterationBoundaryNodes('100002'),
-
   {
     id: "__END__",
     type: 'output',
@@ -235,6 +249,7 @@ const nodeTypes = {
   input: markRaw(InputNode),
   output: markRaw(OutputNode),
   llm: markRaw(LlmNode),
+  iteration: markRaw(IterationNode),
   'iteration-start': markRaw(IterationStartNode),
   'iteration-end': markRaw(IterationEndNode),
 }
@@ -346,8 +361,21 @@ onNodeDragStop(({ node }) => {
     modifierDetachedNodeId = null
     return
   }
-  // 已在迭代节点内部的不重复挂载
-  if (node.parentNode) return
+  const parent = node.parentNode ? getNodes.value.find((item) => item.id === node.parentNode) : null
+  // 已在迭代节点内部：子节点能拖到整块点阵画布（包括终点节点所在的位置），
+  // 松手时把容器撑到「装得下它 + 给终点节点留位」，终点节点会自动右移让开，不会压在一起
+  if (parent) {
+    if (isIterationNode(parent)) {
+      const childPosition = node.computedPosition ?? node.position
+      const parentPosition = parent.computedPosition ?? parent.position
+      growIterationToFit(
+        parent,
+        childPosition.y - parentPosition.y + (node.dimensions?.height || ITERATION_CHILD_HEIGHT),
+        childPosition.x - parentPosition.x + (node.dimensions?.width || 0),
+      )
+    }
+    return
+  }
   const intersections = getIntersectingNodes({ id: node.id })
   const target = getNodes.value.find(
     (item) =>
@@ -445,70 +473,13 @@ const handleConnect = (connection) => {
   addEdges([
     {
       ...connection,
-      type: 'smoothstep',
-      markerEnd: MarkerType.ArrowClosed,
+      type: 'default',
+      style: { stroke: '#1C1C1C', strokeWidth: 1.5 },
+      animated: true,
+      markerEnd: { type: MarkerType.Arrow, color: '#6F3381', width: 15, height: 15 },
       ...(isInnerEdge ? { zIndex: INNER_EDGE_Z_INDEX } : {}),
     },
   ])
-}
-
-/** 迭代节点内的「添加节点」面板可选类型 */
-const nodeCatalog = [
-  { type: 'llm', label: '大模型', color: '#12b76a', icon: Box },
-  { type: 'iteration', label: '迭代', color: '#06aed4', icon: Refresh },
-]
-
-let nodeSequence = 2
-
-/** 生成要新增的子节点，不同类型带各自的默认数据与尺寸 */
-const createChildNode = (type, index, parentId) => {
-  const base = {
-    id: `${type}-${index}`,
-    type,
-    parentNode: parentId,
-    extent: ITERATION_CHILD_EXTENT,
-    zIndex: ITERATION_CHILD_Z_INDEX,
-    position: { x: ITERATION_CHILD_ORIGIN.x, y: 0 },
-  }
-  if (type === 'iteration') {
-    return {
-      ...base,
-      // 迭代节点自身也带子流程字段，方便嵌套时继续往外层迭代节点挂
-      width: 480,
-      height: 280,
-      data: { label: `迭代 ${index}`, children: [], childEdges: [] },
-    }
-  }
-  return {
-    ...base,
-    data: {
-      label: `LLM ${index}`,
-      inputs: [{ name: 'prompt', type: 'string', description: '节点提示词。' }],
-      outputs: [{ name: 'text', type: 'string', description: '大模型返回的文本结果。' }],
-    },
-  }
-}
-
-// 迭代节点内的“添加节点”：按所选类型在已有子节点下方追加节点，并把容器撑高
-const handleAddNode = ({ parentId, type }) => {
-  const parent = getNodes.value.find((item) => item.id === parentId)
-  if (!parent) return
-  const siblings = getNodes.value.filter((item) => item.parentNode === parentId)
-  const nextY = siblings.reduce(
-    (max, item) =>
-      Math.max(max, item.position.y + (item.dimensions?.height || ITERATION_CHILD_HEIGHT) + 12),
-    ITERATION_CHILD_ORIGIN.y,
-  )
-  const child = createChildNode(type, nodeSequence++, parentId)
-  child.position = { ...child.position, y: nextY }
-  // 嵌套迭代节点时，一并带上它自己的起止节点
-  const added = type === 'iteration' ? [child, ...createIterationBoundaryNodes(child.id)] : [child]
-  addNodes(added)
-  growIterationToFit(
-    parent,
-    nextY + (child.height || ITERATION_CHILD_HEIGHT),
-    ITERATION_CHILD_ORIGIN.x + (child.width || 0),
-  )
 }
 
 </script>
@@ -520,9 +491,9 @@ const handleAddNode = ({ parentId, type }) => {
   :node-types="nodeTypes"
   @connect="handleConnect"
 >
-  <!-- 迭代节点用插槽渲染：便于接住组件内部抛出的「添加节点」事件 -->
-  <template #node-iteration="iterationProps">
-    <IterationNode v-bind="iterationProps" :catalog="nodeCatalog" @add-node="handleAddNode" />
+  <!-- 自定义连线预览：拖拽连线时跟随指针的紫色虚线 + 终点圆点 -->
+  <template #connection-line="connectionLineProps">
+    <ConnectionLine v-bind="connectionLineProps" />
   </template>
 </VueFlow>
 
