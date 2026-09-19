@@ -1,0 +1,54 @@
+/*
+ * 迭代节点「添加节点」面板样式。
+ * el-popover 的内容默认 teleport 到 body，scoped 样式无法命中，按样式规范放在模块 styles 目录，
+ * 由模块入口 WorkflowView.vue 引入。
+ */
+.workflow-node-picker {
+  border-radius: 10px;
+}
+
+.workflow-node-picker .node-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workflow-node-picker .node-picker-title {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary, #9aa1ad);
+}
+
+.workflow-node-picker .node-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workflow-node-picker .node-picker-item:hover {
+  background: var(--el-fill-color-light, #f2f3f5);
+}
+
+.workflow-node-picker .node-picker-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.workflow-node-picker .node-picker-label {
+  font-size: 13px;
+  color: var(--el-text-color-primary, #1d2129);
+}
