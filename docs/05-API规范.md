@@ -65,8 +65,10 @@
 | 兜底 | `SecurityConfig` | `anyRequest().authenticated()`；静态资源与 `DispatcherType.ASYNC` 放行 |
 
 > 新增免登录接口优先使用 `@PermitAll`；批量前缀放行才写入 `permit-all-urls` 并同步本文档。
+>
+> **待整改**：`permit-all-urls` 中仍保留 `/test2/kb-parse`、`/test2/kb-parse-raw`、`/test2/kb-parse-official`、`/test2/kb-parse-structure` 四条，但 `Test2Controller` 当前只有 `/test2/ping` 与 `/test2/read-pptx`，这四个端点已无对应实现，应从白名单清理。
 
-### 2.5 接口清单（共 9 个 Controller / 21 个接口）
+### 2.5 接口清单（共 9 个 Controller / 23 个接口）
 
 > 下表路径均省略上下文前缀 `/api`。
 
@@ -89,10 +91,12 @@
 | 15 | `KbSpaceController` | DELETE | `/knowledge-base/space/delete` | 删除空间（`id`） | `CommonResult<Boolean>` |
 | 16 | `KbDocumentController` | GET | `/knowledge-base/document/list` | 文档列表（`spaceId`） | `CommonResult<List<DocumentRespVO>>` |
 | 17 | `KbDocumentController` | POST | `/knowledge-base/document/create` | 新建文档记录 | `CommonResult<Long>` |
-| 18 | `KbDocumentController` | POST | `/knowledge-base/document/upload` | 上传并解析预览分片（multipart） | `CommonResult<Map<String,Object>>` |
-| 19 | `KbDocumentController` | POST | `/knowledge-base/document/vectorize` | 向量化落库（`file` + `chunksJson` + `spaceId`） | `CommonResult<Map<String,Object>>` |
-| 20 | `KbDocumentController` | DELETE | `/knowledge-base/document/delete` | 删除文档（`id`） | `CommonResult<Boolean>` |
-| 21 | `KbDocumentChunkController` | GET | `/knowledge-base/chunk/list` | 文档分片列表（`documentId`） | `CommonResult<List<ChunkRespVO>>` |
+| 18 | `KbDocumentController` | POST | `/knowledge-base/document/upload` | 上传并提交解析任务（multipart：`files` + `spaceId`） | `CommonResult<List<Map<String,Object>>>` |
+| 19 | `KbDocumentController` | GET | `/knowledge-base/document/parse-status` | 轮询解析状态；完成后落块 + AI 分片并返回分片预览（`documentId`） | `CommonResult<Map<String,Object>>` |
+| 20 | `KbDocumentController` | POST | `/knowledge-base/document/vectorize` | 确认分片后向量化（multipart：`documentId` + `spaceId` + `chunks`） | `CommonResult<Map<String,Object>>` |
+| 21 | `KbDocumentController` | DELETE | `/knowledge-base/document/delete` | 删除文档（`id`） | `CommonResult<Boolean>` |
+| 22 | `KbDocumentController` | POST | `/knowledge-base/document/abandon` | 放弃未向量化的文档（`documentId`） | `CommonResult<Boolean>` |
+| 23 | `KbDocumentChunkController` | GET | `/knowledge-base/chunk/list` | 文档分片列表（`documentId`） | `CommonResult<List<ChunkRespVO>>` |
 
 ### 2.6 待整改（后端）
 
