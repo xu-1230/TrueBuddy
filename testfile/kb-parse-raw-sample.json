@@ -1,0 +1,27 @@
+{
+    "firstLinesChars":  0,
+    "blocks":  [
+                   {
+                       "style":  {
+                                     "fontName":  "PRMMSH+SimHei",
+                                     "charScale":  1.0,
+                                     "color":  "000000",
+                                     "underline":  false,
+                                     "deleteLine":  false,
+                                     "fontSize":  15,
+                                     "bold":  false,
+                                     "italic":  false
+                                 },
+                       "text":  "《软件工程学》教学大纲"
+                   }
+               ],
+    "markdownContent":  "# 《软件工程学》教学大纲  \n\n",
+    "index":  0,
+    "subType":  "none",
+    "lineHeight":  0,
+    "text":  "《软件工程学》教学大纲\n",
+    "alignment":  "center",
+    "type":  "title",
+    "pageNum":  0,
+    "uniqueId":  "862c08e5b7b596a6d3edb1f54df9cd81"
+}

@@ -1,9 +1,12 @@
 package org.example.backend.module.test2.controller;
 
+import jakarta.annotation.Resource;
 import org.apache.poi.xslf.usermodel.*;
 import org.example.backend.framework.common.pojo.CommonResult;
+import org.example.backend.module.test2.service.DocMindRawTestService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.File;
@@ -11,6 +14,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 测试模块2：接口功能连通性验证
@@ -20,6 +24,10 @@ import java.util.List;
 public class Test2Controller {
 
     private static final String PPTX_PATH = "d:/c桌面/毕业设计/testfile/企业级应用开发综合实践 课程PPT.pptx";
+
+
+    @Resource
+    private DocMindRawTestService docMindRawTestService;
 
     @GetMapping("/ping")
     public CommonResult<String> ping() {
@@ -77,6 +85,7 @@ public class Test2Controller {
 
         return CommonResult.success(pages);
     }
+
 
 
     

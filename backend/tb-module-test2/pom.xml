@@ -43,5 +43,11 @@
             <artifactId>tb-spring-boot-starter-web</artifactId>
             <version>${revision}</version>
         </dependency>
+        <!-- 知识库模块：复用解析网关（阿里云文档智能）与 Markdown 分片能力做连通性验证 -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-knowledgebase</artifactId>
+            <version>${revision}</version>
+        </dependency>
     </dependencies>
 </project>
