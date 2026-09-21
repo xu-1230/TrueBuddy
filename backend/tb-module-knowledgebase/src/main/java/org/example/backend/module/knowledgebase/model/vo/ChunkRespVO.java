@@ -14,8 +14,6 @@ public class ChunkRespVO {
     private Long documentId;
     /** 分片序号（从 0 开始），对应前端 ChunkVO.index */
     private Integer index;
-    /** 分片标题 */
-    private String title;
     /** 分片正文 */
     private String content;
 

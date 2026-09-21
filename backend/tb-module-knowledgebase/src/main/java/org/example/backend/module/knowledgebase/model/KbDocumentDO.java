@@ -22,8 +22,22 @@ public class KbDocumentDO {
     private String type;
     /** 分片数量 */
     private Integer chunkCount;
-    /** 处理状态：0=待处理，1=解析中，2=已完成，3=失败 */
+    /** 文档 token 总量 */
+    private Integer tokenCount;
+    /** 处理状态：0=待处理，1=解析中，2=已完成（已向量化），3=失败，4=分片待确认，5=解析完成待分片，6=AI分片中，7=向量化中 */
     private Integer status;
+    /** 解析任务句柄：云端为文档智能业务订单号，本地为内存任务 id */
+    private String docmindJobId;
+    /** 解析进度 0-100 */
+    private Integer parseProgress;
+    /** 解析失败原因 */
+    private String parseError;
+    /** 解析开始时间 */
+    private LocalDateTime parseStartAt;
+    /** 解析结束时间 */
+    private LocalDateTime parseEndAt;
+    /** 向量化完成时间 */
+    private LocalDateTime vectorizeAt;
     /** 创建时间 */
     private LocalDateTime createTime;
     /** 更新时间 */
@@ -32,7 +46,7 @@ public class KbDocumentDO {
     private Long creator;
     /** 更新人 id */
     private Long updater;
-    /** 是否删除：false=否，true=是 */
-    private Boolean deleted;
+    /** 删除时间，null 表示未删除 */
+    private LocalDateTime deletedAt;
 
 }

@@ -25,7 +25,6 @@ public class KbDocumentChunkServiceImpl implements KbDocumentChunkService {
         vo.setId(chunk.getId());
         vo.setDocumentId(chunk.getDocumentId());
         vo.setIndex(chunk.getChunkIndex());
-        vo.setTitle(chunk.getTitle());
         vo.setContent(chunk.getContent());
         return vo;
     }

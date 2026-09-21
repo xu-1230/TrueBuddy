@@ -21,6 +21,8 @@
         <spring-ai.version>2.0.0-M3</spring-ai.version>
         <hutool.version>5.8.47</hutool.version>
         <guava.version>33.6.0-jre</guava.version>
+        <!-- 阿里云文档智能（文档解析大模型版）SDK -->
+        <docmind.version>2.0.15</docmind.version>
     </properties>
 
     <dependencyManagement>
@@ -115,6 +117,12 @@
                 <scope>import</scope>
             </dependency>
 
+            <!-- 阿里云文档智能：文档解析（大模型版）异步三接口调用 SDK -->
+            <dependency>
+                <groupId>com.aliyun</groupId>
+                <artifactId>docmind_api20220711</artifactId>
+                <version>${docmind.version}</version>
+            </dependency>
 
         </dependencies>
     </dependencyManagement>

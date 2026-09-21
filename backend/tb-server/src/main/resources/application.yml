@@ -1,4 +1,12 @@
 spring:
+  # 自动加载项目根目录的 .env（存在才加载），无需手动导出环境变量
+  # 说明：.env 以 properties 语法解析，值中请避免反斜杠等转义字符
+  # 查找顺序：工作目录（backend/ 或 backend/tb-server/）向上逐级查找项目根目录
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
+      - optional:file:../../.env[.properties]
   application:
     name: tb-server
   servlet:
@@ -89,7 +97,26 @@ tb:
     permit-all-urls:
       - /system/auth/login
       - /test2/read-pptx
+      - /test2/kb-parse
+      - /test2/kb-parse-raw
+      - /test2/kb-parse-official
+      - /test2/kb-parse-structure
       - /doc-template/**
+  # 知识库文档解析：阿里云文档智能（文档解析大模型版）
+  # AK/SK 为必填项，一律通过环境变量注入（项目根目录 .env，模板见 .env.example），缺失时启动即失败
+  docmind:
+    endpoint: ${DOCMIND_ENDPOINT:docmind-api.cn-hangzhou.aliyuncs.com}
+    access-key-id: ${DOCMIND_ACCESS_KEY_ID:}
+    access-key-secret: ${DOCMIND_ACCESS_KEY_SECRET:}
+    # 大模型增强（PPT/图表场景效果更好，耗时与费用上升）
+    llm-enhancement: ${DOCMIND_LLM_ENHANCEMENT:false}
+    # 增强模式，仅 llm-enhancement=true 时生效，可填 VLM
+    enhancement-mode: ${DOCMIND_ENHANCEMENT_MODE:}
+    formula-enhancement: ${DOCMIND_FORMULA_ENHANCEMENT:false}
+    # 结果分页拉取步长（接口上限 3000）
+    layout-step-size: 3000
+    connect-timeout-millis: 20000
+    read-timeout-millis: 300000
 
 # MinIO 对象存储（知识库文件）
 minio:
