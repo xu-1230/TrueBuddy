@@ -206,6 +206,7 @@ tb:
 | `OPENAI_API_KEY` | 是 | 对话模型（`spring.ai.openai.api-key`） |
 | `OPENAI_EMBEDDING_API_KEY` | 是 | 向量化模型（`spring.ai.openai.embedding.api-key`） |
 | `MINIO_SECRET_KEY` | 是 | MinIO 密钥（`minio.secret-key`） |
+| `DOCMIND_ACCESS_KEY_ID` / `DOCMIND_ACCESS_KEY_SECRET` | 是 | 阿里云文档智能 AK/SK（知识库文档解析，缺失时启动失败） |
 | `OPENAI_BASE_URL` / `OPENAI_CHAT_MODEL` | 否 | 有默认值 |
 | `OPENAI_EMBEDDING_BASE_URL` / `OPENAI_EMBEDDING_MODEL` | 否 | 有默认值 |
 | `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_BUCKET` | 否 | 有默认值 |
