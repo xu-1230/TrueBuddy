@@ -59,6 +59,9 @@
               </span>
             </div>
             <div class="doc-detail__meta">
+              <el-tag size="small" :type="statusMeta(activeDocument).tagType">
+                {{ statusMeta(activeDocument).label }}
+              </el-tag>
               <span class="doc-detail__divider">|</span>
               <span>分片数：{{ chunks.length }}</span>
               <el-icon
@@ -71,9 +74,18 @@
             </div>
           </header>
 
+          <el-alert
+            v-if="isPendingConfirm(activeDocument)"
+            class="doc-detail__hint"
+            title="该文档已解析出分片，但尚未确认向量化，暂不可被知识库检索"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+
           <div v-loading="chunkLoading" class="chunk-list">
             <div v-for="chunk in chunks" :key="chunk.id" class="chunk-card">
-              <div class="chunk-card__content" v-html="chunk.content"></div>
+              <MarkdownViewer :value="chunk.content" class="chunk-card__content" />
             </div>
             <el-empty
               v-if="!chunkLoading && !chunks.length"
@@ -100,7 +112,9 @@ import {
   Plus,
   Tickets,
 } from '@element-plus/icons-vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import MarkdownViewer from '@/components/MarkdownViewer.vue'
+import { DOC_STATUS, docStatusMeta } from '../constants'
 
 /** 文档类型 → 图标（与 DocTemplateView 保持一致） */
 const DOC_ICON_MAP = {
@@ -132,6 +146,16 @@ const emit = defineEmits(['back', 'select-document', 'delete-document', 'add-doc
 
 function isActive(doc) {
   return props.activeDocument && props.activeDocument.id === doc.id
+}
+
+/** 文档状态展示元数据（文案 / 标签色 / 悬浮提示） */
+function statusMeta(doc) {
+  return docStatusMeta(doc?.status)
+}
+
+/** 是否处于「已解析未向量化」的待确认状态 */
+function isPendingConfirm(doc) {
+  return doc?.status === DOC_STATUS.PENDING_CONFIRM
 }
 
 function onDelete(doc) {
@@ -388,6 +412,11 @@ function onDelete(doc) {
   background: #fee2e2;
 }
 
+/* 待确认状态提示：仅在「已解析未向量化」时出现 */
+.doc-detail__hint {
+  margin: 12px 16px 0;
+}
+
 .chunk-list {
   flex: 1;
   display: flex;
@@ -413,11 +442,11 @@ function onDelete(doc) {
 
 
 
+/* 分片正文：Markdown 渲染容器（字号 / 颜色由 MarkdownViewer 内的 .markdown-body 继承） */
 .chunk-card__content {
   font-size: 0.85rem;
   line-height: 1.7;
   color: #4b5563;
-  white-space: pre-wrap;
   word-break: break-word;
 }
 </style>

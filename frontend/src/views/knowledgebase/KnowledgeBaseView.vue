@@ -155,8 +155,19 @@ function handleOpenUpload() {
 }
 
 // 从「添加文档」流程页返回文档列表
-function handleBackToDocuments() {
+// 用户可能未确认分片就返回（该文档已被后端逻辑删除），需刷新列表剔除该记录
+async function handleBackToDocuments() {
   currentLevel.value = 'document'
+  if (!currentSpace.value) return
+  await loadDocuments(currentSpace.value.id)
+  const active = currentDocument.value
+  if (active && !documents.value.some((d) => d.id === active.id)) {
+    currentDocument.value = null
+    chunks.value = []
+    if (documents.value.length) {
+      handleSelectDocument(documents.value[0])
+    }
+  }
 }
 
 async function handleDocumentUploaded(result) {

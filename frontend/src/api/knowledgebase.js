@@ -12,6 +12,10 @@ import service from './index'
  *     POST    /document/create                  → CommonResult<Long>
  *     DELETE  /document/delete?id={id}          → CommonResult<Boolean>
  *     GET     /chunk/list?documentId={id}       → CommonResult<ChunkVO[]>
+ *     POST    /document/upload                  → CommonResult<Object[]>（文件列表批量提交解析任务）
+ *     GET     /document/parse-status            → CommonResult<Object>（轮询解析状态/分片预览）
+ *     POST    /document/vectorize               → CommonResult<Object>（分片向量化）
+ *     POST    /document/abandon                 → CommonResult<Boolean>（放弃未确认分片的文档）
  *
  * service 响应拦截器已自动解包 CommonResult.data。
  */
@@ -32,6 +36,9 @@ import service from './index'
  * @property {number} spaceId         所属空间 ID
  * @property {string} name            文档名称
  * @property {'PDF'|'WORD'|'MARKDOWN'} type 文档类型
+ * @property {number} status          处理状态：0=待处理，1=解析中，2=已完成（已向量化），3=失败，4=待确认（已解析未向量化）
+ * @property {number} parseProgress   解析进度 0-100
+ * @property {string} [parseError]    解析失败原因
  * @property {string} createTime      创建时间（ISO 字符串）
  */
 
@@ -40,7 +47,6 @@ import service from './index'
  * @property {number} id              分片 ID
  * @property {number} documentId      所属文档 ID
  * @property {number} index           分片序号（从 0 开始）
- * @property {string} title           分片标题
  * @property {string} content         分片正文
  */
 
@@ -117,29 +123,52 @@ export function getChunkList(documentId) {
 }
 
 /**
- * 第一步：上传文档并解析分片预览（不落库）
- * POST /knowledge-base/document/upload → { fileName, fileSize, type, totalChunks, chunks:[{index,type,content}] }
- * @param {File} file
+ * 第一步：文件列表上传并提交解析任务（MinIO 存储 + 落库 + 提交解析引擎）
+ * POST /knowledge-base/document/upload → [{ documentId, fileName, fileSize, type, engine, status }]
+ * 返回数组，按上传顺序一一对应对每个文件的提交结果。
+ * @param {File | File[]} files 单个文件或文件列表
+ * @param {number} spaceId
  */
-export function uploadDocument(file) {
+export function uploadDocument(files, spaceId) {
+  const list = Array.isArray(files) ? files : [files]
   const formData = new FormData()
-  formData.append('file', file)
+  list.forEach((file) => formData.append('files', file))
+  formData.append('spaceId', spaceId)
   // 不手动设置 Content-Type，交给浏览器生成 multipart/form-data（含 boundary）
   return service({ url: '/knowledge-base/document/upload', method: 'post', data: formData })
 }
 
 /**
- * 第三步：确认分片后向量化（MinIO 存储 + 文档/分片落库 + 写入向量库）
- * POST /knowledge-base/document/vectorize → { documentId, savedChunks, status }
- * @param {File} file
- * @param {Array<{index:number,type:string,content:string}>} chunks
- * @param {number} spaceId
+ * 第二步：轮询解析状态；解析完成后返回分片预览
+ * GET /knowledge-base/document/parse-status?documentId={documentId}
+ *   → { documentId, status, progress, totalChunks, chunks:[{index,content}], error? }
+ * @param {number} documentId
  */
-export function vectorizeDocument(file, chunks, spaceId) {
+export function getParseStatus(documentId) {
+  return service({ url: '/knowledge-base/document/parse-status', method: 'get', params: { documentId } })
+}
+
+/**
+ * 第三步：确认分片后向量化（覆盖落库分片 + 写入向量库）
+ * POST /knowledge-base/document/vectorize → { documentId, savedChunks, status }
+ * @param {number} documentId
+ * @param {number} spaceId
+ * @param {Array<{index:number,content:string}>} chunks
+ */
+export function vectorizeDocument(documentId, spaceId, chunks) {
   const formData = new FormData()
-  formData.append('file', file)
-  formData.append('chunks', JSON.stringify(chunks))
+  formData.append('documentId', documentId)
   formData.append('spaceId', spaceId)
+  formData.append('chunks', JSON.stringify(chunks))
   // 不手动设置 Content-Type，交给浏览器生成 multipart/form-data（含 boundary）
   return service({ url: '/knowledge-base/document/vectorize', method: 'post', data: formData })
+}
+
+/**
+ * 放弃未完成向量化的文档（逻辑删除，不再出现在列表）
+ * POST /knowledge-base/document/abandon?documentId={documentId} → Boolean
+ * @param {number} documentId
+ */
+export function abandonDocument(documentId) {
+  return service({ url: '/knowledge-base/document/abandon', method: 'post', params: { documentId } })
 }
