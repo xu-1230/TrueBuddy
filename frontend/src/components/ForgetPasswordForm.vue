@@ -70,9 +70,9 @@ function sendCode() {
 .submit-btn {
   width: 100%;
   margin-top: 0.5rem;
-  border-radius: 10px;
-  background: #ff4500;
-  border-color: #ff4500;
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-primary);
+  border-color: var(--tb-primary);
 }
 
 .form-row {
@@ -82,7 +82,7 @@ function sendCode() {
 
 .form-link {
   font-size: 0.875rem;
-  color: #ff4500;
+  color: var(--tb-primary-text);
   cursor: pointer;
 }
 </style>

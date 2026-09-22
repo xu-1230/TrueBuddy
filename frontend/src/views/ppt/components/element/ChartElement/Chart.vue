@@ -272,7 +272,7 @@ const maxValue = computed(() => {
 const groupWidth = computed(() => plotWidth.value / Math.max(props.data.labels.length, 1))
 const seriesCount = computed(() => Math.max(props.data.series.length, 1))
 
-const barWidth = (si) => {
+const barWidth = () => {
   const totalBar = groupWidth.value * 0.62
   return totalBar / seriesCount.value
 }

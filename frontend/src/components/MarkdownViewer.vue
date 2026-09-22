@@ -40,6 +40,19 @@ const plugins = computed(() => props.plugins ?? defaultPlugins)
   因此统一以 .markdown-viewer 作为命名空间限定样式作用范围。
 -->
 <style>
+.markdown-viewer {
+  /* 代码高亮语义色：色相沿用 GitHub 浅色主题，暗色态给出对应变体。
+     这是「内容语义色」而非品牌色，改色相会损失可辨识度，故只做明暗双态（09-样式规范.md §3.2 第 3 条） */
+  --md-hl-comment: light-dark(#6a737d, #8b949e);
+  --md-hl-keyword: light-dark(#d73a49, #ff7b72);
+  --md-hl-string: light-dark(#032f62, #a5d6ff);
+  --md-hl-number: light-dark(#005cc5, #79c0ff);
+  --md-hl-title: light-dark(#6f42c1, #d2a8ff);
+  --md-hl-name: light-dark(#22863a, #7ee787);
+  --md-hl-type: light-dark(#e36209, #ffa657);
+  --md-hl-meta: light-dark(#b31d28, #ff9492);
+}
+
 .markdown-viewer .markdown-body {
   font-family: var(--font-sans);
   font-size: inherit;
@@ -66,13 +79,13 @@ const plugins = computed(() => props.plugins ?? defaultPlugins)
   margin: 1em 0 0.5em;
   font-weight: 600;
   line-height: 1.4;
-  color: #111827;
+  color: var(--tb-text-primary);
 }
 
 .markdown-viewer .markdown-body h1 {
   font-size: 1.25em;
   padding-bottom: 0.3em;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--tb-border);
 }
 
 .markdown-viewer .markdown-body h2 {
@@ -106,13 +119,13 @@ const plugins = computed(() => props.plugins ?? defaultPlugins)
 .markdown-viewer .markdown-body blockquote {
   margin: 0.6em 0;
   padding: 0.2em 0.9em;
-  color: #6b7280;
-  background: #f9fafb;
-  border-left: 3px solid #d1d5db;
+  color: var(--tb-text-secondary);
+  background: var(--tb-bg-raised);
+  border-left: 3px solid var(--tb-border-strong);
 }
 
 .markdown-viewer .markdown-body a {
-  color: #cc3700;
+  color: var(--tb-primary-text);
   text-decoration: none;
 }
 
@@ -123,7 +136,7 @@ const plugins = computed(() => props.plugins ?? defaultPlugins)
 .markdown-viewer .markdown-body hr {
   margin: 1.2em 0;
   border: none;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--tb-border);
 }
 
 .markdown-viewer .markdown-body img {
@@ -134,17 +147,17 @@ const plugins = computed(() => props.plugins ?? defaultPlugins)
   padding: 0.15em 0.35em;
   font-family: var(--font-mono);
   font-size: 0.9em;
-  color: #b31d28;
-  background: #f3f4f6;
-  border-radius: 4px;
+  color: var(--md-hl-meta);
+  background: var(--tb-bg-sunken);
+  border-radius: var(--tb-radius-xs);
 }
 
 .markdown-viewer .markdown-body pre {
   margin: 0.75em 0;
   padding: 0.75em 1em;
-  background: #f6f8fa;
-  border: 1px solid #e8e9ee;
-  border-radius: 8px;
+  background: var(--tb-bg-sunken);
+  border: 1px solid var(--tb-border);
+  border-radius: var(--tb-radius-md);
   overflow-x: auto;
 }
 
@@ -152,7 +165,7 @@ const plugins = computed(() => props.plugins ?? defaultPlugins)
   padding: 0;
   font-size: 0.85em;
   line-height: 1.6;
-  color: #24292f;
+  color: var(--tb-text-primary);
   background: transparent;
 }
 
@@ -167,63 +180,63 @@ const plugins = computed(() => props.plugins ?? defaultPlugins)
 .markdown-viewer .markdown-body th,
 .markdown-viewer .markdown-body td {
   padding: 0.4em 0.7em;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--tb-border);
 }
 
 .markdown-viewer .markdown-body th {
   font-weight: 600;
-  background: #f9fafb;
+  background: var(--tb-bg-raised);
 }
 
 .markdown-viewer .markdown-body input[type='checkbox'] {
   margin-right: 0.35em;
 }
 
-/* 代码高亮（highlight.js 类名，浅色主题） */
+/* 代码高亮（highlight.js 类名，明暗双态，取值见文件顶部 --md-hl-*） */
 .markdown-viewer .hljs-comment,
 .markdown-viewer .hljs-quote {
-  color: #6a737d;
+  color: var(--md-hl-comment);
 }
 
 .markdown-viewer .hljs-keyword,
 .markdown-viewer .hljs-selector-tag,
 .markdown-viewer .hljs-literal {
-  color: #d73a49;
+  color: var(--md-hl-keyword);
 }
 
 .markdown-viewer .hljs-string,
 .markdown-viewer .hljs-doctag,
 .markdown-viewer .hljs-regexp {
-  color: #032f62;
+  color: var(--md-hl-string);
 }
 
 .markdown-viewer .hljs-number,
 .markdown-viewer .hljs-variable,
 .markdown-viewer .hljs-template-variable,
 .markdown-viewer .hljs-attr {
-  color: #005cc5;
+  color: var(--md-hl-number);
 }
 
 .markdown-viewer .hljs-title,
 .markdown-viewer .hljs-section,
 .markdown-viewer .hljs-selector-id {
-  color: #6f42c1;
+  color: var(--md-hl-title);
 }
 
 .markdown-viewer .hljs-name,
 .markdown-viewer .hljs-tag,
 .markdown-viewer .hljs-attribute {
-  color: #22863a;
+  color: var(--md-hl-name);
 }
 
 .markdown-viewer .hljs-type,
 .markdown-viewer .hljs-built_in,
 .markdown-viewer .hljs-builtin-name {
-  color: #e36209;
+  color: var(--md-hl-type);
 }
 
 .markdown-viewer .hljs-meta {
-  color: #b31d28;
+  color: var(--md-hl-meta);
 }
 
 .markdown-viewer .hljs-emphasis {

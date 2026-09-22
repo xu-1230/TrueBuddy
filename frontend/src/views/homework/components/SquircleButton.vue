@@ -74,9 +74,9 @@ let uidSeed = 0
 
 const props = defineProps({
   /** 顶面颜色 */
-  base: { type: String, default: '#ff4500' },
+  base: { type: String, default: '#3d7ab5' },
   /** 侧壁基色（通常比顶面暗一档） */
-  dark: { type: String, default: '#cc3700' },
+  dark: { type: String, default: '#2f5f8f' },
   /** 顶面高度（px），整体元素高度 = 该值 × 1.5 */
   height: { type: Number, default: 42 },
   /** 是否撑满父容器宽度 */
@@ -263,7 +263,7 @@ function mixHex(hex, percent, target) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
+  color: var(--tb-on-primary);
   /* 顶面中心位于整个画布 40% 高度处，故整体上移 */
   margin-bottom: calc(12px * var(--sq-scale, 1));
   padding: 0 calc(18px * var(--sq-scale, 1));
@@ -280,6 +280,6 @@ function mixHex(hex, percent, target) {
 .squircle-btn:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 4px;
-  border-radius: 18px;
+  border-radius: var(--tb-radius-xl);
 }
 </style>

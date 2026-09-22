@@ -1,0 +1,333 @@
+/**
+ * 全局设计 Token 层 —— Harbor · 靛蓝 · 数据密集
+ *
+ * 分层（单一事实来源，组件只写 var(--tb-*)）：
+ *   ① 刻度层  :root            —— 与主题无关的尺寸 / 字号 / 时长 / 缓动
+ *   ② 原始色板 html[data-theme="harbor"] —— 品牌 11 步 + 中性 12 步 + 形态个性（圆角 / 描边 / 阴影 / 字体）
+ *   ③ 语义层  :root            —— 组件唯一入口（bg-* / text-* / border-* / primary-* / 状态色）
+ *   ④ 明暗    color-scheme     —— html[data-appearance="light|dark"] + light-dark() 给出两态取值
+ *   ⑤ 第三方  --el-* 映射      —— Element Plus 跟随本主题（含暗色态）
+ *
+ * 约定与边界：
+ *   - 取值来源：docs/ui.html 的 `[data-theme="harbor"]` 块，与本文件保持一致；改主题先改样张（09-样式规范.md §3.3）。
+ *   - 明暗自适应统一走 light-dark()，组件内不写 light-dark()，也不写 html.dark 判断（09-样式规范.md §3.2）。
+ *   - --el-* 映射引用「语义变量」，因此 Element Plus 与页面同步明暗；
+ *     暗色态由 element-plus/theme-chalk/dark/css-vars.css（选择器 html.dark）铺底，
+ *     html.dark 类由 index.html 首帧脚本与 composables/useAppearance.js 共同维护。
+ *     本文件的映射写在 :root:root（特异性 0,2,0）下，稳定压过 EP 暗色包的 html.dark（0,1,1），不受打包顺序影响。
+ *   - 浏览器要求：light-dark() / color-mix() —— Chrome / Edge 123+、Safari 17.5+、Firefox 120+；
+ *     旧内核由文件末尾的 @supports 兜底块降级为亮色取值。
+ */
+
+/* ==========================================================================
+   ① 刻度层：与主题无关
+   ========================================================================== */
+:root {
+  /* 间距：4 的倍数（09-样式规范.md §4） */
+  --tb-size-1: 4px;
+  --tb-size-2: 8px;
+  --tb-size-3: 12px;
+  --tb-size-4: 16px;
+  --tb-size-5: 24px;
+  --tb-size-6: 32px;
+  --tb-size-7: 48px;
+  --tb-size-8: 64px;
+  --tb-size-9: 96px;
+  --tb-size-10: 128px;
+
+  /* 字号阶梯 */
+  --tb-text-2xs: 11px;
+  --tb-text-xs: 12px;
+  --tb-text-sm: 13px;
+  --tb-text-md: 14px;
+  --tb-text-lg: 16px;
+  --tb-text-xl: 20px;
+  --tb-text-2xl: 26px;
+  --tb-text-3xl: clamp(1.7rem, 3vw, 2.4rem);
+  --tb-text-display: clamp(2.5rem, 5.8vw, 5rem);
+
+  --tb-leading-tight: 1.06;
+  --tb-leading-snug: 1.32;
+  --tb-leading-normal: 1.62;
+  --tb-leading-loose: 1.85;
+
+  --tb-tracking-tight: -0.02em;
+  --tb-tracking-normal: 0;
+  --tb-tracking-wide: 0.08em;
+  --tb-tracking-widest: 0.2em;
+
+  /* 控件高度三档 */
+  --tb-control-sm: 30px;
+  --tb-control-md: 38px;
+  --tb-control-lg: 46px;
+
+  /* 动效：只对 transform / opacity 使用（09-样式规范.md §6.3） */
+  --tb-dur-1: 120ms;
+  --tb-dur-2: 180ms;
+  --tb-dur-3: 280ms;
+  --tb-dur-4: 460ms;
+  --tb-dur-5: 720ms;
+  --tb-dur-6: 1200ms;
+  --tb-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --tb-ease-inout: cubic-bezier(0.65, 0.05, 0.36, 1);
+  --tb-ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --tb-ease-linear: linear;
+}
+
+/* ==========================================================================
+   ② 原始色板 + 形态个性
+   当前项目唯一主题即 Harbor，故同时挂在 :root（保证默认可用）；
+   html[data-theme="harbor"] 为显式声明。新增主题时在文件末尾追加
+   `html[data-theme="x"] { --tb-brand-*: …; --tb-radius-*: …; }` 覆盖同名变量即可。
+   ========================================================================== */
+html[data-theme="harbor"],
+:root {
+  --tb-theme-name: "harbor";
+  --tb-brand-on: #ffffff;
+  --tb-font-display: var(--font-sans); /* 标题走无衬线，区别于 Ember / Graphite 的衬线 */
+  --tb-weight-display: 700;
+  --tb-tracking-display: -0.015em;
+
+  /* 品牌色阶：600 为基准（主按钮 / 链接 / 选中态） */
+  --tb-brand-50: #f2f8fd;
+  --tb-brand-100: #e6f1fb;
+  --tb-brand-200: #c9e2f4;
+  --tb-brand-300: #a6cdea;
+  --tb-brand-400: #7fb4e0;
+  --tb-brand-500: #5b9bd5;
+  --tb-brand-600: #3d7ab5;
+  --tb-brand-700: #2f5f8f;
+  --tb-brand-800: #234669;
+  --tb-brand-900: #172e45;
+  --tb-brand-950: #0a1926;
+
+  /* 中性色阶：冷蓝灰（与 ppt / workflow 既有色调同源） */
+  --tb-neutral-0: #ffffff;
+  --tb-neutral-50: #f7f8fa;
+  --tb-neutral-100: #f2f3f5;
+  --tb-neutral-200: #e5e6eb;
+  --tb-neutral-300: #c9cdd4;
+  --tb-neutral-400: #a9aeb8;
+  --tb-neutral-500: #86909c;
+  --tb-neutral-600: #6b7785;
+  --tb-neutral-700: #4e5969;
+  --tb-neutral-800: #272e3b;
+  --tb-neutral-900: #1d2129;
+  --tb-neutral-950: #0e1116;
+
+  /* 状态色：仅用于状态与数据语义，不得用于装饰（09-样式规范.md §3.4） */
+  --tb-success: #17a34a;
+  --tb-warning: #e08700;
+  --tb-danger: #dc2626;
+  --tb-info: #3b82f6;
+  --tb-accent: #f59e0b;
+
+  /* 形态个性：小圆角 + 实描边 + 紧凑阴影 = 方正的数据密集感 */
+  --tb-radius-xs: 2px;
+  --tb-radius-sm: 4px;
+  --tb-radius-md: 6px;
+  --tb-radius-lg: 10px;
+  --tb-radius-xl: 14px;
+  --tb-radius-full: 6px;
+  --tb-border-width: 1px;
+
+  /* 阴影：亮色靠浅灰投影分层，暗色靠更深的黑色投影分层（否则暗色下层级消失） */
+  --tb-shadow-1: light-dark(0 1px 2px rgba(20, 30, 45, 0.08), 0 1px 2px rgba(0, 0, 0, 0.5));
+  --tb-shadow-2: light-dark(0 2px 8px rgba(20, 30, 45, 0.1), 0 2px 8px rgba(0, 0, 0, 0.5));
+  --tb-shadow-3: light-dark(0 8px 22px rgba(20, 30, 45, 0.12), 0 8px 22px rgba(0, 0, 0, 0.55));
+  --tb-shadow-4: light-dark(0 18px 48px rgba(20, 30, 45, 0.16), 0 18px 48px rgba(0, 0, 0, 0.6));
+  --tb-shadow-brand: 0 8px 22px color-mix(in oklab, var(--tb-brand-600) 26%, transparent);
+
+  --tb-motion-ease: var(--tb-ease-inout);
+  --tb-motion-dur: var(--tb-dur-2);
+  --tb-grain: 0.16;
+
+  /* 内嵌纸张颗粒（无外部资源）；如需使用：background-image: var(--tb-noise) */
+  --tb-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E");
+}
+
+/* ==========================================================================
+   ③ 语义层：组件唯一入口；同一变量在明暗两态各给一套取值
+   ========================================================================== */
+:root {
+  --tb-on-primary: light-dark(var(--tb-brand-on), var(--tb-brand-on-dark, var(--tb-brand-on)));
+
+  --tb-bg-page: light-dark(var(--tb-neutral-0), var(--tb-neutral-950));
+  --tb-bg-surface: light-dark(#ffffff, var(--tb-neutral-900));
+  --tb-bg-raised: light-dark(var(--tb-neutral-50), var(--tb-neutral-800));
+  --tb-bg-sunken: light-dark(var(--tb-neutral-100), color-mix(in oklab, var(--tb-neutral-950) 88%, #000000));
+
+  --tb-border: light-dark(var(--tb-neutral-200), color-mix(in oklab, var(--tb-neutral-50) 13%, transparent));
+  --tb-border-strong: light-dark(var(--tb-neutral-300), color-mix(in oklab, var(--tb-neutral-50) 26%, transparent));
+
+  --tb-text-primary: light-dark(var(--tb-neutral-900), var(--tb-neutral-50));
+  --tb-text-secondary: light-dark(var(--tb-neutral-500), var(--tb-neutral-400));
+  --tb-text-tertiary: light-dark(var(--tb-neutral-400), var(--tb-neutral-600));
+  --tb-text-inverse: light-dark(var(--tb-neutral-0), var(--tb-neutral-950));
+
+  --tb-primary: light-dark(var(--tb-brand-600), var(--tb-brand-dark, var(--tb-brand-600)));
+  --tb-primary-hover: light-dark(var(--tb-brand-500), var(--tb-brand-dark-hover, var(--tb-brand-500)));
+  --tb-primary-active: light-dark(var(--tb-brand-700), var(--tb-brand-dark-active, var(--tb-brand-700)));
+  --tb-primary-text: light-dark(var(--tb-brand-700), var(--tb-brand-300));
+  --tb-primary-soft: light-dark(
+    var(--tb-brand-100),
+    color-mix(in oklab, var(--tb-brand-dark, var(--tb-brand-600)) 24%, var(--tb-neutral-950))
+  );
+  --tb-primary-border: light-dark(
+    var(--tb-brand-300),
+    color-mix(in oklab, var(--tb-brand-500) 42%, var(--tb-neutral-950))
+  );
+
+  --tb-success-soft: color-mix(in oklab, var(--tb-success) 15%, var(--tb-bg-surface));
+  --tb-warning-soft: color-mix(in oklab, var(--tb-warning) 16%, var(--tb-bg-surface));
+  --tb-danger-soft: color-mix(in oklab, var(--tb-danger) 14%, var(--tb-bg-surface));
+  --tb-info-soft: color-mix(in oklab, var(--tb-info) 14%, var(--tb-bg-surface));
+  --tb-accent-soft: color-mix(in oklab, var(--tb-accent) 18%, var(--tb-bg-surface));
+
+  --tb-ring: color-mix(in oklab, var(--tb-primary) 28%, transparent);
+  --tb-overlay: light-dark(
+    color-mix(in oklab, var(--tb-neutral-900) 46%, transparent),
+    color-mix(in oklab, #000000 62%, transparent)
+  );
+}
+
+/* ==========================================================================
+   ④ 明暗机制：只切换 color-scheme，light-dark() 自动给出另一套取值
+   data-appearance（本文件）与 dark 类（Element Plus 暗色包）由
+   index.html 首帧脚本与 composables/useAppearance.js 共同维护，两者始终同步
+   ========================================================================== */
+:root {
+  color-scheme: light;
+}
+
+html[data-appearance="dark"] {
+  color-scheme: dark;
+}
+
+/* 页面基线：让未显式声明颜色的容器也随主题
+   （否则暗色下会继承浏览器默认黑字，在深底上不可读） */
+html,
+body {
+  background: var(--tb-bg-page);
+  color: var(--tb-text-primary);
+}
+
+/* ==========================================================================
+   ⑤ Element Plus 映射：全部引用语义变量，EP 与页面同步明暗
+   :root:root 提升特异性，稳定压过 EP 暗色包的 html.dark（0,1,1）
+   ========================================================================== */
+:root:root {
+  /* 主色与其色阶：两态都取 Harbor，且暗色下 hover 变亮、plain 底为深靛蓝（避免白块） */
+  --el-color-primary: var(--tb-primary);
+  --el-color-primary-light-3: light-dark(var(--tb-brand-500), var(--tb-brand-400));
+  --el-color-primary-light-5: light-dark(var(--tb-brand-400), var(--tb-brand-300));
+  --el-color-primary-light-7: light-dark(
+    var(--tb-brand-300),
+    color-mix(in oklab, var(--tb-primary) 42%, var(--tb-neutral-950))
+  );
+  --el-color-primary-light-8: light-dark(
+    var(--tb-brand-200),
+    color-mix(in oklab, var(--tb-primary) 32%, var(--tb-neutral-950))
+  );
+  --el-color-primary-light-9: light-dark(
+    var(--tb-brand-100),
+    color-mix(in oklab, var(--tb-primary) 22%, var(--tb-neutral-950))
+  );
+  --el-color-primary-dark-2: light-dark(var(--tb-brand-700), var(--tb-brand-800));
+
+  /* 状态色：基色对齐 Harbor，软底（light-9）随明暗派生 */
+  --el-color-success: var(--tb-success);
+  --el-color-warning: var(--tb-warning);
+  --el-color-danger: var(--tb-danger);
+  --el-color-error: var(--tb-danger);
+  --el-color-info: var(--tb-text-secondary);
+  --el-color-success-light-9: var(--tb-success-soft);
+  --el-color-warning-light-9: var(--tb-warning-soft);
+  --el-color-danger-light-9: var(--tb-danger-soft);
+  --el-color-error-light-9: var(--tb-danger-soft);
+  --el-color-info-light-9: var(--tb-bg-raised);
+
+  /* 文本 */
+  --el-text-color-primary: var(--tb-text-primary);
+  --el-text-color-regular: var(--tb-text-secondary);
+  --el-text-color-secondary: var(--tb-text-secondary);
+  --el-text-color-placeholder: var(--tb-text-tertiary);
+  --el-text-color-disabled: var(--tb-text-tertiary);
+
+  /* 描边 */
+  --el-border-color: var(--tb-border);
+  --el-border-color-light: var(--tb-border);
+  --el-border-color-lighter: var(--tb-border);
+  --el-border-color-extra-light: var(--tb-border);
+  --el-border-color-dark: var(--tb-border-strong);
+  --el-border-color-darker: var(--tb-border-strong);
+
+  /* 底色与填充 */
+  --el-bg-color: var(--tb-bg-surface);
+  --el-bg-color-page: var(--tb-bg-page);
+  --el-bg-color-overlay: var(--tb-bg-surface);
+  --el-fill-color-blank: var(--tb-bg-surface);
+  --el-fill-color-light: var(--tb-bg-raised);
+  --el-fill-color-lighter: var(--tb-bg-raised);
+  --el-fill-color-extra-light: var(--tb-bg-page);
+  --el-mask-color: var(--tb-overlay);
+  --el-mask-color-extra-light: color-mix(in oklab, var(--tb-overlay) 40%, transparent);
+
+  /* 形态：Harbor 无胶囊，EP 的 round 收敛为 6px */
+  --el-border-radius-base: var(--tb-radius-sm);
+  --el-border-radius-small: var(--tb-radius-xs);
+  --el-border-radius-round: var(--tb-radius-full);
+  --el-box-shadow-light: light-dark(var(--tb-shadow-2), 0 2px 8px rgba(0, 0, 0, 0.5));
+  --el-box-shadow: light-dark(var(--tb-shadow-3), 0 8px 22px rgba(0, 0, 0, 0.55));
+}
+
+/* ==========================================================================
+   ⑥ 兼容兜底：不支持 light-dark() 的内核降级为亮色取值（其余变量仍可用）
+   ========================================================================== */
+@supports not (color: light-dark(#ffffff, #000000)) {
+  :root {
+    --tb-on-primary: var(--tb-brand-on);
+    --tb-bg-page: var(--tb-neutral-0);
+    --tb-bg-surface: #ffffff;
+    --tb-bg-raised: var(--tb-neutral-50);
+    --tb-bg-sunken: var(--tb-neutral-100);
+    --tb-border: var(--tb-neutral-200);
+    --tb-border-strong: var(--tb-neutral-300);
+    --tb-text-primary: var(--tb-neutral-900);
+    --tb-text-secondary: var(--tb-neutral-500);
+    --tb-text-tertiary: var(--tb-neutral-400);
+    --tb-text-inverse: var(--tb-neutral-0);
+    --tb-primary: var(--tb-brand-600);
+    --tb-primary-hover: var(--tb-brand-500);
+    --tb-primary-active: var(--tb-brand-700);
+    --tb-primary-text: var(--tb-brand-700);
+    --tb-primary-soft: var(--tb-brand-100);
+    --tb-primary-border: var(--tb-brand-300);
+    --tb-overlay: color-mix(in oklab, var(--tb-neutral-900) 46%, transparent);
+  }
+
+  /* Element Plus 色阶同样降级为亮色取值（须与主映射同为 :root:root 才能生效） */
+  :root:root {
+    --el-color-primary-light-3: var(--tb-brand-500);
+    --el-color-primary-light-5: var(--tb-brand-400);
+    --el-color-primary-light-7: var(--tb-brand-300);
+    --el-color-primary-light-8: var(--tb-brand-200);
+    --el-color-primary-light-9: var(--tb-brand-100);
+    --el-color-primary-dark-2: var(--tb-brand-700);
+    --el-box-shadow-light: var(--tb-shadow-2);
+    --el-box-shadow: var(--tb-shadow-3);
+  }
+}
+
+/* ==========================================================================
+   新增主题示例（多主题切换时启用，键名与 docs/ui.html 保持一致）：
+
+   html[data-theme="neon"] {
+     --tb-brand-600: #7c3aed;
+     --tb-brand-700: #6d28d9;
+     --tb-font-display: var(--font-sans);
+     --tb-radius-sm: 12px;
+     --tb-radius-full: 999px;
+     --tb-shadow-brand: 0 14px 44px color-mix(in oklab, var(--tb-brand-500) 52%, transparent);
+   }
+   ========================================================================== */

@@ -62,7 +62,7 @@ async function loadSpaces() {
   loading.value = true
   try {
     spaces.value = await getSpaceList()
-  } catch (e) {
+  } catch {
     ElMessage.error('加载空间列表失败')
   } finally {
     loading.value = false
@@ -73,7 +73,7 @@ async function loadDocuments(spaceId) {
   loading.value = true
   try {
     documents.value = await getDocumentList(spaceId)
-  } catch (e) {
+  } catch {
     ElMessage.error('加载文档列表失败')
   } finally {
     loading.value = false
@@ -84,7 +84,7 @@ async function loadChunks(documentId) {
   chunkLoading.value = true
   try {
     chunks.value = await getChunkList(documentId)
-  } catch (e) {
+  } catch {
     ElMessage.error('加载文档分片失败')
   } finally {
     chunkLoading.value = false
@@ -96,7 +96,7 @@ async function handleCreateSpace(form) {
     await createSpace(form)
     ElMessage.success('空间创建成功')
     await loadSpaces()
-  } catch (e) {
+  } catch {
     ElMessage.error('空间创建失败')
   }
 }
@@ -106,7 +106,7 @@ async function handleUpdateSpace(form) {
     await updateSpace(form.id, { name: form.name, description: form.description })
     ElMessage.success('空间已更新')
     await loadSpaces()
-  } catch (e) {
+  } catch {
     ElMessage.error('空间更新失败')
   }
 }
@@ -116,7 +116,7 @@ async function handleDeleteSpace(space) {
     await deleteSpace(space.id)
     ElMessage.success('空间已删除')
     await loadSpaces()
-  } catch (e) {
+  } catch {
     ElMessage.error('删除空间失败')
   }
 }
@@ -177,7 +177,7 @@ async function handleDocumentUploaded(result) {
     await loadDocuments(currentSpace.value.id)
     const created = documents.value.find((d) => d.id === result?.documentId)
     if (created) handleSelectDocument(created)
-  } catch (e) {
+  } catch {
     ElMessage.error('刷新文档列表失败')
   }
 }
@@ -195,7 +195,7 @@ async function handleDeleteDocument(doc) {
         handleSelectDocument(documents.value[0])
       }
     }
-  } catch (e) {
+  } catch {
     ElMessage.error('删除文档失败')
   }
 }

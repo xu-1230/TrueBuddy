@@ -73,7 +73,7 @@ const scale = computed(() => props.slideWidth / VIEWPORT_SIZE)
 
 <style lang="css" scoped>
 .screen-slide-list {
-  background: #1d1d1d;
+  background: var(--tb-neutral-950);
   position: relative;
   width: 100%;
   height: 100%;
@@ -127,7 +127,7 @@ const scale = computed(() => props.slideWidth / VIEWPORT_SIZE)
   transform: translateY(100%);
 }
 .slide-content {
-  background-color: #fff;
+  background-color: var(--tb-bg-surface);
   position: absolute;
   top: 50%;
   left: 50%;

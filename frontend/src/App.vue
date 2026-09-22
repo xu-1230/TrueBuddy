@@ -30,7 +30,7 @@ h3 {
 }
 
 table{ border-collapse: collapse; }
-table th, table td{ border: 1px solid #000; padding: 8px 12px; text-align: left; }
+table th, table td{ border: 1px solid var(--tb-border-strong); padding: 8px 12px; text-align: left; }
 
 /* 重置 Element Plus 表格，避免全局样式影响 */
 .el-table table { border-collapse: separate; }

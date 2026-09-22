@@ -55,7 +55,11 @@ function submitMail() {
 }
 
 function submit() {
-  mode.value === 'account' ? submitAccount() : submitMail()
+  if (mode.value === 'account') {
+    submitAccount()
+  } else {
+    submitMail()
+  }
 }
 
 function sendCode() {
@@ -120,7 +124,7 @@ function sendCode() {
 
 .form-link {
   font-size: 0.875rem;
-  color: #ff4500;
+  color: var(--tb-primary-text);
   cursor: pointer;
 }
 
@@ -137,14 +141,14 @@ function sendCode() {
 .submit-btn {
   width: 100%;
   margin-top: 0.5rem;
-  border-radius: 10px;
+  border-radius: var(--tb-radius-md);
 }
 
 .toggle-btn {
   width: 100%;
   margin-top: 0.75rem;
   margin-left: 0 !important;
-  border-radius: 10px;
+  border-radius: var(--tb-radius-md);
 }
 
 .toggle-row {

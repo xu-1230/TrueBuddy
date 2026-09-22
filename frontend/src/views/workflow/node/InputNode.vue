@@ -91,15 +91,15 @@ const variables = computed(() => {
   position: relative;
   width: 17rem;
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  border: var(--tb-border-width) solid var(--tb-border);
+  background: var(--tb-bg-surface);
+  box-shadow: var(--tb-shadow-1);
   transition: box-shadow 0.2s, border-color 0.2s;
 }
 
 .node-card:hover {
-  border-color: #c9cdd4;
-  box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.12), 0 2px 6px -2px rgba(0, 0, 0, 0.08);
+  border-color: var(--tb-border-strong);
+  box-shadow: var(--tb-shadow-2);
 }
 
 /* ===== 节点头部 ===== */
@@ -119,7 +119,7 @@ const variables = computed(() => {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: #12b76a;
+  background: var(--tb-success);
   color: #fff;
 }
 
@@ -143,7 +143,7 @@ const variables = computed(() => {
   white-space: nowrap;
   font-size: 15px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--tb-text-primary);
 }
 
 /* ===== 更多按钮 ===== */
@@ -158,13 +158,13 @@ const variables = computed(() => {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #9aa1ad;
+  color: var(--tb-text-tertiary);
   cursor: pointer;
 }
 
 .node-more-btn:hover {
-  background: #f2f3f5;
-  color: #4e5969;
+  background: var(--tb-bg-sunken);
+  color: var(--tb-text-secondary);
 }
 
 /* ===== 输入变量 ===== */
@@ -179,7 +179,7 @@ const variables = computed(() => {
   flex-shrink: 0;
   font-size: 13px;
   line-height: 22px;
-  color: #9aa1ad;
+  color: var(--tb-text-tertiary);
 }
 
 .node-input-tags {
@@ -191,18 +191,18 @@ const variables = computed(() => {
 .node-input-tag {
   padding: 0 8px;
   border-radius: 6px;
-  background: #f2f3f5;
+  background: var(--tb-bg-sunken);
   font-size: 13px;
   line-height: 22px;
-  color: #4e5969;
+  color: var(--tb-text-secondary);
 }
 
 /* ===== Handle ===== */
 .node-handle {
   width: 8px !important;
   height: 8px !important;
-  border: 1px solid #c9cdd4 !important;
-  background: #fff !important;
+  border: var(--tb-border-width) solid var(--tb-border-strong) !important;
+  background: var(--tb-bg-surface) !important;
   opacity: 0;
   transition: opacity 0.2s;
 }

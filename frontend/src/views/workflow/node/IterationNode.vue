@@ -205,15 +205,15 @@ onBeforeUnmount(() => {
   height: 100%;
   padding-bottom: 4px;
   border-radius: 15px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  border: var(--tb-border-width) solid var(--tb-border);
+  background: var(--tb-bg-surface);
+  box-shadow: var(--tb-shadow-1);
   transition: box-shadow 0.2s, border-color 0.2s;
 }
 
 .node-card:hover {
-  border-color: #c9cdd4;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  border-color: var(--tb-border-strong);
+  box-shadow: var(--tb-shadow-3);
 }
 
 /* 调整尺寸时禁用过渡，避免卡片抖动 */
@@ -254,7 +254,7 @@ onBeforeUnmount(() => {
   border: 0.5px solid rgba(255, 255, 255, 0.02);
   background: #06aed4;
   color: #fff;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--tb-shadow-2);
 }
 
 .node-icon-svg {
@@ -276,7 +276,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   font-size: 13px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--tb-text-primary);
 }
 
 /* ===== 内层点阵画布 ===== */
@@ -294,7 +294,7 @@ onBeforeUnmount(() => {
   min-height: 90px;
   padding: 4px;
   border-radius: 16px;
-  background-color: #f7f8fa;
+  background-color: var(--tb-bg-sunken);
   background-image: radial-gradient(circle, #dcdfe6 1px, transparent 1px);
   background-size: 14px 14px;
   background-position: -1px -1px;
@@ -304,8 +304,8 @@ onBeforeUnmount(() => {
 .node-handle {
   width: 8px !important;
   height: 8px !important;
-  border: 1px solid #c9cdd4 !important;
-  background: #fff !important;
+  border: var(--tb-border-width) solid var(--tb-border-strong) !important;
+  background: var(--tb-bg-surface) !important;
   opacity: 0;
   transition: opacity 0.2s;
 }
@@ -346,6 +346,6 @@ onBeforeUnmount(() => {
 
 .node-resize-btn:hover {
   background: rgba(0, 0, 0, 0.05);
-  color: #4e5969;
+  color: var(--tb-text-secondary);
 }
 </style>

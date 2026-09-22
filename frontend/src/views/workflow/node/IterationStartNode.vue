@@ -31,7 +31,7 @@ defineProps({
   width: 52px;
   height: 52px;
   border-radius: 16px;
-  background: #fff;
+  background: var(--tb-bg-surface);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
@@ -54,8 +54,8 @@ defineProps({
 .node-handle {
   width: 8px !important;
   height: 8px !important;
-  border: 1px solid #c9cdd4 !important;
-  background: #fff !important;
+  border: var(--tb-border-width) solid var(--tb-border-strong) !important;
+  background: var(--tb-bg-surface) !important;
   transition: transform 0.2s, border-color 0.2s;
 }
 

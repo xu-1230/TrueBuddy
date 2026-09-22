@@ -62,9 +62,9 @@ defineEmits(['click', 'edit', 'delete'])
   position: relative;
   cursor: pointer;
   padding: 1.5rem 1rem 1.25rem;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border-radius: var(--tb-radius-lg);
+  background: var(--tb-bg-surface);
+  box-shadow: var(--tb-shadow-1);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   display: flex;
   flex-direction: column;
@@ -73,7 +73,7 @@ defineEmits(['click', 'edit', 'delete'])
 
 .space-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--tb-shadow-2);
 }
 
 .space-card__actions {
@@ -92,22 +92,22 @@ defineEmits(['click', 'edit', 'delete'])
 }
 
 .space-card__action {
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
   font-size: 32px;
   cursor: pointer;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--tb-radius-sm);
   transition: color 0.2s, background 0.2s;
 }
 
 .space-card__action:hover {
-  color: #ff4500;
-  background: #ffece6;
+  color: var(--tb-primary);
+  background: var(--tb-primary-soft);
 }
 
 .space-card__action--danger:hover {
-  color: #ef4444;
-  background: #fee2e2;
+  color: var(--tb-danger);
+  background: var(--tb-danger-soft);
 }
 
 .space-card__visual {
@@ -127,10 +127,10 @@ defineEmits(['click', 'edit', 'delete'])
   position: absolute;
   width: 44px;
   height: 56px;
-  background: linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
-  border: 1px solid #e5e7eb;
-  border-radius: 4px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(180deg, var(--tb-bg-surface) 0%, var(--tb-bg-raised) 100%);
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-sm);
+  box-shadow: var(--tb-shadow-1);
   overflow: hidden;
   transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
@@ -156,7 +156,7 @@ defineEmits(['click', 'edit', 'delete'])
   left: 50px;
   transform: rotate(8deg);
   z-index: 3;
-  box-shadow: 0 3px 7px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--tb-shadow-2);
 }
 
 /* hover 时文档扇形展开，增强层次感 */
@@ -170,7 +170,7 @@ defineEmits(['click', 'edit', 'delete'])
 
 .space-card:hover .stack-doc--front {
   transform: rotate(12deg) translate(3px, -4px);
-  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--tb-shadow-3);
 }
 
 /* 顶部彩色标签条 */
@@ -185,17 +185,17 @@ defineEmits(['click', 'edit', 'delete'])
   justify-content: center;
   font-size: 8px;
   font-weight: 700;
-  color: #fff;
+  color: var(--tb-on-primary);
   letter-spacing: 0.3px;
   line-height: 1;
 }
 
 .stack-doc__tag--red {
-  background: linear-gradient(180deg, #f87171, #ef4444);
+  background: var(--tb-danger);
 }
 
 .stack-doc__tag--blue {
-  background: linear-gradient(180deg, #60a5fa, #3b82f6);
+  background: var(--tb-info);
 }
 
 .stack-doc__tag--purple {
@@ -215,7 +215,7 @@ defineEmits(['click', 'edit', 'delete'])
   display: block;
   height: 2px;
   background: #d1d5db;
-  border-radius: 1px;
+  border-radius: var(--tb-radius-xs);
 }
 
 .stack-doc__lines span:nth-child(1) { width: 70%; }
@@ -239,9 +239,9 @@ defineEmits(['click', 'edit', 'delete'])
   left: 8px;
   width: 42px;
   height: 14px;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  border-radius: 6px 6px 0 0;
-  box-shadow: 0 -1px 2px rgba(245, 158, 11, 0.3);
+  background: var(--tb-accent);
+  border-radius: var(--tb-radius-md) var(--tb-radius-md) 0 0;
+  box-shadow: 0 -1px 2px color-mix(in oklab, var(--tb-accent) 30%, transparent);
 }
 
 .folder__body {
@@ -250,32 +250,32 @@ defineEmits(['click', 'edit', 'delete'])
   left: 0;
   right: 0;
   height: 60px;
-  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-  border-radius: 6px;
-  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.4);
+  background: var(--tb-accent);
+  border-radius: var(--tb-radius-md);
+  box-shadow: 0 4px 10px color-mix(in oklab, var(--tb-accent) 40%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--tb-on-primary);
 }
 
 .folder__count {
   font-size: 22px;
   font-weight: 700;
-  color: #fff;
+  color: var(--tb-on-primary);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .folder__empty {
   font-size: 28px;
-  color: rgba(255, 255, 255, 0.85);
+  color: color-mix(in oklab, var(--tb-on-primary) 85%, transparent);
 }
 
 .space-card__name {
   margin-top: 0.75rem;
   font-size: 14px;
   font-weight: 600;
-  color: #111827;
+  color: var(--tb-text-primary);
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -288,6 +288,6 @@ defineEmits(['click', 'edit', 'delete'])
   gap: 4px;
   margin-top: 4px;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 </style>

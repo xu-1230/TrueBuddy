@@ -1,9 +1,30 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="harbor" data-appearance="light">
   <head>
     <meta charset="UTF-8">
     <link rel="icon" href="/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- 首帧前确定明暗态，避免「先亮后暗」闪烁；键名与 src/composables/useAppearance.js 保持一致
+         data-appearance 驱动本项目的 light-dark()；dark 类驱动 Element Plus 暗色变量包（两者须同步） -->
+    <script>
+      (function () {
+        var mode = 'light'
+        try {
+          var saved = localStorage.getItem('tb-ui-mode')
+          if (saved === 'light' || saved === 'dark') {
+            mode = saved
+          } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            mode = 'dark'
+          }
+        } catch (e) {
+          mode = 'light'
+        }
+        var root = document.documentElement
+        root.setAttribute('data-appearance', mode)
+        root.classList.toggle('dark', mode === 'dark')
+      })()
+    </script>
 
     <!-- Google Fonts：Playfair Display（优雅衬线体，用于品牌名 / 展示性大标题 / 数字）+ Inter（极简无衬线体，用于正文与 UI） -->
     <!-- 若所处网络无法访问 fonts.googleapis.com，可将下方两处域名替换为可用镜像（如 fonts.loli.net / fonts.font.im） -->

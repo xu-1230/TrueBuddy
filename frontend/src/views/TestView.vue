@@ -148,7 +148,7 @@ button {
 pre {
   min-height: 40px;
   padding: 12px;
-  background: light-dark(#f5f5f5, #222);
+  background: var(--tb-bg-raised);
   border-radius: 8px;
   white-space: pre-wrap;
   word-break: break-all;

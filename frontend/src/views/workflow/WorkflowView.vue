@@ -517,9 +517,9 @@ const handleConnect = (connection) => {
     {
       ...connection,
       type: 'default',
-      style: { stroke: '#1C1C1C', strokeWidth: 1.5 },
+      style: { stroke: 'var(--tb-text-primary)', strokeWidth: 1.5 },
       animated: true,
-      markerEnd: { type: MarkerType.Arrow, color: '#6F3381', width: 15, height: 15 },
+      markerEnd: { type: MarkerType.Arrow, color: 'var(--tb-primary)', width: 15, height: 15 },
       ...(isInnerEdge ? { zIndex: INNER_EDGE_Z_INDEX } : {}),
     },
   ])

@@ -1,8 +1,7 @@
 <script setup>
-import { ref } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 
-const props = defineProps({
+defineProps({
   id: { type: String, required: true },
   data: { type: Object, default: () => ({}) },
 })
@@ -81,7 +80,7 @@ const props = defineProps({
   border: 1px solid rgba(68,83,130, 0.25);
   width: 15rem; /* w-60 = 15rem */
   background: white;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--tb-shadow-1);
   transition: box-shadow 0.2s;
 }
 
@@ -127,7 +126,7 @@ const props = defineProps({
   height: 1.5rem;
   border-radius: 0.5rem;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-  background: var(--util-colors-warning-warning-500, #f59e0b);
+  background: var(--util-colors-warning-warning-500, var(--tb-accent));
   margin-right: 0.5rem;
   flex-shrink: 0;
 }
@@ -190,7 +189,7 @@ const props = defineProps({
   top: 0.25rem;
   height: 0.5rem;
   width: 0.125rem;
-  background: var(--workflow-link-line-handle, #94a3b8);
+  background: var(--workflow-link-line-handle, var(--tb-border-strong));
   opacity: 0;
   transition: opacity 0.2s;
 }
@@ -235,23 +234,23 @@ const props = defineProps({
   padding: 0;
   border-radius: 9999px;
   border: none;
-  background: var(--components-button-primary-bg, #ff4500);
-  color: var(--components-button-primary-text, #fff);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), inset 0 0 0 0.5px var(--components-button-primary-border, rgba(255, 255, 255, 0.1));
+  background: var(--components-button-primary-bg, var(--tb-primary));
+  color: var(--components-button-primary-text, var(--tb-on-primary));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), inset 0 0 0 0.5px var(--components-button-primary-border, var(--tb-border));
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;
 }
 
 .handle-add-btn:hover {
-  background: var(--components-button-primary-bg-hover, #cc3700);
+  background: var(--components-button-primary-bg-hover, var(--tb-primary-active));
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.1);
-  inset: 0 0 0 0.5px var(--components-button-primary-border-hover, rgba(255, 255, 255, 0.2));
+  inset: 0 0 0 0.5px var(--components-button-primary-border-hover, var(--tb-border-strong));
 }
 
 .handle-add-btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--state-accent-solid, #ff4500);
+  box-shadow: 0 0 0 2px var(--state-accent-solid, var(--tb-primary));
 }
 
 /* 按钮可见状态 */
@@ -279,8 +278,8 @@ const props = defineProps({
   display: none;
   transform: translate(-50%, -100%);
   border-radius: 0.5rem;
-  border: 0.5px solid var(--components-panel-border, rgba(255, 255, 255, 0.1));
-  background: var(--components-tooltip-bg, #1e1e2e);
+  border: 0.5px solid var(--components-panel-border, var(--tb-border));
+  background: var(--components-tooltip-bg, var(--tb-bg-raised));
   padding: 0.375rem;
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
   white-space: nowrap;
@@ -295,7 +294,7 @@ const props = defineProps({
 .tooltip-content {
   font-size: 0.75rem;
   line-height: 1.4;
-  color: var(--text-tertiary, #94a3b8);
+  color: var(--text-tertiary, var(--tb-text-tertiary));
 }
 
 .tooltip-line {
@@ -304,7 +303,7 @@ const props = defineProps({
 
 .tooltip-key {
   font-weight: 500;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, var(--tb-text-secondary));
 }
 
 /* ===== 节点头部更多按钮 ===== */
@@ -319,15 +318,15 @@ const props = defineProps({
   border: none;
   background: transparent;
   padding: 0;
-  color: var(--text-tertiary, #94a3b8);
+  color: var(--text-tertiary, var(--tb-text-tertiary));
 }
 
 .node-more-btn:hover {
-  background: var(--state-base-hover, rgba(255, 255, 255, 0.05));
+  background: var(--state-base-hover, var(--tb-bg-raised));
 }
 
 .node-more-btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 1px var(--components-input-border-hover, #ff4500);
+  box-shadow: 0 0 0 1px var(--components-input-border-hover, var(--tb-primary));
 }
 </style>

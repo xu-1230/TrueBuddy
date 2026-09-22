@@ -31,7 +31,7 @@
 <script setup>
 import Chart from './Chart.vue'
 
-const props = defineProps({
+defineProps({
   elementInfo: {
     type: Object,
     required: true,

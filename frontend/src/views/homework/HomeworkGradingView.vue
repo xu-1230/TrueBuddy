@@ -414,30 +414,23 @@ onMounted(() => {
   flex-direction: column;
   height: calc(100vh - 2rem);
   min-height: 640px;
-  border-radius: 14px;
+  border-radius: var(--tb-radius-xl);
   overflow: hidden;
-  background: #f6f7f9;
-  color: #111827;
-  box-shadow: 0 10px 30px rgba(17, 24, 39, 0.06);
+  background: var(--tb-bg-page);
+  color: var(--tb-text-primary);
+  box-shadow: var(--tb-shadow-2);
 
-  /* 主色：与项目统一（靛蓝） */
-  --primary: #ff4500;
-  --primary-dark: #cc3700;
-  --primary-soft: #ffece6;
-  --accent: #f59e0b;
-  --accent-deep: #b45309;
-  --accent-soft: #fff7ed;
-  --accent-soft-2: #fde68a;
+  /* 页面级兼容别名：一律指向全局 Token（src/assets/theme.css），
+     页面内既有的 var(--primary) 等引用无需逐个替换即可随主题换肤 */
+  --primary: var(--tb-primary);
+  --primary-dark: var(--tb-primary-text);
+  --primary-soft: var(--tb-primary-soft);
+  --accent: var(--tb-accent);
+  --accent-deep: color-mix(in oklab, var(--tb-accent) 72%, #000000);
+  --accent-soft: var(--tb-accent-soft);
+  --accent-soft-2: var(--tb-accent-soft);
 
-  /* Element Plus 主色对齐项目靛蓝 */
-  --el-color-primary: #ff4500;
-  --el-color-primary-light-3: #ff7d4d;
-  --el-color-primary-light-5: #ffa280;
-  --el-color-primary-light-7: #ffc7b3;
-  --el-color-primary-light-8: #ffdacc;
-  --el-color-primary-light-9: #ffece6;
-  --el-color-primary-dark-2: #cc3700;
-  --el-border-radius-base: 8px;
+  /* Element Plus 主色与圆角交由全局 Token 层映射（原页面级 --el-* 覆盖已移除） */
 }
 
 .studio-body {
@@ -469,9 +462,9 @@ onMounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid #e8e9ee;
+  border-radius: var(--tb-radius-lg);
+  background: var(--tb-bg-surface);
+  border: var(--tb-border-width) solid var(--tb-border);
   overflow: hidden;
 }
 
@@ -482,7 +475,7 @@ onMounted(() => {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.6rem 0.85rem;
-  border-bottom: 1px solid #f0f1f4;
+  border-bottom: 1px solid var(--tb-border);
 }
 
 .display-box__status {
@@ -494,7 +487,7 @@ onMounted(() => {
 
 .display-box__badge {
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--tb-radius-full);
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--accent-deep);
@@ -508,12 +501,12 @@ onMounted(() => {
 .demo-chip {
   flex: 0 0 auto;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--tb-radius-full);
   font-size: 0.66rem;
   font-weight: 600;
-  color: #6b7280;
-  background: #f2f3f6;
-  border: 1px solid #e8e9ee;
+  color: var(--tb-text-secondary);
+  background: var(--tb-bg-sunken);
+  border: var(--tb-border-width) solid var(--tb-border);
   cursor: help;
 }
 
@@ -529,10 +522,10 @@ onMounted(() => {
   gap: 0.35rem;
   height: 30px;
   padding: 0 0.7rem;
-  border: 1px solid #e8e9ee;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #4b5563;
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-bg-surface);
+  color: var(--tb-text-secondary);
   font-size: 0.74rem;
   cursor: pointer;
   transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
@@ -540,7 +533,7 @@ onMounted(() => {
 
 .ghost-chip:hover:not(:disabled) {
   color: var(--primary-dark);
-  border-color: #ffc7b3;
+  border-color: var(--tb-primary-border);
   background: var(--primary-soft);
 }
 
@@ -556,8 +549,8 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background-color: #fbfbfc;
-  background-image: radial-gradient(#dfe2e8 1px, transparent 1px);
+  background-color: var(--tb-bg-sunken);
+  background-image: radial-gradient(var(--tb-border-strong) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 

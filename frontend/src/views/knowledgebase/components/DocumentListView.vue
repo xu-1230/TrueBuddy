@@ -185,9 +185,9 @@ function onDelete(doc) {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--tb-bg-surface);
+  border-radius: var(--tb-radius-lg);
+  box-shadow: var(--tb-shadow-1);
 }
 
 .kb-toolbar__left {
@@ -197,14 +197,14 @@ function onDelete(doc) {
 }
 
 .kb-toolbar__folder-icon {
-  color: #f59e0b;
+  color: var(--tb-accent);
   font-size: 18px;
 }
 
 .kb-toolbar__title {
   font-size: 1.125rem;
   font-weight: 700;
-  color: #111827;
+  color: var(--tb-text-primary);
   margin-left: 0.25rem;
   max-width: 320px;
   overflow: hidden;
@@ -226,9 +226,9 @@ function onDelete(doc) {
   flex: 0 0 260px;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--tb-bg-surface);
+  border-radius: var(--tb-radius-lg);
+  box-shadow: var(--tb-shadow-1);
   overflow: hidden;
 }
 
@@ -237,11 +237,11 @@ function onDelete(doc) {
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  background: #ffece6;
-  color: #cc3700;
+  background: var(--tb-primary-soft);
+  color: var(--tb-primary-text);
   font-size: 0.95rem;
   font-weight: 700;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--tb-border);
 }
 
 .doc-sidebar__add {
@@ -252,16 +252,16 @@ function onDelete(doc) {
   width: 26px;
   height: 26px;
   font-size: 16px;
-  color: #cc3700;
-  background: #ffdacc;
-  border-radius: 6px;
+  color: var(--tb-primary-text);
+  background: var(--tb-primary-border);
+  border-radius: var(--tb-radius-md);
   cursor: pointer;
   transition: color 0.2s, background 0.2s;
 }
 
 .doc-sidebar__add:hover {
-  color: #fff;
-  background: #cc3700;
+  color: var(--tb-on-primary);
+  background: var(--tb-primary-active);
 }
 
 .doc-list {
@@ -278,21 +278,21 @@ function onDelete(doc) {
   align-items: center;
   gap: 0.5rem;
   padding: 0.55rem 0.6rem;
-  border-radius: 8px;
+  border-radius: var(--tb-radius-md);
   cursor: pointer;
   transition: background 0.2s ease;
 }
 
 .doc-list__item:hover {
-  background: #f3f4f6;
+  background: var(--tb-bg-sunken);
 }
 
 .doc-list__item--active {
-  background: #ffece6;
+  background: var(--tb-primary-soft);
 }
 
 .doc-list__item--active .doc-list__name {
-  color: #cc3700;
+  color: var(--tb-primary-text);
   font-weight: 600;
 }
 
@@ -304,19 +304,19 @@ function onDelete(doc) {
   width: 30px;
   height: 30px;
   font-size: 16px;
-  color: #fff;
-  background: #9ca3af;
-  border-radius: 6px;
+  color: var(--tb-on-primary);
+  background: var(--tb-text-tertiary);
+  border-radius: var(--tb-radius-md);
 }
 
 .doc-list__icon--pdf {
-  background: #ef4444;
+  background: var(--tb-danger);
 }
 
 .doc-list__icon--word,
 .doc-list__icon--doc,
 .doc-list__icon--docx {
-  background: #3b82f6;
+  background: var(--tb-info);
 }
 
 .doc-list__icon--markdown,
@@ -326,18 +326,18 @@ function onDelete(doc) {
 
 .doc-list__icon--ppt,
 .doc-list__icon--pptx {
-  background: #f59e0b;
+  background: var(--tb-warning);
 }
 
 .doc-list__icon--txt {
-  background: #6b7280;
+  background: var(--tb-text-secondary);
 }
 
 .doc-list__name {
   flex: 1;
   min-width: 0;
   font-size: 0.85rem;
-  color: #374151;
+  color: var(--tb-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -349,9 +349,9 @@ function onDelete(doc) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--tb-bg-surface);
+  border-radius: var(--tb-radius-lg);
+  box-shadow: var(--tb-shadow-1);
   overflow: hidden;
 }
 
@@ -361,7 +361,7 @@ function onDelete(doc) {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--tb-border);
 }
 
 .doc-detail__title {
@@ -373,13 +373,13 @@ function onDelete(doc) {
 .doc-detail__label {
   flex: 0 0 auto;
   font-size: 0.85rem;
-  color: #6b7280;
+  color: var(--tb-text-secondary);
 }
 
 .doc-detail__name {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #111827;
+  color: var(--tb-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -391,7 +391,7 @@ function onDelete(doc) {
   align-items: center;
   gap: 8px;
   font-size: 0.85rem;
-  color: #6b7280;
+  color: var(--tb-text-secondary);
 }
 
 .doc-detail__divider {
@@ -400,16 +400,16 @@ function onDelete(doc) {
 
 .doc-detail__delete {
   font-size: 16px;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
   cursor: pointer;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--tb-radius-sm);
   transition: color 0.2s, background 0.2s;
 }
 
 .doc-detail__delete:hover {
-  color: #ef4444;
-  background: #fee2e2;
+  color: var(--tb-danger);
+  background: var(--tb-danger-soft);
 }
 
 /* 待确认状态提示：仅在「已解析未向量化」时出现 */
@@ -424,20 +424,20 @@ function onDelete(doc) {
   gap: 0.75rem;
   padding: 1rem;
   overflow-y: auto;
-  background: #f9fafb;
+  background: var(--tb-bg-raised);
 }
 
 .chunk-card {
   padding: 0.9rem 1rem;
-  background: #fff;
-  border: 1px solid #eef0f3;
-  border-radius: 10px;
+  background: var(--tb-bg-surface);
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-lg);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .chunk-card:hover {
-  border-color: #ffc7b3;
-  box-shadow: 0 2px 10px rgba(255, 69, 0, 0.08);
+  border-color: var(--tb-primary-border);
+  box-shadow: var(--tb-shadow-1);
 }
 
 
@@ -446,7 +446,7 @@ function onDelete(doc) {
 .chunk-card__content {
   font-size: 0.85rem;
   line-height: 1.7;
-  color: #4b5563;
+  color: var(--tb-text-secondary);
   word-break: break-word;
 }
 </style>

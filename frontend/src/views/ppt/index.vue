@@ -353,29 +353,8 @@ const resizeRemark = (e) => {
   }
 }
 
-// ===== 右侧工具栏宽度调节（参考 PPTist Sidebar resize）=====
+// 右侧工具栏宽度
 const sidebarWidth = ref(400)
-
-const resizeSidebar = (e) => {
-  e.preventDefault()
-  let isMouseDown = true
-  const startPageX = e.pageX
-  const originWidth = sidebarWidth.value
-
-  document.onmousemove = (ev) => {
-    if (!isMouseDown) return
-    const moveX = ev.pageX - startPageX
-    let newWidth = moveX + originWidth
-    if (newWidth < 240) newWidth = 240
-    if (newWidth > 600) newWidth = 600
-    sidebarWidth.value = newWidth
-  }
-  document.onmouseup = () => {
-    isMouseDown = false
-    document.onmousemove = null
-    document.onmouseup = null
-  }
-}
 
 // 幻灯片内跳转链接
 const turnSlideToId = (id) => {
@@ -413,7 +392,6 @@ const parseFile = (file) => {
           fixedViewport: true,
           viewportWidth: VIEWPORT_SIZE,
         })
-        console.log(result)
         importSlideData(result)
       }
       catch {
@@ -539,9 +517,8 @@ const initLive2D = async () => {
   model.position.set(-30, -46)
   app.stage.addChild(model)
   
-  model.on("hit", (hitAreaNames) => {
-    console.log("hitAreaNames", hitAreaNames)
-  //  model.expression(4)
+  model.on('hit', () => {
+    //  model.expression(4)
   })
 }
 
@@ -558,7 +535,7 @@ const init = async () => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #f2f3f5;
+  background: var(--tb-bg-page);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -571,8 +548,8 @@ const init = async () => {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  background: #fff;
-  border-bottom: 1px solid #e2e6ed;
+  background: var(--tb-bg-surface);
+  border-bottom: 1px solid var(--tb-border);
 }
 .ppt-title {
   display: flex;
@@ -580,7 +557,7 @@ const init = async () => {
   gap: 8px;
   font-size: 16px;
   font-weight: 600;
-  color: #333;
+  color: var(--tb-text-primary);
 }
 .ppt-toolbar-actions {
   display: flex;
@@ -606,7 +583,7 @@ const init = async () => {
   width: 210px;
   flex: 0 0 auto;
   overflow-y: auto;
-  background: #e8eaed;
+  background: var(--tb-bg-sunken);
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -619,16 +596,16 @@ const init = async () => {
   flex: 0 0 auto;
   border: 2px solid transparent;
   border-radius: 4px;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 15%);
+  box-shadow: var(--tb-shadow-1);
   cursor: pointer;
   overflow: hidden;
   transition: border-color 0.2s;
 }
 .thumb-item:hover {
-  border-color: #b9c6d2;
+  border-color: var(--tb-border-strong);
 }
 .thumb-item.active {
-  border-color: #5b9bd5;
+  border-color: var(--tb-primary);
 }
 .thumb-index {
   position: absolute;
@@ -639,8 +616,8 @@ const init = async () => {
   line-height: 20px;
   text-align: center;
   font-size: 12px;
-  color: #fff;
-  background: rgb(0 0 0 / 45%);
+  color: var(--tb-on-primary);
+  background: var(--tb-overlay);
   border-radius: 50%;
 }
 
@@ -656,8 +633,8 @@ const init = async () => {
   flex: 0 0 auto;
   position: relative;
   z-index: 5;
-  border-bottom: 1px solid #eee;
-  background-color: #fff;
+  border-bottom: 1px solid var(--tb-border);
+  background-color: var(--tb-bg-surface);
   display: flex;
   justify-content: space-between;
   padding: 0 10px;
@@ -671,7 +648,7 @@ const init = async () => {
 }
 .page-text {
   margin: 0 4px;
-  color: #666;
+  color: var(--tb-text-secondary);
   cursor: default;
 }
 .handler-item {
@@ -698,7 +675,7 @@ const init = async () => {
   cursor: pointer;
 
   &:hover {
-    color: #d14424;
+    color: var(--tb-danger);
   }
 }
 .canvas {
@@ -706,7 +683,7 @@ const init = async () => {
   min-height: 0;
   position: relative;
   overflow: hidden;
-  background-color: #f9f9f9;
+  background-color: var(--tb-bg-raised);
 
   .el-empty {
     position: absolute;
@@ -718,14 +695,14 @@ const init = async () => {
 }
 .viewport-wrapper {
   position: absolute;
-  box-shadow: 0 0 15px 0 rgb(0 0 0 / 10%);
+  box-shadow: var(--tb-shadow-3);
 }
 /* 备注区（参考 PPTist Remark） */
 .remark {
   position: relative;
   flex: 0 0 auto;
-  border-top: 1px solid #eee;
-  background-color: #f9f9f9;
+  border-top: 1px solid var(--tb-border);
+  background-color: var(--tb-bg-raised);
   line-height: 1.5;
 
   textarea {
@@ -744,7 +721,7 @@ const init = async () => {
     right: 0;
     bottom: 0;
     padding-bottom: 34px;
-    color: #666;
+    color: var(--tb-text-secondary);
   }
 }
 .remark-actions {
@@ -767,8 +744,8 @@ const init = async () => {
 .layout-content-right {
   flex: 0 0 auto;
   position: relative;
-  background-color: #fff;
-  border-left: 1px solid #eee;
+  background-color: var(--tb-bg-surface);
+  border-left: 1px solid var(--tb-border);
   overflow: hidden;
 }
 .layout-content-right .resize-handler {
@@ -786,9 +763,9 @@ const init = async () => {
   align-items: center;
   justify-content: center;
   margin: 20px;
-  border: 1px dashed #ddd;
+  border: var(--tb-border-width) dashed var(--tb-border-strong);
   border-radius: 4px;
-  color: #999;
+  color: var(--tb-text-tertiary);
   font-size: 14px;
   text-align: center;
   line-height: 1.6;

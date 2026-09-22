@@ -435,9 +435,9 @@ function getExt(name) {
   height: 50px;
   padding: 0 2.1rem 0 0.7rem;
   overflow: hidden;
-  border: 1.5px dashed #d9dce6;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #fcfcfd, #f7f8fb);
+  border: var(--tb-border-width) dashed var(--tb-border-strong);
+  border-radius: var(--tb-radius-lg);
+  background: var(--tb-bg-raised);
   text-align: left;
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease,
@@ -445,9 +445,9 @@ function getExt(name) {
 }
 
 .folder__drop:hover:not(:disabled) {
-  border-color: #ff9e73;
-  background: linear-gradient(180deg, #fbfcff, #ffece6);
-  box-shadow: 0 6px 14px rgba(255, 69, 0, 0.12);
+  border-color: var(--tb-primary);
+  background: var(--tb-primary-soft);
+  box-shadow: var(--tb-shadow-brand);
   transform: translateY(-1px);
 }
 
@@ -455,20 +455,20 @@ function getExt(name) {
   /* 右侧给悬浮的移除按钮留位，避免「已选 n/m · 大小」被裁掉 */
   padding-right: 2.2rem;
   border-style: solid;
-  border-color: #e6e8f0;
-  background: #ffffff;
+  border-color: var(--tb-border);
+  background: var(--tb-bg-surface);
 }
 
 .folder__drop--filled:hover:not(:disabled) {
-  border-color: #ffc7b3;
-  background: #ffece6;
+  border-color: var(--tb-primary-border);
+  background: var(--tb-primary-soft);
 }
 
 .folder__drop--dragging {
   border-style: solid;
-  border-color: #ff4500;
-  background: #ffece6;
-  box-shadow: 0 0 0 4px rgba(255, 69, 0, 0.14);
+  border-color: var(--tb-primary);
+  background: var(--tb-primary-soft);
+  box-shadow: 0 0 0 4px var(--tb-ring);
 }
 
 .folder__drop:disabled {
@@ -483,16 +483,16 @@ function getExt(name) {
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: var(--tb-radius-md);
   font-size: 14px;
-  color: #cc3700;
-  background: linear-gradient(135deg, #ffece6, #ffd9c7);
-  box-shadow: 0 0 0 1px rgba(255, 69, 0, 0.14) inset;
+  color: var(--tb-primary-text);
+  background: var(--tb-primary-soft);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-primary-border) inset;
 }
 
 .folder__tile--filled {
-  color: #ffffff;
-  background: linear-gradient(135deg, #ff7d4d, #ff4500);
+  color: var(--tb-on-primary);
+  background: var(--tb-primary);
   box-shadow: none;
 }
 
@@ -500,7 +500,7 @@ function getExt(name) {
   min-width: 0;
   font-size: 0.76rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--tb-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -511,7 +511,7 @@ function getExt(name) {
   min-width: 0;
   font-size: 0.76rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--tb-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -520,7 +520,7 @@ function getExt(name) {
 .folder__meta {
   flex: 0 0 auto;
   font-size: 0.66rem;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 
 .folder__clear {
@@ -535,20 +535,20 @@ function getExt(name) {
   width: 22px;
   height: 22px;
   padding: 0;
-  border: 1px solid #e8e9ee;
+  border: var(--tb-border-width) solid var(--tb-border);
   border-radius: 50%;
   font-size: 12px;
-  color: #9ca3af;
-  background: #ffffff;
+  color: var(--tb-text-tertiary);
+  background: var(--tb-bg-surface);
   cursor: pointer;
   transition: color 0.18s ease, background 0.2s ease, border-color 0.2s ease,
     transform 0.18s ease;
 }
 
 .folder__clear:hover:not(:disabled) {
-  color: #b91c1c;
-  background: #fee2e2;
-  border-color: #fecaca;
+  color: var(--tb-danger);
+  background: var(--tb-danger-soft);
+  border-color: var(--tb-danger-soft);
   transform: translateY(-50%) scale(1.08);
 }
 
@@ -558,9 +558,9 @@ function getExt(name) {
   flex-direction: column;
   gap: 0.35rem;
   padding: 0.5rem 0.55rem;
-  border-radius: 10px;
-  background: #fafbfc;
-  border: 1px solid #eef0f3;
+  border-radius: var(--tb-radius-lg);
+  background: var(--tb-bg-raised);
+  border: var(--tb-border-width) solid var(--tb-border);
 }
 
 .folder__picker-head {
@@ -573,13 +573,13 @@ function getExt(name) {
 .folder__picker-title {
   font-size: 0.68rem;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--tb-text-secondary);
 }
 
 .folder__picker-count {
   font-size: 0.66rem;
   font-weight: 600;
-  color: #cc3700;
+  color: var(--tb-primary-text);
 }
 
 .folder__tree {
@@ -587,7 +587,7 @@ function getExt(name) {
   padding: 2px 0;
   overflow-y: auto;
   background: transparent;
-  --el-tree-node-hover-bg-color: #ffece6;
+  --el-tree-node-hover-bg-color: var(--tb-primary-soft);
 }
 
 /* 全选 / 清空 */
@@ -603,17 +603,17 @@ function getExt(name) {
   background: transparent;
   font-size: 0.66rem;
   font-weight: 600;
-  color: #ff4500;
+  color: var(--tb-primary);
   cursor: pointer;
 }
 
 .picker-link:hover:not(:disabled) {
-  color: #cc3700;
+  color: var(--tb-primary-text);
   text-decoration: underline;
 }
 
 .picker-link:disabled {
-  color: #c7cad1;
+  color: var(--tb-text-tertiary);
   cursor: not-allowed;
 }
 
@@ -625,7 +625,7 @@ function getExt(name) {
 .picker-tip {
   margin-left: auto;
   font-size: 0.64rem;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 
 /* 自绘勾选框：on / half / off 三态，不依赖 el-tree 内部勾选状态 */
@@ -634,16 +634,16 @@ function getExt(name) {
   flex: 0 0 auto;
   width: 13px;
   height: 13px;
-  border-radius: 4px;
-  border: 1.5px solid #cbd0dc;
-  background: #ffffff;
+  border-radius: var(--tb-radius-sm);
+  border: var(--tb-border-width) solid var(--tb-border-strong);
+  background: var(--tb-bg-surface);
   transition: background 0.16s ease, border-color 0.16s ease;
 }
 
 .node__check--on,
 .node__check--half {
-  border-color: #ff4500;
-  background: #ff4500;
+  border-color: var(--tb-primary);
+  background: var(--tb-primary);
 }
 
 .node__check--on::after {
@@ -665,8 +665,8 @@ function getExt(name) {
   top: 5px;
   width: 6px;
   height: 1.6px;
-  border-radius: 1px;
-  background: #ffffff;
+  border-radius: var(--tb-radius-xs);
+  background: var(--tb-bg-surface);
 }
 
 .node {
@@ -680,7 +680,7 @@ function getExt(name) {
 }
 
 .node--off .node__label {
-  color: #a9aeb8;
+  color: var(--tb-text-tertiary);
 }
 
 .node--off .node__icon {
@@ -690,42 +690,42 @@ function getExt(name) {
 .node__icon {
   flex: 0 0 auto;
   font-size: 16px;
-  color: #ff9e73;
+  color: var(--tb-primary);
 }
 
 .node__icon--dir {
-  color: #f59e0b;
+  color: var(--tb-accent);
 }
 
 .node__icon--word {
-  color: #cc3700;
+  color: var(--tb-primary-text);
 }
 
 .node__icon--pdf {
-  color: #e11d48;
+  color: var(--tb-danger);
 }
 
 .node__icon--md {
-  color: #0284c7;
+  color: var(--tb-info);
 }
 
 .node__icon--sheet {
-  color: #047857;
+  color: var(--tb-success);
 }
 
 .node__icon--slide {
-  color: #ea580c;
+  color: var(--tb-warning);
 }
 
 .node__icon--text {
-  color: #6b7280;
+  color: var(--tb-text-secondary);
 }
 
 .node__label {
   flex: 1;
   min-width: 0;
   font-size: 0.88rem;
-  color: #4b5563;
+  color: var(--tb-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -734,13 +734,13 @@ function getExt(name) {
 .node__zip {
   flex: 0 0 auto;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--tb-radius-full);
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.2px;
-  color: #4b5563;
-  background: #eef0f3;
-  border: 1px solid #e2e5ea;
+  color: var(--tb-text-secondary);
+  background: var(--tb-bg-sunken);
+  border: var(--tb-border-width) solid var(--tb-border);
 }
 
 /* 解压中指示器 */
@@ -749,8 +749,8 @@ function getExt(name) {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid #ffc7b3;
-  border-top-color: #ff4500;
+  border: 2px solid var(--tb-primary-border);
+  border-top-color: var(--tb-primary);
   animation: folder-spin 0.8s linear infinite;
 }
 
@@ -763,18 +763,18 @@ function getExt(name) {
 .node__tag {
   flex: 0 0 auto;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: var(--tb-radius-full);
   font-size: 0.6rem;
   font-weight: 600;
-  color: #b45309;
-  background: #fff7ed;
-  border: 1px solid #fde68a;
+  color: var(--tb-warning);
+  background: var(--tb-warning-soft);
+  border: var(--tb-border-width) solid var(--tb-warning-soft);
 }
 
 .node__size {
   flex: 0 0 auto;
   font-size: 0.6rem;
-  color: #b6bac2;
+  color: var(--tb-text-tertiary);
 }
 
 .folder__tree::-webkit-scrollbar {
@@ -782,15 +782,15 @@ function getExt(name) {
 }
 
 .folder__tree::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: #d8dade;
+  border-radius: var(--tb-radius-full);
+  background: var(--tb-border-strong);
 }
 
 .folder__tree :deep(.el-tree-node__content) {
   height: 28px;
   margin: 1px 0;
   padding-right: 4px;
-  border-radius: 7px;
+  border-radius: var(--tb-radius-md);
   transition: background 0.16s ease;
 }
 
@@ -803,6 +803,6 @@ function getExt(name) {
 .folder__tree :deep(.el-tree-node__expand-icon) {
   padding: 4px 2px 4px 0;
   font-size: 11px;
-  color: #b6bac2;
+  color: var(--tb-text-tertiary);
 }
 </style>

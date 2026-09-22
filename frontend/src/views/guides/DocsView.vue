@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import LoginForm from '../../components/LoginForm.vue'
 
 const activeTab = ref('account')
@@ -83,12 +83,12 @@ onBeforeUnmount(() => {
       <div class="brand">
         <div class="brand__logo">
           <svg viewBox="0 0 120 120" aria-hidden="true">
-            <rect x="24" y="37" width="16" height="62" fill="#111" />
-            <line x1="24" y1="44" x2="40" y2="44" stroke="#fff" stroke-width="3" />
-            <rect x="46" y="22" width="16" height="74" fill="none" stroke="#111" stroke-width="6" />
-            <rect x="68" y="47" width="16" height="52" fill="#111" />
-            <line x1="67" y1="55" x2="85" y2="55" stroke="#fff" stroke-width="3" />
-            <rect x="90" y="28" width="16" height="68" fill="none" stroke="#111" stroke-width="6" />
+            <rect x="24" y="37" width="16" height="62" fill="currentColor" />
+            <line x1="24" y1="44" x2="40" y2="44" stroke="var(--tb-bg-surface)" stroke-width="3" />
+            <rect x="46" y="22" width="16" height="74" fill="none" stroke="currentColor" stroke-width="6" />
+            <rect x="68" y="47" width="16" height="52" fill="currentColor" />
+            <line x1="67" y1="55" x2="85" y2="55" stroke="var(--tb-bg-surface)" stroke-width="3" />
+            <rect x="90" y="28" width="16" height="68" fill="none" stroke="currentColor" stroke-width="6" />
           </svg>
         </div>
         <div class="brand__text">
@@ -140,7 +140,7 @@ onBeforeUnmount(() => {
 .login-page {
   display: flex;
   min-height: 100vh;
-  background: #f5f7fb;
+  background: var(--tb-bg-page);
 }
 
 /* 左侧登录区 */
@@ -155,10 +155,10 @@ onBeforeUnmount(() => {
 .login-card {
   width: 100%;
   max-width: 420px;
-  background: #fff;
-  border-radius: 16px;
+  background: var(--tb-bg-surface);
+  border-radius: var(--tb-radius-lg);
   padding: 2.5rem 2.25rem;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--tb-shadow-3);
 }
 
 .login-card__header {
@@ -167,23 +167,23 @@ onBeforeUnmount(() => {
 }
 
 .login-card__title {
-  font-family: var(--font-serif);
+  font-family: var(--tb-font-display);
   font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: 0.01em;
-  color: #111827;
+  color: var(--tb-text-primary);
 }
 
 .login-card__subtitle {
   margin-top: 0.5rem;
   font-size: 0.9rem;
-  color: #6b7280;
+  color: var(--tb-text-secondary);
 }
 
 .login-tabs {
   display: flex;
   margin-bottom: 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--tb-border);
 }
 
 .login-tab {
@@ -193,17 +193,17 @@ onBeforeUnmount(() => {
   background: transparent;
   cursor: pointer;
   font-size: 0.95rem;
-  color: #6b7280;
+  color: var(--tb-text-secondary);
   position: relative;
   transition: color 0.2s;
 }
 
 .login-tab:hover {
-  color: #ff4500;
+  color: var(--tb-primary-text);
 }
 
 .login-tab--active {
-  color: #ff4500;
+  color: var(--tb-primary-text);
   font-weight: 600;
 }
 
@@ -214,7 +214,7 @@ onBeforeUnmount(() => {
   right: 0;
   bottom: -1px;
   height: 2px;
-  background: #ff4500;
+  background: var(--tb-primary);
 }
 
 /* 右侧品牌区 */
@@ -224,7 +224,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #ff4500 0%, #8b5cf6 55%, #a855f7 100%);
+  background: linear-gradient(135deg, var(--tb-brand-500) 0%, var(--tb-primary) 55%, var(--tb-primary-active) 100%);
   padding: 5rem 3rem 3rem;
 }
 
@@ -241,8 +241,8 @@ onBeforeUnmount(() => {
   width: 52px;
   height: 52px;
   padding: 8px;
-  background: #fff;
-  border-radius: 14px;
+  background: var(--tb-bg-surface);
+  border-radius: var(--tb-radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -261,12 +261,12 @@ onBeforeUnmount(() => {
 .brand__name {
   font-size: 1.15rem;
   font-weight: 700;
-  color: #fff;
+  color: var(--tb-on-primary);
 }
 
 .brand__slogan {
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.85);
+  color: color-mix(in oklab, var(--tb-on-primary) 85%, transparent);
 }
 
 .testimonial {
@@ -286,20 +286,20 @@ onBeforeUnmount(() => {
 .dot {
   height: 4px;
   width: 8px;
-  border-radius: 999px;
+  border-radius: var(--tb-radius-full);
   border: none;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.4);
+  background: color-mix(in oklab, var(--tb-on-primary) 40%, transparent);
   transition: all 0.4s ease;
 }
 
 .dot:hover {
-  background: rgba(255, 255, 255, 0.7);
+  background: color-mix(in oklab, var(--tb-on-primary) 70%, transparent);
 }
 
 .dot--active {
   width: 20px;
-  background: #fff;
+  background: var(--tb-bg-surface);
 }
 
 .testimonial__slides {
@@ -319,7 +319,7 @@ onBeforeUnmount(() => {
 .quote {
   position: relative;
   margin: 0 0 2rem;
-  color: #fff;
+  color: var(--tb-on-primary);
 }
 
 .quote__mark {
@@ -327,7 +327,7 @@ onBeforeUnmount(() => {
   font-size: 96px;
   line-height: 1;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.35);
+  color: color-mix(in oklab, var(--tb-on-primary) 35%, transparent);
 }
 
 .quote__mark--left {
@@ -359,20 +359,20 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
+  background: color-mix(in oklab, var(--tb-on-primary) 20%, transparent);
+  color: var(--tb-on-primary);
   font-weight: 600;
   font-size: 1rem;
 }
 
 .author__name {
   font-weight: 600;
-  color: #fff;
+  color: var(--tb-on-primary);
 }
 
 .author__role {
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.75);
+  color: color-mix(in oklab, var(--tb-on-primary) 75%, transparent);
 }
 
 @media (max-width: 900px) {

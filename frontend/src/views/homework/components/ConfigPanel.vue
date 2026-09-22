@@ -265,9 +265,9 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 0 0 1px #e8e9ee;
+  border-radius: var(--tb-radius-lg);
+  background: var(--tb-bg-surface);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border);
   overflow: hidden;
 }
 
@@ -286,8 +286,8 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 }
 
 .config-panel__scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: #d8dade;
+  border-radius: var(--tb-radius-full);
+  background: var(--tb-border-strong);
 }
 
 .panel-section {
@@ -324,7 +324,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.2px;
-  color: #374151;
+  color: var(--tb-text-primary);
 }
 
 .section-head__title::before {
@@ -332,19 +332,19 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   width: 3px;
   height: 12px;
   margin-right: 6px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, #fbbf24, #f59e0b);
+  border-radius: var(--tb-radius-xs);
+  background: var(--tb-accent);
 }
 
 .section-head__hint,
 .section-head__count {
   font-size: 0.7rem;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 
 .section-head__arrow {
   font-size: 14px;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 
 .field {
@@ -361,14 +361,14 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 
 .field__label {
   font-size: 0.74rem;
-  color: #6b7280;
+  color: var(--tb-text-secondary);
 }
 
 .field__tip {
   margin: 0;
   font-size: 0.66rem;
   line-height: 1.6;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 
 /* 知识库下拉 */
@@ -381,28 +381,28 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 :deep(.workflow-select .el-select__wrapper) {
   min-height: 40px;
   padding: 0.3rem 0.75rem;
-  border-radius: 10px;
-  background: #f7f8fa;
-  box-shadow: 0 0 0 1px #e8e9ee inset;
+  border-radius: var(--tb-radius-lg);
+  background: var(--tb-bg-sunken);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border) inset;
   font-size: 0.8rem;
   transition: box-shadow 0.2s ease, background 0.2s ease;
 }
 
 :deep(.kb-select .el-select__wrapper:hover),
 :deep(.workflow-select .el-select__wrapper:hover) {
-  box-shadow: 0 0 0 1px #d5d7de inset;
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border-strong) inset;
 }
 
 :deep(.kb-select .el-select__wrapper.is-focused),
 :deep(.workflow-select .el-select__wrapper.is-focused) {
-  background: #ffffff;
-  box-shadow: 0 0 0 1px #ff4500 inset;
+  background: var(--tb-bg-surface);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-primary) inset;
 }
 
 .kb-select__prefix {
   flex: 0 0 auto;
   font-size: 15px;
-  color: #ff4500;
+  color: var(--tb-primary);
 }
 
 .kb-option {
@@ -420,16 +420,16 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--tb-radius-md);
   font-size: 15px;
-  color: #cc3700;
-  background: linear-gradient(135deg, #ffece6, #ffd9c7);
-  box-shadow: 0 0 0 1px rgba(255, 69, 0, 0.12) inset;
+  color: var(--tb-primary-text);
+  background: var(--tb-primary-soft);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-primary-border) inset;
 }
 
 .kb-option__tile--active {
-  color: #ffffff;
-  background: linear-gradient(135deg, #ff7d4d, #ff4500);
+  color: var(--tb-on-primary);
+  background: var(--tb-primary);
   box-shadow: none;
 }
 
@@ -443,7 +443,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 .kb-option__name {
   font-size: 0.78rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--tb-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -451,7 +451,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 
 .kb-option__desc {
   font-size: 0.68rem;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -461,26 +461,26 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 .kb-option__tag {
   flex: 0 0 auto;
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--tb-radius-full);
   font-size: 0.66rem;
   font-weight: 600;
 }
 
 .kb-option__count {
-  color: #6b7280;
-  background: #f2f3f6;
+  color: var(--tb-text-secondary);
+  background: var(--tb-bg-sunken);
 }
 
 .kb-option__tag {
-  color: #b45309;
-  background: #fff7ed;
-  border: 1px solid #fde68a;
+  color: var(--tb-warning);
+  background: var(--tb-warning-soft);
+  border: var(--tb-border-width) solid var(--tb-warning-soft);
 }
 
 .kb-option__check {
   flex: 0 0 auto;
   font-size: 14px;
-  color: #ff4500;
+  color: var(--tb-primary);
 }
 
 .workflow-option {
@@ -492,12 +492,12 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 .workflow-option__label {
   font-size: 0.78rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--tb-text-primary);
 }
 
 .workflow-option__hint {
   font-size: 0.68rem;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 
 /* 工作流操作：新建 / 查看编辑 */
@@ -513,19 +513,19 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   gap: 3px;
   height: 27px;
   padding: 0 0.55rem;
-  border: 1px solid #e8e9ee;
-  border-radius: 8px;
-  background: #ffffff;
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-bg-surface);
   font-size: 0.7rem;
-  color: #4b5563;
+  color: var(--tb-text-secondary);
   cursor: pointer;
   transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
 }
 
 .workflow-action:hover:not(:disabled) {
-  color: #cc3700;
-  border-color: #ffc7b3;
-  background: #ffece6;
+  color: var(--tb-primary-text);
+  border-color: var(--tb-primary-border);
+  background: var(--tb-primary-soft);
 }
 
 .workflow-action:disabled {
@@ -535,38 +535,38 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 
 /* 文本域 / 分段控件 / 数字输入 */
 :deep(.el-textarea__inner) {
-  background: #f7f8fa;
-  border-radius: 10px;
+  background: var(--tb-bg-sunken);
+  border-radius: var(--tb-radius-lg);
   padding: 0.65rem 0.75rem;
   font-size: 0.8rem;
   line-height: 1.7;
-  color: #111827;
-  box-shadow: 0 0 0 1px #e8e9ee inset;
+  color: var(--tb-text-primary);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border) inset;
 }
 
 :deep(.el-textarea__inner:hover) {
-  box-shadow: 0 0 0 1px #d5d7de inset;
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border-strong) inset;
 }
 
 :deep(.el-textarea__inner:focus) {
-  background: #ffffff;
-  box-shadow: 0 0 0 1px #ff4500 inset;
+  background: var(--tb-bg-surface);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-primary) inset;
 }
 
 :deep(.el-segmented) {
-  --el-segmented-bg-color: #f2f3f6;
-  --el-segmented-color: #6b7280;
-  --el-segmented-item-selected-bg-color: #ffffff;
-  --el-segmented-item-selected-color: #cc3700;
-  --el-segmented-item-hover-bg-color: #e9eaef;
-  --el-segmented-item-hover-color: #111827;
+  --el-segmented-bg-color: var(--tb-bg-sunken);
+  --el-segmented-color: var(--tb-text-secondary);
+  --el-segmented-item-selected-bg-color: var(--tb-bg-surface);
+  --el-segmented-item-selected-color: var(--tb-primary-text);
+  --el-segmented-item-hover-bg-color: var(--tb-bg-sunken);
+  --el-segmented-item-hover-color: var(--tb-text-primary);
   padding: 3px;
-  border-radius: 9px;
+  border-radius: var(--tb-radius-md);
 }
 
 :deep(.el-segmented__item),
 :deep(.el-segmented__item-selected) {
-  border-radius: 7px;
+  border-radius: var(--tb-radius-md);
 }
 
 :deep(.el-segmented__item) {
@@ -574,7 +574,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 }
 
 :deep(.el-segmented__item-selected) {
-  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.1);
+  box-shadow: var(--tb-shadow-1);
 }
 
 :deep(.el-input-number) {
@@ -582,24 +582,24 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 }
 
 :deep(.el-input-number .el-input__wrapper) {
-  border-radius: 9px;
-  background: #f7f8fa;
-  box-shadow: 0 0 0 1px #e8e9ee inset;
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-bg-sunken);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border) inset;
 }
 
 /* 底部主按钮 */
 .config-panel__footer {
   flex: 0 0 auto;
   padding: 0.9rem 1rem 1rem;
-  border-top: 1px solid #eceef2;
-  background: #ffffff;
+  border-top: 1px solid var(--tb-border);
+  background: var(--tb-bg-surface);
 }
 
 .grade-btn {
   font-size: 1rem;
   font-weight: 800;
   letter-spacing: 0.4px;
-  color: #ffffff;
+  color: var(--tb-on-primary);
 }
 
 .grade-btn__inner {
@@ -612,11 +612,11 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   display: inline-flex;
   align-items: center;
   padding: 2px 10px;
-  border-radius: 999px;
+  border-radius: var(--tb-radius-full);
   font-size: 0.75rem;
   font-weight: 600;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.2);
+  color: var(--tb-on-primary);
+  background: color-mix(in oklab, var(--tb-on-primary) 20%, transparent);
 }
 </style>
 
@@ -627,16 +627,16 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
    并通过 popper-class="hw-kb-select-popper" 精确限定作用范围。 */
 .el-popper.hw-kb-select-popper.hw-kb-select-popper {
   padding: 0;
-  border: 1px solid #eceef2;
-  border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 14px 34px rgba(17, 24, 39, 0.14);
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-lg);
+  background: var(--tb-bg-surface);
+  box-shadow: var(--tb-shadow-4);
   overflow: hidden;
 }
 
 .el-popper.hw-kb-select-popper .el-popper__arrow::before {
-  border: 1px solid #eceef2;
-  background: #ffffff;
+  border: var(--tb-border-width) solid var(--tb-border);
+  background: var(--tb-bg-surface);
 }
 
 .hw-kb-select-popper .el-select-dropdown__list {
@@ -649,21 +649,21 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.2px;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 
 .hw-kb-select-popper .el-select-group:last-of-type {
   margin-top: 4px;
-  border-top: 1px solid #f1f2f5;
+  border-top: 1px solid var(--tb-border);
 }
 
 .hw-kb-select-popper .el-select-dropdown__item {
   height: auto;
   margin: 0 0 2px;
   padding: 6px 8px;
-  border-radius: 9px;
+  border-radius: var(--tb-radius-md);
   line-height: 1.4;
-  color: #374151;
+  color: var(--tb-text-primary);
   transition: background 0.18s ease, color 0.18s ease;
 }
 
@@ -673,31 +673,31 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 
 .hw-kb-select-popper .el-select-dropdown__item.is-hovering,
 .hw-kb-select-popper .el-select-dropdown__item:hover {
-  background: #ffece6;
+  background: var(--tb-primary-soft);
 }
 
 .hw-kb-select-popper .el-select-dropdown__item.is-selected {
-  background: #ffece6;
-  color: #cc3700;
+  background: var(--tb-primary-soft);
+  color: var(--tb-primary-text);
 }
 
 .hw-kb-select-popper .el-select-dropdown__item.is-selected .kb-option__name,
 .hw-kb-select-popper .el-select-dropdown__item.is-selected .workflow-option__label {
-  color: #cc3700;
+  color: var(--tb-primary-text);
 }
 
 .hw-kb-select-popper .el-select-dropdown__empty {
   padding: 18px 0;
   font-size: 0.76rem;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 
 .hw-kb-select-popper .el-select-dropdown__footer {
   padding: 6px 12px;
-  border-top: 1px solid #f1f2f5;
-  background: #fafbfc;
+  border-top: 1px solid var(--tb-border);
+  background: var(--tb-bg-raised);
   font-size: 0.68rem;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
   text-align: right;
 }
 </style>

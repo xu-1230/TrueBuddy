@@ -16,7 +16,7 @@
 <script setup>
 import StaticTable from './StaticTable.vue'
 
-const props = defineProps({
+defineProps({
   elementInfo: {
     type: Object,
     required: true,

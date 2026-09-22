@@ -53,7 +53,6 @@
 <script setup>
 import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { ElMessage } from 'element-plus'
 import { Aim, CaretLeft, CaretRight, FullScreen, SwitchButton, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { useSlidesStore } from '../stores/slides'
 import { KEYS } from '../configs/hotkey'
@@ -76,9 +75,6 @@ const {
   mousewheelListener,
   touchStartListener,
   touchEndListener,
-  turnPrevSlide,
-  turnNextSlide,
-  turnSlideToIndex,
   turnSlideToId,
   execPrev,
   execNext,
@@ -105,14 +101,14 @@ onUnmounted(() => document.removeEventListener('keydown', keydownListener))
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: #1d1d1d;
+  background: var(--tb-neutral-950);
 }
 .tools-left {
   position: fixed;
   bottom: 8px;
   left: 8px;
   font-size: 25px;
-  color: #666;
+  color: var(--tb-text-secondary);
   z-index: 10;
   display: flex;
   align-items: center;
@@ -156,18 +152,18 @@ onUnmounted(() => document.removeEventListener('keydown', keydownListener))
   align-items: center;
   border-radius: 8px;
   font-size: 25px;
-  background-color: #fff;
-  color: #333;
+  background-color: var(--tb-bg-surface);
+  color: var(--tb-text-primary);
   padding: 8px 10px;
-  box-shadow: 0 2px 12px 0 rgb(56 56 56 / 20%);
-  border: 1px solid #e2e6ed;
+  box-shadow: var(--tb-shadow-2);
+  border: var(--tb-border-width) solid var(--tb-border);
 }
 .tools-right .tool-btn {
   cursor: pointer;
 }
 .tools-right .tool-btn:hover,
 .tools-right .tool-btn.active {
-  color: #5b9bd5;
+  color: var(--tb-primary);
 }
 .tools-right .tool-btn + .tool-btn {
   margin-left: 15px;
@@ -176,6 +172,6 @@ onUnmounted(() => document.removeEventListener('keydown', keydownListener))
   font-size: 13px;
   padding: 8px 12px;
   cursor: pointer;
-  color: #333;
+  color: var(--tb-text-primary);
 }
 </style>

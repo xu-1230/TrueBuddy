@@ -23,7 +23,7 @@ export function useSmoothScroll(options = {}) {
     // 驱动 GSAP ticker
     lenis.value.on('scroll', ScrollTrigger.update)
     gsap.ticker.add((time) => {
-      lenis.value && lenis.value.raf(time * 1000)
+      if (lenis.value) lenis.value.raf(time * 1000)
     })
     gsap.ticker.lagSmoothing(0)
 

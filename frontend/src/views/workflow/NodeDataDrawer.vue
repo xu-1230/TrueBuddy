@@ -204,7 +204,7 @@ const handleSave = () => {
   if (!current) return
 
   const label = draft.label.trim()
-  const data = { ...(current.data ?? {}), label }
+  const data = { ...current.data, label }
   let dropped = 0
 
   for (const group of VARIABLE_GROUPS) {
@@ -486,10 +486,10 @@ const selectNode = (nodeId) => {
   flex-shrink: 0;
   padding: 0 8px;
   border-radius: 6px;
-  background: #f2f3f5;
+  background: var(--tb-bg-sunken);
   font-size: 12px;
   line-height: 20px;
-  color: #4e5969;
+  color: var(--tb-text-secondary);
 }
 
 .node-drawer__title {
@@ -499,17 +499,17 @@ const selectNode = (nodeId) => {
   white-space: nowrap;
   font-size: 15px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--tb-text-primary);
 }
 
 .node-drawer__dirty {
   flex-shrink: 0;
   padding: 0 6px;
   border-radius: 4px;
-  background: #fff7e6;
+  background: var(--tb-warning-soft);
   font-size: 12px;
   line-height: 18px;
-  color: #d48806;
+  color: var(--tb-warning);
 }
 
 /* ===== 抽屉主体 ===== */
@@ -523,14 +523,14 @@ const selectNode = (nodeId) => {
   padding: 32px 0;
   text-align: center;
   font-size: 13px;
-  color: #9aa1ad;
+  color: var(--tb-text-tertiary);
 }
 
 .panel {
   padding: 12px;
-  border: 1px solid #e5e7eb;
+  border: var(--tb-border-width) solid var(--tb-border);
   border-radius: 10px;
-  background: #fff;
+  background: var(--tb-bg-surface);
 }
 
 .panel__head {
@@ -547,7 +547,7 @@ const selectNode = (nodeId) => {
   margin: 0 0 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--tb-text-primary);
 }
 
 .panel__head .panel__title {
@@ -557,20 +557,20 @@ const selectNode = (nodeId) => {
 .panel__count {
   padding: 0 6px;
   border-radius: 999px;
-  background: #f2f3f5;
+  background: var(--tb-bg-sunken);
   font-size: 12px;
   font-weight: 400;
   line-height: 18px;
-  color: #86909c;
+  color: var(--tb-text-secondary);
 }
 
 .panel__empty {
   margin: 0;
   padding: 8px;
-  border: 1px dashed #e5e7eb;
+  border: var(--tb-border-width) dashed var(--tb-border);
   border-radius: 8px;
   font-size: 12px;
-  color: #9aa1ad;
+  color: var(--tb-text-tertiary);
 }
 
 /* ===== 字段 ===== */
@@ -594,14 +594,14 @@ const selectNode = (nodeId) => {
   display: block;
   margin-bottom: 4px;
   font-size: 12px;
-  color: #86909c;
+  color: var(--tb-text-secondary);
 }
 
 .field__hint {
   margin: 8px 0 0;
   font-size: 12px;
   line-height: 1.6;
-  color: #9aa1ad;
+  color: var(--tb-text-tertiary);
 }
 
 .field__item :deep(.el-input-number),
@@ -612,9 +612,9 @@ const selectNode = (nodeId) => {
 /* ===== 变量卡片 ===== */
 .var-card {
   padding: 10px;
-  border: 1px solid #eef0f3;
+  border: var(--tb-border-width) solid var(--tb-border);
   border-radius: 8px;
-  background: #fafbfc;
+  background: var(--tb-bg-raised);
 }
 
 .var-card__head {
@@ -626,13 +626,13 @@ const selectNode = (nodeId) => {
 
 .var-card__name {
   font-size: 12px;
-  color: #4e5969;
+  color: var(--tb-text-secondary);
 }
 
 .var-card__schema {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px dashed #e5e7eb;
+  border-top: 1px dashed var(--tb-border);
 }
 
 /* ===== 内部节点 ===== */
@@ -643,9 +643,9 @@ const selectNode = (nodeId) => {
   width: 100%;
   margin-bottom: 6px;
   padding: 6px 10px;
-  border: 1px solid #eef0f3;
+  border: var(--tb-border-width) solid var(--tb-border);
   border-radius: 8px;
-  background: #fafbfc;
+  background: var(--tb-bg-raised);
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
 }
@@ -655,8 +655,8 @@ const selectNode = (nodeId) => {
 }
 
 .child-row:hover {
-  border-color: #6f3381;
-  background: #faf5fc;
+  border-color: var(--tb-primary);
+  background: var(--tb-primary-soft);
 }
 
 .child-row__name {
@@ -665,14 +665,14 @@ const selectNode = (nodeId) => {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  color: #1d2129;
+  color: var(--tb-text-primary);
 }
 
 .child-row__type {
   flex-shrink: 0;
   margin-left: 8px;
   font-size: 12px;
-  color: #86909c;
+  color: var(--tb-text-secondary);
 }
 
 /* ===== 原始数据 ===== */
@@ -682,10 +682,10 @@ const selectNode = (nodeId) => {
   overflow: auto;
   padding: 8px;
   border-radius: 6px;
-  background: #f7f8fa;
+  background: var(--tb-bg-sunken);
   font-size: 12px;
   line-height: 1.6;
-  color: #4e5969;
+  color: var(--tb-text-secondary);
 }
 
 :deep(.el-collapse),

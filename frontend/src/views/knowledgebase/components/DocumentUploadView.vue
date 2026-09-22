@@ -630,9 +630,9 @@ onBeforeRouteLeave(async () => {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--tb-bg-surface);
+  border-radius: var(--tb-radius-lg);
+  box-shadow: var(--tb-shadow-1);
 }
 
 .kb-toolbar__left {
@@ -642,14 +642,14 @@ onBeforeRouteLeave(async () => {
 }
 
 .kb-toolbar__folder-icon {
-  color: #f59e0b;
+  color: var(--tb-accent);
   font-size: 18px;
 }
 
 .kb-toolbar__title {
   font-size: 1.125rem;
   font-weight: 700;
-  color: #111827;
+  color: var(--tb-text-primary);
   margin-left: 0.25rem;
   max-width: 280px;
   overflow: hidden;
@@ -659,15 +659,15 @@ onBeforeRouteLeave(async () => {
 
 .kb-toolbar__subtitle {
   font-size: 0.9rem;
-  color: #6b7280;
+  color: var(--tb-text-secondary);
   margin-left: 0.25rem;
 }
 
 /* ========== 面板 ========== */
 .kb-panel {
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--tb-bg-surface);
+  border-radius: var(--tb-radius-lg);
+  box-shadow: var(--tb-shadow-1);
   padding: 1.25rem 1rem;
 }
 
@@ -685,9 +685,9 @@ onBeforeRouteLeave(async () => {
   padding: 12px 16px;
   font-size: 0.82rem;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--tb-text-secondary);
   letter-spacing: 0.04em;
-  border-bottom: 1px solid #f0f1f3;
+  border-bottom: 1px solid var(--tb-border);
 }
 
 /* ========== 第一步 ========== */
@@ -698,16 +698,16 @@ onBeforeRouteLeave(async () => {
 .kb-progress__msg {
   margin-top: 0.5rem;
   font-size: 0.85rem;
-  color: #6b7280;
+  color: var(--tb-text-secondary);
 }
 
 :deep(.el-upload-dragger:hover),
 :deep(.el-upload:focus .el-upload-dragger) {
-  border-color: #ff4500;
+  border-color: var(--tb-primary);
 }
 
 :deep(.el-upload__text em) {
-  color: #ff4500;
+  color: var(--tb-primary);
   font-style: normal;
 }
 
@@ -719,7 +719,7 @@ onBeforeRouteLeave(async () => {
 
 .kb-preview__side {
   flex: 0 0 280px;
-  border-right: 1px solid #f0f1f3;
+  border-right: 1px solid var(--tb-border);
   display: flex;
   flex-direction: column;
 }
@@ -738,23 +738,23 @@ onBeforeRouteLeave(async () => {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--tb-radius-md);
   cursor: pointer;
   transition: background 0.2s ease;
 }
 
 .kb-file-list__item:hover {
-  background: #f3f4f6;
+  background: var(--tb-bg-sunken);
 }
 
 .kb-file-list__item--active {
-  background: #ffece6;
+  background: var(--tb-primary-soft);
 }
 
 .kb-file-list__icon {
   flex: 0 0 auto;
   font-size: 18px;
-  color: #ff4500;
+  color: var(--tb-primary);
 }
 
 .kb-file-list__body {
@@ -767,14 +767,14 @@ onBeforeRouteLeave(async () => {
 
 .kb-file-list__name {
   font-size: 0.83rem;
-  color: #374151;
+  color: var(--tb-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .kb-file-list__item--active .kb-file-list__name {
-  color: #cc3700;
+  color: var(--tb-primary-text);
   font-weight: 600;
 }
 
@@ -783,19 +783,19 @@ onBeforeRouteLeave(async () => {
 }
 
 .kb-file-list__status--warning {
-  color: #d97706;
+  color: var(--tb-warning);
 }
 
 .kb-file-list__status--success {
-  color: #16a34a;
+  color: var(--tb-success);
 }
 
 .kb-file-list__status--danger {
-  color: #dc2626;
+  color: var(--tb-danger);
 }
 
 .kb-file-list__status--info {
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 
 .kb-preview__main {
@@ -813,27 +813,27 @@ onBeforeRouteLeave(async () => {
   gap: 10px;
   max-height: 460px;
   overflow-y: auto;
-  background: #f9fafb;
+  background: var(--tb-bg-raised);
 }
 
 .kb-chunk-card {
   padding: 10px 12px;
-  background: #fff;
-  border: 1px solid #eef0f3;
-  border-radius: 8px;
+  background: var(--tb-bg-surface);
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-md);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .kb-chunk-card:hover {
-  border-color: #ffc7b3;
-  box-shadow: 0 2px 10px rgba(255, 69, 0, 0.08);
+  border-color: var(--tb-primary-border);
+  box-shadow: var(--tb-shadow-1);
 }
 
 /* 分片正文：Markdown 渲染容器（字号 / 颜色由 MarkdownViewer 内的 .markdown-body 继承） */
 .kb-chunk-card__markdown {
   font-size: 0.83rem;
   line-height: 1.7;
-  color: #4b5563;
+  color: var(--tb-text-secondary);
   word-break: break-word;
 }
 
@@ -853,7 +853,7 @@ onBeforeRouteLeave(async () => {
 
 .kb-chunk-card__seq {
   font-size: 0.72rem;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 
 .kb-chunk-card__ops {
@@ -867,7 +867,7 @@ onBeforeRouteLeave(async () => {
   font-family: inherit;
   font-size: 0.83rem;
   line-height: 1.7;
-  color: #4b5563;
+  color: var(--tb-text-secondary);
 }
 
 /* ========== 解析中 / 解析失败 ========== */
@@ -877,13 +877,13 @@ onBeforeRouteLeave(async () => {
   flex-direction: column;
   gap: 1rem;
   padding: 2.5rem 2rem;
-  background: #f9fafb;
+  background: var(--tb-bg-raised);
 }
 
 .kb-parsing__msg {
   margin: 0;
   font-size: 0.85rem;
-  color: #6b7280;
+  color: var(--tb-text-secondary);
 }
 
 .kb-parse-error {
@@ -904,21 +904,21 @@ onBeforeRouteLeave(async () => {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: #f9fafb;
-  border: 1px solid #ffc7b3;
-  border-radius: 8px;
+  background: var(--tb-bg-raised);
+  border: var(--tb-border-width) solid var(--tb-primary-border);
+  border-radius: var(--tb-radius-md);
 }
 
 .kb-file-item__icon {
   font-size: 22px;
-  color: #ff4500;
+  color: var(--tb-primary);
 }
 
 .kb-file-item__name {
   flex: 1;
   min-width: 0;
   font-size: 0.88rem;
-  color: #111827;
+  color: var(--tb-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -926,7 +926,7 @@ onBeforeRouteLeave(async () => {
 
 .kb-file-item__size {
   font-size: 0.8rem;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
 }
 
 .kb-file-item__progress {

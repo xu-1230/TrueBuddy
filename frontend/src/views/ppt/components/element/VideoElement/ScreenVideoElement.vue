@@ -21,7 +21,7 @@
 </template>
 
 <script setup>
-const props = defineProps({
+defineProps({
   elementInfo: {
     type: Object,
     required: true,

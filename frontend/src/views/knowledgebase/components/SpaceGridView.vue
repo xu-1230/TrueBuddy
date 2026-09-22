@@ -161,9 +161,9 @@ function onDelete(space) {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--tb-bg-surface);
+  border-radius: var(--tb-radius-lg);
+  box-shadow: var(--tb-shadow-1);
 }
 
 .kb-toolbar__title {
@@ -172,7 +172,7 @@ function onDelete(space) {
   gap: 0.5rem;
   font-size: 1.125rem;
   font-weight: 700;
-  color: #111827;
+  color: var(--tb-text-primary);
 }
 
 .btn-icon {

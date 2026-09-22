@@ -17,7 +17,7 @@ export const exitFullscreen = () => {
     else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
     else if (doc.mozCancelFullScreen) doc.mozCancelFullScreen();
     else if (doc.msExitFullscreen) doc.msExitFullscreen();
-  } catch (e) {
+  } catch {
     // ignore
   }
 };

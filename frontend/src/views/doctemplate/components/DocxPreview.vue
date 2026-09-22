@@ -182,7 +182,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  background: #eef0f4;
+  background: var(--tb-bg-sunken);
 }
 
 .docx-preview__body {
@@ -190,8 +190,8 @@ onBeforeUnmount(() => {
   min-height: 0;
   padding: 1.25rem;
   overflow: auto;
-  background-color: #fbfbfc;
-  background-image: radial-gradient(#dfe2e8 1px, transparent 1px);
+  background-color: var(--tb-bg-sunken);
+  background-image: radial-gradient(var(--tb-border) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 
@@ -207,8 +207,8 @@ onBeforeUnmount(() => {
 
 .docx-preview__body :deep(.docx-wrapper > section.docx) {
   margin: 0;
-  border-radius: 4px;
-  box-shadow: 0 10px 26px rgba(17, 24, 39, 0.12);
+  border-radius: 0;
+  box-shadow: var(--tb-shadow-3);
 }
 
 /* ---------- 元素选择模式 ---------- */
@@ -221,17 +221,17 @@ onBeforeUnmount(() => {
 .docx-preview--picking
   .docx-preview__body
   :deep(:is(p, h1, h2, h3, h4, h5, h6, table, tr, td, th, li, img):hover:not(.docx-picked)) {
-  outline: 2px solid #ff9e73;
+  outline: 2px solid var(--tb-primary-border);
   outline-offset: 1px;
-  background-color: rgba(255, 69, 0, 0.06);
+  background-color: var(--tb-primary-soft);
 }
 
 /* 已选中：实心橙红描边 + 淡色底 */
 .docx-preview__body :deep(.docx-picked) {
-  outline: 2px solid #ff4500;
+  outline: 2px solid var(--tb-primary);
   outline-offset: 1px;
-  background-color: rgba(255, 69, 0, 0.1);
-  border-radius: 2px;
+  background-color: var(--tb-primary-soft);
+  border-radius: 0;
 }
 
 .docx-preview__overlay {
@@ -245,7 +245,7 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
   padding: 1.5rem;
   text-align: center;
-  background: rgba(251, 251, 252, 0.92);
+  background: color-mix(in oklab, var(--tb-bg-page) 92%, transparent);
   backdrop-filter: blur(2px);
 }
 
@@ -254,8 +254,8 @@ onBeforeUnmount(() => {
   height: 30px;
   margin-bottom: 0.35rem;
   border-radius: 50%;
-  border: 3px solid #ffdacc;
-  border-top-color: var(--primary, #ff4500);
+  border: 3px solid var(--tb-primary-border);
+  border-top-color: var(--tb-primary);
   animation: docx-spin 0.8s linear infinite;
 }
 
@@ -263,20 +263,20 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--tb-text-primary);
 }
 
 .docx-preview__overlay-desc {
   margin: 0;
   max-width: 320px;
   font-size: 0.78rem;
-  color: #9ca3af;
+  color: var(--tb-text-tertiary);
   word-break: break-all;
 }
 
 .docx-preview__overlay-icon {
   font-size: 38px;
-  color: #f59e0b;
+  color: var(--tb-accent);
 }
 
 .docx-preview__retry {
@@ -286,10 +286,10 @@ onBeforeUnmount(() => {
   margin-top: 0.6rem;
   height: 32px;
   padding: 0 0.9rem;
-  border: 1px solid #ffc7b3;
-  border-radius: 8px;
-  background: #ffece6;
-  color: #cc3700;
+  border: var(--tb-border-width) solid var(--tb-primary-border);
+  border-radius: 0;
+  background: var(--tb-primary-soft);
+  color: var(--tb-primary-text);
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
@@ -297,8 +297,8 @@ onBeforeUnmount(() => {
 }
 
 .docx-preview__retry:hover {
-  background: #ffdacc;
-  border-color: #ff9e73;
+  background: var(--tb-primary-border);
+  border-color: var(--tb-primary-border);
 }
 
 .docx-preview__body::-webkit-scrollbar {
@@ -306,8 +306,8 @@ onBeforeUnmount(() => {
 }
 
 .docx-preview__body::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: #d8dade;
+  border-radius: 0;
+  background: var(--tb-border-strong);
 }
 
 @keyframes docx-spin {
