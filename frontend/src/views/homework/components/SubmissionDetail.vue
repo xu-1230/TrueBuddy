@@ -144,9 +144,9 @@ const emit = defineEmits(['back'])
 }
 
 .ghost-chip:hover {
-  color: #4f46e5;
-  border-color: #c7d2fe;
-  background: #eef2ff;
+  color: #cc3700;
+  border-color: #ffc7b3;
+  background: #ffece6;
 }
 
 .detail__title {
@@ -164,7 +164,7 @@ const emit = defineEmits(['back'])
 
 .detail__title .el-icon {
   flex: 0 0 auto;
-  color: #6366f1;
+  color: #ff4500;
 }
 
 .detail__student {
@@ -241,7 +241,7 @@ const emit = defineEmits(['back'])
   margin: 0;
   padding: 0.85rem;
   overflow-y: auto;
-  font-family: 'PingFang SC', 'Microsoft YaHei', monospace;
+  font-family: var(--font-sans);
   font-size: 0.76rem;
   line-height: 1.9;
   color: #374151;
@@ -285,7 +285,7 @@ const emit = defineEmits(['back'])
   font-weight: 800;
   line-height: 1;
   letter-spacing: -1px;
-  color: #4f46e5;
+  color: #cc3700;
 }
 
 .score__unit {
@@ -299,9 +299,9 @@ const emit = defineEmits(['back'])
   border-radius: 999px;
   font-size: 0.74rem;
   font-weight: 700;
-  color: #4f46e5;
-  background: #eef2ff;
-  border: 1px solid #e0e7ff;
+  color: #cc3700;
+  background: #ffece6;
+  border: 1px solid #ffdacc;
 }
 
 .score--excellent .score__value {

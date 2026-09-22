@@ -35,6 +35,13 @@ public class DocMindProperties {
     /** 公式识别增强 */
     private boolean formulaEnhancement = false;
 
+    /**
+     * 表格以 HTML 形式输出：表格类型版面块额外返回 HTML 正文（存于该块的 llmResult 字段），保留合并单元格等复杂结构。
+     *
+     * <p>接口约束：仅在 {@code llm-enhancement=true} 时生效，单独开启会被接口拒绝（Parameter is invalid）。
+     */
+    private boolean outputHtmlTable = true;
+
     /** 通过 GetDocParserResult 分页拉取结果时的步长（接口上限 3000） */
     private int layoutStepSize = 3000;
 

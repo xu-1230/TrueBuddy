@@ -73,7 +73,7 @@ function submit() {
   width: 100%;
   margin-top: 0.5rem;
   border-radius: 10px;
-  background: #6366f1;
-  border-color: #6366f1;
+  background: #ff4500;
+  border-color: #ff4500;
 }
 </style>

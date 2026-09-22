@@ -157,8 +157,10 @@ function isActive(item) {
 
 .sidebar__name {
   margin-left: 0.5rem;
-  font-size: 1.1rem;
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
   font-weight: 700;
+  letter-spacing: 0.01em;
   color: #111827;
   white-space: nowrap;
 }
@@ -253,7 +255,7 @@ function isActive(item) {
 }
 
 .sidebar__avatar {
-  background: #6366f1;
+  background: #ff4500;
   color: #fff;
   font-size: 0.875rem;
   flex: 0 0 auto;

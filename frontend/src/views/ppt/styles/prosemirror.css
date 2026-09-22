@@ -43,6 +43,13 @@
   border-radius: 4px;
   font-family: Consolas, Monaco, 'Courier New', monospace;
 }
+/* 幻灯片为导入数据，字体按原始内容渲染，不受站点全局标题字体影响 */
+.ProseMirror-static h1,
+.ProseMirror-static h2,
+.ProseMirror-static h3,
+.ProseMirror-static h4 {
+  font-family: inherit;
+}
 .ProseMirror-static h1 {
   font-size: 2em;
   margin: 0.67em 0;

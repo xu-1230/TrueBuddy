@@ -39,9 +39,8 @@ public class AiDocumentChunkService implements DocumentChunkService {
             要求：
             1. 分片必须由连续编号的文本块组成，不得打乱顺序、不得跳过或重复；
             2. 分片之间不重叠，合起来覆盖全部编号；
-            3. 单个分片正文控制在 200~800 字；本身过长的块可单独成片；
-            4. 标题块应与其后正文归入同一分片，不要单独成片；
-            5. 只输出 JSON 数组，不要解释、不要 markdown 代码块。
+            3. 标题块应与其后正文归入同一分片，不要单独成片；
+            4. 只输出 JSON 数组，不要解释、不要 markdown 代码块。
 
             输出格式：
             [{"start":0,"end":3},{"start":4,"end":7}]

@@ -120,7 +120,7 @@ function sendCode() {
 
 .form-link {
   font-size: 0.875rem;
-  color: #6366f1;
+  color: #ff4500;
   cursor: pointer;
 }
 

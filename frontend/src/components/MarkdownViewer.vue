@@ -41,6 +41,7 @@ const plugins = computed(() => props.plugins ?? defaultPlugins)
 -->
 <style>
 .markdown-viewer .markdown-body {
+  font-family: var(--font-sans);
   font-size: inherit;
   line-height: 1.75;
   color: inherit;
@@ -111,7 +112,7 @@ const plugins = computed(() => props.plugins ?? defaultPlugins)
 }
 
 .markdown-viewer .markdown-body a {
-  color: #4f46e5;
+  color: #cc3700;
   text-decoration: none;
 }
 
@@ -131,7 +132,7 @@ const plugins = computed(() => props.plugins ?? defaultPlugins)
 
 .markdown-viewer .markdown-body code {
   padding: 0.15em 0.35em;
-  font-family: Consolas, Monaco, 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
   color: #b31d28;
   background: #f3f4f6;

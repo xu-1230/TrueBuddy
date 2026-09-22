@@ -112,8 +112,10 @@ function onLoginSuccess() {
 }
 
 .login-card__title{
-  font-size: 35px;
+  font-family: var(--font-serif);
+  font-size: 38px;
   font-weight: 700;
+  letter-spacing: 0.02em;
   margin-bottom: 20px;
 }
 
@@ -124,7 +126,7 @@ function onLoginSuccess() {
 }
 
 .account-switch__link {
-  color: #6366f1;
+  color: #ff4500;
   cursor: pointer;
   margin-left: 4px;
 }

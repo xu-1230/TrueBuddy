@@ -226,7 +226,7 @@ onBeforeUnmount(() => {
 .node-header {
   display: flex;
   align-items: center;
-  padding: 12px 12px 8px;
+  padding: 12px;
 }
 
 .node-title-btn {

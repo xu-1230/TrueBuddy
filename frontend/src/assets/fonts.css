@@ -1,0 +1,70 @@
+/**
+ * 全局字体系统（Google Fonts）
+ *
+ * - 无衬线 `--font-sans`：Inter —— 极简、几何、字重齐全，用于正文与全部 UI 控件
+ * - 衬线   `--font-serif`：Playfair Display —— 高对比优雅衬线，用于品牌名、展示性大标题与数字
+ * - 等宽   `--font-mono`：代码 / 片段等高信息密度文本
+ *
+ * 说明：两款西文字体均不含中文字形，中文会自动落到字体栈中的系统中文字体；
+ * 因此把各平台的中文字体（PingFang SC / 微软雅黑 / Noto 系列）追加在栈尾，
+ * 保证中英文混排时的字重与观感一致。
+ * 字体加载依赖 index.html 中的 Google Fonts <link>，加载失败时整体回退到系统字体栈。
+ */
+
+:root {
+  --font-sans:
+    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC',
+    'Helvetica Neue', Arial, sans-serif;
+  --font-serif:
+    'Playfair Display', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC',
+    'STSong', 'SimSun', Georgia, 'Times New Roman', serif;
+  --font-mono:
+    'JetBrains Mono', 'SFMono-Regular', Consolas, Monaco, 'Courier New', monospace;
+}
+
+/* Element Plus 组件（按钮 / 表格 / 表单 / 弹层）跟随全局无衬线体系。
+   使用 :root:root 提升特异性，确保打包顺序变化时仍能覆盖 Element Plus 的默认字体变量 */
+:root:root {
+  --el-font-family: var(--font-sans);
+}
+
+html {
+  font-family: var(--font-sans);
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* 表单控件默认不继承字体，统一接管，避免浏览器回落到默认字体 */
+button,
+input,
+optgroup,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* 代码 / 片段：高信息密度文本使用等宽字体 */
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono);
+}
+
+/**
+ * 展示性衬线字体工具类
+ * 用于品牌名、页面大标题、章节序号等需要「优雅感」的位置。
+ * 用法：<h1 class="font-display">...</h1>
+ */
+.font-display {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}

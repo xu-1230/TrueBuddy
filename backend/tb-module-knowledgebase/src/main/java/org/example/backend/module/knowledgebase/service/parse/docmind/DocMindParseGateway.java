@@ -55,13 +55,23 @@ public class DocMindParseGateway implements DocumentParseGateway {
 
     @Override
     public String submit(InputStream inputStream, String fileName) {
+        boolean llmEnhancement = properties.isLlmEnhancement();
         SubmitDocParserJobAdvanceRequest request = new SubmitDocParserJobAdvanceRequest()
                 .setFileUrlObject(inputStream)
                 .setFileName(fileName)
-                .setLlmEnhancement(properties.isLlmEnhancement())
+                .setLlmEnhancement(llmEnhancement)
                 .setFormulaEnhancement(properties.isFormulaEnhancement());
         if (StringUtils.hasText(properties.getEnhancementMode())) {
             request.setEnhancementMode(properties.getEnhancementMode());
+        }
+        // 接口约束：OutputHtmlTable 必须与 LlmEnhancement=true 同时开启，否则提交报「Parameter is invalid」
+        if (properties.isOutputHtmlTable()) {
+            if (llmEnhancement) {
+                // 表格类型版面块额外返回 HTML 版正文（存放于该块的 llmResult 字段），避免合并单元格等复杂结构失真
+                request.setOutputHtmlTable(true);
+            } else {
+                log.warn("已开启 output-html-table 但 llm-enhancement=false，接口不允许该组合，本次不请求 HTML 表格" + "（如需 HTML 表格请同时设置 DOCMIND_LLM_ENHANCEMENT=true）: fileName={}", fileName);
+            }
         }
         try {
             var response = client.submitDocParserJobAdvance(request, runtimeOptions());

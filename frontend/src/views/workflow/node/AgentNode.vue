@@ -103,7 +103,7 @@ const props = defineProps({
   display: flex;
   align-items: center;
   border-radius: 1rem 1rem 0 0;
-  padding: 0.75rem 0.75rem 0.5rem;
+  padding: 12px;
 }
 
 /* ===== 标题按钮 ===== */
@@ -243,7 +243,7 @@ const props = defineProps({
   padding: 0;
   border-radius: 9999px;
   border: none;
-  background: var(--components-button-primary-bg, #6366f1);
+  background: var(--components-button-primary-bg, #ff4500);
   color: var(--components-button-primary-text, #fff);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), inset 0 0 0 0.5px var(--components-button-primary-border, rgba(255, 255, 255, 0.1));
   opacity: 0;
@@ -252,14 +252,14 @@ const props = defineProps({
 }
 
 .handle-add-btn:hover {
-  background: var(--components-button-primary-bg-hover, #4f46e5);
+  background: var(--components-button-primary-bg-hover, #cc3700);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.1);
   inset: 0 0 0 0.5px var(--components-button-primary-border-hover, rgba(255, 255, 255, 0.2));
 }
 
 .handle-add-btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--state-accent-solid, #6366f1);
+  box-shadow: 0 0 0 2px var(--state-accent-solid, #ff4500);
 }
 
 /* 按钮可见状态 */
@@ -336,6 +336,6 @@ const props = defineProps({
 
 .node-more-btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 1px var(--components-input-border-hover, #6366f1);
+  box-shadow: 0 0 0 1px var(--components-input-border-hover, #ff4500);
 }
 </style>

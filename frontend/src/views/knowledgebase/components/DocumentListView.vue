@@ -237,8 +237,8 @@ function onDelete(doc) {
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  background: #eef2ff;
-  color: #4f46e5;
+  background: #ffece6;
+  color: #cc3700;
   font-size: 0.95rem;
   font-weight: 700;
   border-bottom: 1px solid #e5e7eb;
@@ -252,8 +252,8 @@ function onDelete(doc) {
   width: 26px;
   height: 26px;
   font-size: 16px;
-  color: #4f46e5;
-  background: #e0e7ff;
+  color: #cc3700;
+  background: #ffdacc;
   border-radius: 6px;
   cursor: pointer;
   transition: color 0.2s, background 0.2s;
@@ -261,7 +261,7 @@ function onDelete(doc) {
 
 .doc-sidebar__add:hover {
   color: #fff;
-  background: #4f46e5;
+  background: #cc3700;
 }
 
 .doc-list {
@@ -288,11 +288,11 @@ function onDelete(doc) {
 }
 
 .doc-list__item--active {
-  background: #eef2ff;
+  background: #ffece6;
 }
 
 .doc-list__item--active .doc-list__name {
-  color: #4f46e5;
+  color: #cc3700;
   font-weight: 600;
 }
 
@@ -436,8 +436,8 @@ function onDelete(doc) {
 }
 
 .chunk-card:hover {
-  border-color: #c7d2fe;
-  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.08);
+  border-color: #ffc7b3;
+  box-shadow: 0 2px 10px rgba(255, 69, 0, 0.08);
 }
 
 

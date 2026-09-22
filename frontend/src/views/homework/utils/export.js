@@ -85,7 +85,7 @@ function buildExcelXml(records) {
   <Styles>
     <Style ss:ID="head">
       <Font ss:Bold="1"/>
-      <Interior ss:Color="#EEF2FF" ss:Pattern="Solid"/>
+      <Interior ss:Color="#FFECE6" ss:Pattern="Solid"/>
       <Alignment ss:Vertical="Center"/>
     </Style>
     <Style ss:ID="body">

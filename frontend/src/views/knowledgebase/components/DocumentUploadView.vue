@@ -703,11 +703,11 @@ onBeforeRouteLeave(async () => {
 
 :deep(.el-upload-dragger:hover),
 :deep(.el-upload:focus .el-upload-dragger) {
-  border-color: #6366f1;
+  border-color: #ff4500;
 }
 
 :deep(.el-upload__text em) {
-  color: #6366f1;
+  color: #ff4500;
   font-style: normal;
 }
 
@@ -748,13 +748,13 @@ onBeforeRouteLeave(async () => {
 }
 
 .kb-file-list__item--active {
-  background: #eef2ff;
+  background: #ffece6;
 }
 
 .kb-file-list__icon {
   flex: 0 0 auto;
   font-size: 18px;
-  color: #6366f1;
+  color: #ff4500;
 }
 
 .kb-file-list__body {
@@ -774,7 +774,7 @@ onBeforeRouteLeave(async () => {
 }
 
 .kb-file-list__item--active .kb-file-list__name {
-  color: #4f46e5;
+  color: #cc3700;
   font-weight: 600;
 }
 
@@ -825,8 +825,8 @@ onBeforeRouteLeave(async () => {
 }
 
 .kb-chunk-card:hover {
-  border-color: #c7d2fe;
-  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.08);
+  border-color: #ffc7b3;
+  box-shadow: 0 2px 10px rgba(255, 69, 0, 0.08);
 }
 
 /* 分片正文：Markdown 渲染容器（字号 / 颜色由 MarkdownViewer 内的 .markdown-body 继承） */
@@ -905,13 +905,13 @@ onBeforeRouteLeave(async () => {
   gap: 12px;
   padding: 12px 16px;
   background: #f9fafb;
-  border: 1px solid #c7d2fe;
+  border: 1px solid #ffc7b3;
   border-radius: 8px;
 }
 
 .kb-file-item__icon {
   font-size: 22px;
-  color: #6366f1;
+  color: #ff4500;
 }
 
 .kb-file-item__name {

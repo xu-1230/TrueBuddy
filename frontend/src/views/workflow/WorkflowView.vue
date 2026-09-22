@@ -13,6 +13,7 @@ import IterationNode from './node/IterationNode.vue'
 import IterationStartNode from './node/IterationStartNode.vue'
 import IterationEndNode from './node/IterationEndNode.vue'
 import ConnectionLine from './ConnectionLine.vue'
+import NodeDataDrawer from './NodeDataDrawer.vue'
 
 
 const {
@@ -27,6 +28,7 @@ const {
   onNodeDrag,
   onNodeDragStop,
   onNodeClick,
+  onPaneClick,
 } = useVueFlow()
 
 /** 内层点阵画布的四周内缩：.node-body 4px + .node-canvas 4px */
@@ -36,31 +38,31 @@ const ITERATION_CANVAS_INSET = 8
  * 算可移动范围时要一并扣掉，否则子节点能压到点阵画布外面（上/左/下各多出 2px）。
  */
 const ITERATION_BORDER_INSET = 2
-/** 迭代节点头部高度：.node-header 12 + 24 + 8 */
-const ITERATION_HEADER_HEIGHT = 44
+/** 迭代节点头部高度：.node-header 12 + 24 + 12（上下内边距 12px） */
+const ITERATION_HEADER_HEIGHT = 48
 /** 迭代节点默认尺寸（与 IterationNode.vue 的 DEFAULT_SIZE 保持一致） */
 const ITERATION_DEFAULT_SIZE = { width: 480, height: 280 }
 /** 迭代起止节点尺寸 */
 const ITERATION_BOUNDARY_SIZE = 52
 /** 起止节点与子节点之间的间距 */
 const ITERATION_BOUNDARY_GAP = 12
-/** 起点节点在迭代节点内部的落点（纵向 44px header + 4px 内边距） */
-const ITERATION_START_POSITION = { x: ITERATION_CANVAS_INSET, y: 52 }
+/** 起点节点在迭代节点内部的落点（纵向 48px header + 8px 画布内缩） */
+const ITERATION_START_POSITION = { x: ITERATION_CANVAS_INSET, y: 56 }
 /**
  * 迭代节点内部子节点的落点：纵向贴画布内容区顶部，
  * 横向排在起点节点之后（画布内缩 8 + 起点 52 + 间距 40）。
  */
-const ITERATION_CHILD_ORIGIN = { x: 100, y: 52 }
+const ITERATION_CHILD_ORIGIN = { x: 100, y: 56 }
 /**
  * 迭代节点内部子节点的可移动范围 = 内层点阵画布，[top, right, bottom, left] 依次对应
- * IterationNode.vue 的样式：描边 2px、header 44px、.node-body 左右 4px / 下 4px、.node-card 下 4px。
+ * IterationNode.vue 的样式：描边 2px、header 48px、.node-body 左右 4px / 下 4px、.node-card 下 4px。
  * 这里刻意「整块画布都放开」：子节点能一直拖到点阵画布右边（不会被终点节点那 72px 卡住），
  * 松手时再由 growIterationToFit 把容器撑大、让终点节点让位（见 onNodeDragStop）。
  * 用 { range: 'parent', padding } 的形式，容器尺寸变化时会自动跟随，无需再同步。
  */
 const ITERATION_RIGHT_RESERVE = ITERATION_CANVAS_INSET + ITERATION_BOUNDARY_SIZE + ITERATION_BOUNDARY_GAP
 const ITERATION_CANVAS_PADDING = [
-  ITERATION_BORDER_INSET + ITERATION_HEADER_HEIGHT, // 上：描边 2px + header 44px
+  ITERATION_BORDER_INSET + ITERATION_HEADER_HEIGHT, // 上：描边 2px + header 48px
   ITERATION_BORDER_INSET + 4, // 右：描边 2px + .node-body 4px
   ITERATION_BORDER_INSET + 8, // 下：描边 2px + .node-body 4px + .node-card 4px
   ITERATION_BORDER_INSET + 4, // 左：描边 2px + .node-body 4px
@@ -343,18 +345,59 @@ const detachWithModifier = ({ event, node }) => {
   modifierDetachedNodeId = node.id
 }
 
-// ① Ctrl + 点击（指针几乎不动，走原生 click）
-onNodeClick(detachWithModifier)
+/**
+ * 节点数据抽屉：保存正在查看的节点 id，null 表示没有打开。
+ * 抽屉内容与写回都交给 NodeDataDrawer，这里只负责「点哪个节点」。
+ */
+const activeNodeId = ref(null)
+const drawerVisible = ref(false)
+
+const openNodeDrawer = (nodeId) => {
+  if (!nodeId) return
+  activeNodeId.value = nodeId
+  drawerVisible.value = true
+}
+
+/**
+ * 刚刚拖拽过节点：vue-flow 的 nodeDragThreshold 默认为 1，位移超过 1px 才会派发
+ * nodeDragStart，而拖拽松手后浏览器仍会在节点上补一个 click（同一次交互里，
+ * 晚于 pointerup 触发）。用标记把这次 click 吃掉，避免「拖完节点就弹出抽屉」；
+ * 清标记放到 setTimeout(0)，保证一定晚于这次交互的 click。
+ */
+let draggingNode = false
+
+/** 点击节点：Ctrl / Cmd 是「取出」，普通点击打开数据抽屉 */
+const handleNodeClick = (payload) => {
+  if (!payload?.node) return
+  if (isModifierPressed(payload.event)) {
+    detachWithModifier(payload)
+    return
+  }
+  if (draggingNode || isIterationBoundaryNode(payload.node)) return
+  openNodeDrawer(payload.node.id)
+}
+
+// ① Ctrl + 点击（指针几乎不动，走原生 click）；普通点击则打开抽屉
+onNodeClick(handleNodeClick)
 // ② Ctrl + 拖拽时按下（指针位移超过阈值，vue-flow 走拖拽流程）
 onNodeDragStart((payload) => {
   modifierDetachedNodeId = null
+  draggingNode = true
   detachWithModifier(payload)
 })
 // ③ 拖拽过程中才按下 Ctrl
 onNodeDrag(detachWithModifier)
 
+// 点击画布空白处关闭抽屉
+onPaneClick(() => {
+  drawerVisible.value = false
+})
+
 // 拖拽结束：与某个迭代节点相交则自动挂入其内部
 onNodeDragStop(({ node }) => {
+  setTimeout(() => {
+    draggingNode = false
+  }, 0)
   if (!node || isIterationNode(node)) return
   // 刚刚被 Ctrl / Cmd 取出的节点：本次交互是“取出”，不再自动挂回
   if (node.id === modifierDetachedNodeId) {
@@ -496,6 +539,13 @@ const handleConnect = (connection) => {
     <ConnectionLine v-bind="connectionLineProps" />
   </template>
 </VueFlow>
+
+<!-- 节点数据抽屉：点击节点打开，编辑名称 / 坐标 / 变量，并写回 Vue Flow store -->
+<NodeDataDrawer
+  v-model:visible="drawerVisible"
+  :node-id="activeNodeId"
+  @select="openNodeDrawer"
+/>
 
 </template>
 

@@ -167,8 +167,10 @@ onBeforeUnmount(() => {
 }
 
 .login-card__title {
+  font-family: var(--font-serif);
   font-size: 1.75rem;
   font-weight: 700;
+  letter-spacing: 0.01em;
   color: #111827;
 }
 
@@ -197,11 +199,11 @@ onBeforeUnmount(() => {
 }
 
 .login-tab:hover {
-  color: #6366f1;
+  color: #ff4500;
 }
 
 .login-tab--active {
-  color: #6366f1;
+  color: #ff4500;
   font-weight: 600;
 }
 
@@ -212,7 +214,7 @@ onBeforeUnmount(() => {
   right: 0;
   bottom: -1px;
   height: 2px;
-  background: #6366f1;
+  background: #ff4500;
 }
 
 /* 右侧品牌区 */
@@ -222,7 +224,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%);
+  background: linear-gradient(135deg, #ff4500 0%, #8b5cf6 55%, #a855f7 100%);
   padding: 5rem 3rem 3rem;
 }
 

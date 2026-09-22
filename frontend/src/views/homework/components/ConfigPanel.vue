@@ -396,13 +396,13 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 :deep(.kb-select .el-select__wrapper.is-focused),
 :deep(.workflow-select .el-select__wrapper.is-focused) {
   background: #ffffff;
-  box-shadow: 0 0 0 1px #6366f1 inset;
+  box-shadow: 0 0 0 1px #ff4500 inset;
 }
 
 .kb-select__prefix {
   flex: 0 0 auto;
   font-size: 15px;
-  color: #6366f1;
+  color: #ff4500;
 }
 
 .kb-option {
@@ -422,14 +422,14 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   height: 28px;
   border-radius: 8px;
   font-size: 15px;
-  color: #4f46e5;
-  background: linear-gradient(135deg, #eef2ff, #dbe2ff);
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.12) inset;
+  color: #cc3700;
+  background: linear-gradient(135deg, #ffece6, #ffd9c7);
+  box-shadow: 0 0 0 1px rgba(255, 69, 0, 0.12) inset;
 }
 
 .kb-option__tile--active {
   color: #ffffff;
-  background: linear-gradient(135deg, #818cf8, #6366f1);
+  background: linear-gradient(135deg, #ff7d4d, #ff4500);
   box-shadow: none;
 }
 
@@ -480,7 +480,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 .kb-option__check {
   flex: 0 0 auto;
   font-size: 14px;
-  color: #6366f1;
+  color: #ff4500;
 }
 
 .workflow-option {
@@ -523,9 +523,9 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 }
 
 .workflow-action:hover:not(:disabled) {
-  color: #4f46e5;
-  border-color: #c7d2fe;
-  background: #eef2ff;
+  color: #cc3700;
+  border-color: #ffc7b3;
+  background: #ffece6;
 }
 
 .workflow-action:disabled {
@@ -550,14 +550,14 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 
 :deep(.el-textarea__inner:focus) {
   background: #ffffff;
-  box-shadow: 0 0 0 1px #6366f1 inset;
+  box-shadow: 0 0 0 1px #ff4500 inset;
 }
 
 :deep(.el-segmented) {
   --el-segmented-bg-color: #f2f3f6;
   --el-segmented-color: #6b7280;
   --el-segmented-item-selected-bg-color: #ffffff;
-  --el-segmented-item-selected-color: #4f46e5;
+  --el-segmented-item-selected-color: #cc3700;
   --el-segmented-item-hover-bg-color: #e9eaef;
   --el-segmented-item-hover-color: #111827;
   padding: 3px;
@@ -673,17 +673,17 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 
 .hw-kb-select-popper .el-select-dropdown__item.is-hovering,
 .hw-kb-select-popper .el-select-dropdown__item:hover {
-  background: #eef2ff;
+  background: #ffece6;
 }
 
 .hw-kb-select-popper .el-select-dropdown__item.is-selected {
-  background: #eef2ff;
-  color: #4f46e5;
+  background: #ffece6;
+  color: #cc3700;
 }
 
 .hw-kb-select-popper .el-select-dropdown__item.is-selected .kb-option__name,
 .hw-kb-select-popper .el-select-dropdown__item.is-selected .workflow-option__label {
-  color: #4f46e5;
+  color: #cc3700;
 }
 
 .hw-kb-select-popper .el-select-dropdown__empty {

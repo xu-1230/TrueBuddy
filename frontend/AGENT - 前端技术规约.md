@@ -276,7 +276,7 @@ export const useUserStore = defineStore("user", () => {
 ## 8. 样式与主题
 
 - 尺寸、间距优先参照 Element Plus 设计变量。
-- 主题色当前以十六进制硬编码为主（常用主色 `#6366f1`，PPT 模块主题色 `#5b9bd5`）。
+- 主题色当前以十六进制硬编码为主（常用主色 `#ff4500`，PPT 模块主题色 `#5b9bd5`）。
 - 已支持 `light-dark()`（如 `views/TestView.vue`）；统一主题变量与切换为**规划**。
 
 ---

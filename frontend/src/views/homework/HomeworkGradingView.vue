@@ -421,22 +421,22 @@ onMounted(() => {
   box-shadow: 0 10px 30px rgba(17, 24, 39, 0.06);
 
   /* 主色：与项目统一（靛蓝） */
-  --primary: #6366f1;
-  --primary-dark: #4f46e5;
-  --primary-soft: #eef2ff;
+  --primary: #ff4500;
+  --primary-dark: #cc3700;
+  --primary-soft: #ffece6;
   --accent: #f59e0b;
   --accent-deep: #b45309;
   --accent-soft: #fff7ed;
   --accent-soft-2: #fde68a;
 
   /* Element Plus 主色对齐项目靛蓝 */
-  --el-color-primary: #6366f1;
-  --el-color-primary-light-3: #8b8ef5;
-  --el-color-primary-light-5: #b1b3f9;
-  --el-color-primary-light-7: #d0d2fc;
-  --el-color-primary-light-8: #e0e1fd;
-  --el-color-primary-light-9: #eef2ff;
-  --el-color-primary-dark-2: #4f46e5;
+  --el-color-primary: #ff4500;
+  --el-color-primary-light-3: #ff7d4d;
+  --el-color-primary-light-5: #ffa280;
+  --el-color-primary-light-7: #ffc7b3;
+  --el-color-primary-light-8: #ffdacc;
+  --el-color-primary-light-9: #ffece6;
+  --el-color-primary-dark-2: #cc3700;
   --el-border-radius-base: 8px;
 }
 
@@ -540,7 +540,7 @@ onMounted(() => {
 
 .ghost-chip:hover:not(:disabled) {
   color: var(--primary-dark);
-  border-color: #c7d2fe;
+  border-color: #ffc7b3;
   background: var(--primary-soft);
 }
 

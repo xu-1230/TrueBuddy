@@ -30,8 +30,9 @@ public class ParseGatewayConfiguration {
         } catch (Exception e) {
             throw new IllegalStateException("阿里云文档智能客户端初始化失败: " + e.getMessage(), e);
         }
-        log.info("知识库文档解析引擎: 阿里云文档智能（文档解析大模型版）, endpoint={}, llmEnhancement={}, enhancementMode={}",
-                properties.getEndpoint(), properties.isLlmEnhancement(), properties.getEnhancementMode());
+        log.info("知识库文档解析引擎: 阿里云文档智能（文档解析大模型版）, endpoint={}, llmEnhancement={}, enhancementMode={}, outputHtmlTable={}",
+                properties.getEndpoint(), properties.isLlmEnhancement(), properties.getEnhancementMode(),
+                properties.isOutputHtmlTable() && properties.isLlmEnhancement());
         return gateway;
     }
 }

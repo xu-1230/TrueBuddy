@@ -101,8 +101,8 @@ defineEmits(['click', 'edit', 'delete'])
 }
 
 .space-card__action:hover {
-  color: #6366f1;
-  background: #eef2ff;
+  color: #ff4500;
+  background: #ffece6;
 }
 
 .space-card__action--danger:hover {

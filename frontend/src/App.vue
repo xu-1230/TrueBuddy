@@ -15,9 +15,18 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* 正文与 UI 统一使用 Inter（见 src/assets/fonts.css），中文回退到系统字体 */
+  font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
   /* touch-action: none; */
+}
+
+h1,
+h2,
+h3 {
+  /* 标题默认走优雅衬线体，与正文形成层级对比 */
+  font-family: var(--font-serif);
+  letter-spacing: -0.01em;
 }
 
 table{ border-collapse: collapse; }

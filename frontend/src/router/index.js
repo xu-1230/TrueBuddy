@@ -7,13 +7,11 @@ const router = createRouter({
       path: "/guides",
       name: "guides",
       component: () => import("../views/guides/HomeView.vue"),
-      children: [
-        {
-          path: "/docs",
-          name: "docs",
-          component: () => import("../views/guides/DocsView.vue"),
-        },
-      ],
+    },
+    {
+      path: "/docs",
+      name: "docs",
+      component: () => import("../views/guides/DocsView.vue"),
     },
     //登录页
     {
@@ -22,13 +20,13 @@ const router = createRouter({
       component: () => import("../views/LoginView.vue"),
     },
     {
-      path:"/register",
+      path: "/register",
       name: "register",
       component: () => import("../views/LoginView.vue"),
     },
     {
-      path:"/index",
-      name:"index",
+      path: "/index",
+      name: "index",
       component: () => import("../views/IndexView.vue"),
       redirect: "/index/home",
       children: [

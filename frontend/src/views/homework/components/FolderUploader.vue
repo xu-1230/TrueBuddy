@@ -445,9 +445,9 @@ function getExt(name) {
 }
 
 .folder__drop:hover:not(:disabled) {
-  border-color: #a5b4fc;
-  background: linear-gradient(180deg, #fbfcff, #eef2ff);
-  box-shadow: 0 6px 14px rgba(99, 102, 241, 0.12);
+  border-color: #ff9e73;
+  background: linear-gradient(180deg, #fbfcff, #ffece6);
+  box-shadow: 0 6px 14px rgba(255, 69, 0, 0.12);
   transform: translateY(-1px);
 }
 
@@ -460,15 +460,15 @@ function getExt(name) {
 }
 
 .folder__drop--filled:hover:not(:disabled) {
-  border-color: #c7d2fe;
-  background: #eef2ff;
+  border-color: #ffc7b3;
+  background: #ffece6;
 }
 
 .folder__drop--dragging {
   border-style: solid;
-  border-color: #6366f1;
-  background: #eef2ff;
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+  border-color: #ff4500;
+  background: #ffece6;
+  box-shadow: 0 0 0 4px rgba(255, 69, 0, 0.14);
 }
 
 .folder__drop:disabled {
@@ -485,14 +485,14 @@ function getExt(name) {
   height: 26px;
   border-radius: 8px;
   font-size: 14px;
-  color: #4f46e5;
-  background: linear-gradient(135deg, #eef2ff, #dbe2ff);
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.14) inset;
+  color: #cc3700;
+  background: linear-gradient(135deg, #ffece6, #ffd9c7);
+  box-shadow: 0 0 0 1px rgba(255, 69, 0, 0.14) inset;
 }
 
 .folder__tile--filled {
   color: #ffffff;
-  background: linear-gradient(135deg, #818cf8, #6366f1);
+  background: linear-gradient(135deg, #ff7d4d, #ff4500);
   box-shadow: none;
 }
 
@@ -579,7 +579,7 @@ function getExt(name) {
 .folder__picker-count {
   font-size: 0.66rem;
   font-weight: 600;
-  color: #4f46e5;
+  color: #cc3700;
 }
 
 .folder__tree {
@@ -587,7 +587,7 @@ function getExt(name) {
   padding: 2px 0;
   overflow-y: auto;
   background: transparent;
-  --el-tree-node-hover-bg-color: #eef2ff;
+  --el-tree-node-hover-bg-color: #ffece6;
 }
 
 /* 全选 / 清空 */
@@ -603,12 +603,12 @@ function getExt(name) {
   background: transparent;
   font-size: 0.66rem;
   font-weight: 600;
-  color: #6366f1;
+  color: #ff4500;
   cursor: pointer;
 }
 
 .picker-link:hover:not(:disabled) {
-  color: #4f46e5;
+  color: #cc3700;
   text-decoration: underline;
 }
 
@@ -642,8 +642,8 @@ function getExt(name) {
 
 .node__check--on,
 .node__check--half {
-  border-color: #6366f1;
-  background: #6366f1;
+  border-color: #ff4500;
+  background: #ff4500;
 }
 
 .node__check--on::after {
@@ -690,7 +690,7 @@ function getExt(name) {
 .node__icon {
   flex: 0 0 auto;
   font-size: 16px;
-  color: #a5b4fc;
+  color: #ff9e73;
 }
 
 .node__icon--dir {
@@ -698,7 +698,7 @@ function getExt(name) {
 }
 
 .node__icon--word {
-  color: #4f46e5;
+  color: #cc3700;
 }
 
 .node__icon--pdf {
@@ -749,8 +749,8 @@ function getExt(name) {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid #c7d2fe;
-  border-top-color: #6366f1;
+  border: 2px solid #ffc7b3;
+  border-top-color: #ff4500;
   animation: folder-spin 0.8s linear infinite;
 }
 

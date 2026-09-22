@@ -111,7 +111,7 @@ const outputs = computed(() => normalize(props.data?.outputs))
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 12px 8px;
+  padding: 12px;
 }
 
 /* ===== 图标 ===== */

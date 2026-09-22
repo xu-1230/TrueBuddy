@@ -198,23 +198,23 @@ function handleClick(record) {
 }
 
 .history-item:hover {
-  border-color: #c7d2fe;
-  background: #eef2ff;
+  border-color: #ffc7b3;
+  background: #ffece6;
 }
 
 .history-item:focus-visible {
-  outline: 2px solid #6366f1;
+  outline: 2px solid #ff4500;
   outline-offset: 2px;
 }
 
 .history-item.is-active {
-  border-color: #6366f1;
-  background: #e0e7ff;
+  border-color: #ff4500;
+  background: #ffdacc;
 }
 
 .history-item.is-loading {
-  border-color: #c7d2fe;
-  background: #eef2ff;
+  border-color: #ffc7b3;
+  background: #ffece6;
 }
 
 .history-item.is-no-record {
@@ -280,8 +280,8 @@ function handleClick(record) {
   margin-left: auto;
   padding: 1px 7px;
   border-radius: 999px;
-  background: #eef2ff;
-  color: #4f46e5;
+  background: #ffece6;
+  color: #cc3700;
   font-weight: 600;
   font-size: 0.68rem;
 }
@@ -293,13 +293,13 @@ function handleClick(record) {
   justify-content: center;
   width: 16px;
   height: 16px;
-  color: #c7d2fe;
+  color: #ffc7b3;
   font-size: 0.8rem;
   transition: color 0.2s ease, transform 0.2s ease;
 }
 
 .history-item:hover .history-item__open {
-  color: #6366f1;
+  color: #ff4500;
   transform: translateX(2px);
 }
 
@@ -307,8 +307,8 @@ function handleClick(record) {
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  border: 2px solid #e0e1fd;
-  border-top-color: #6366f1;
+  border: 2px solid #ffdacc;
+  border-top-color: #ff4500;
   animation: history-spin 0.8s linear infinite;
 }
 

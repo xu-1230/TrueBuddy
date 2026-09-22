@@ -177,8 +177,8 @@ function metaText(record) {
   height: 34px;
   margin-bottom: 0.35rem;
   border-radius: 50%;
-  border: 3px solid #e0e1fd;
-  border-top-color: #6366f1;
+  border: 3px solid #ffdacc;
+  border-top-color: #ff4500;
   animation: homework-spin 0.8s linear infinite;
 }
 
@@ -217,8 +217,8 @@ function metaText(record) {
   gap: 0.6rem;
   padding: 0.5rem 0.75rem;
   border-radius: 10px;
-  background: #eef2ff;
-  border: 1px solid #e0e7ff;
+  background: #ffece6;
+  border: 1px solid #ffdacc;
 }
 
 .running__spinner {
@@ -226,8 +226,8 @@ function metaText(record) {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 2px solid #c7d2fe;
-  border-top-color: #6366f1;
+  border: 2px solid #ffc7b3;
+  border-top-color: #ff4500;
   animation: homework-spin 0.8s linear infinite;
 }
 
@@ -235,7 +235,7 @@ function metaText(record) {
   flex: 0 0 auto;
   font-size: 0.72rem;
   font-weight: 600;
-  color: #4f46e5;
+  color: #cc3700;
 }
 
 .running__stage {
@@ -266,7 +266,7 @@ function metaText(record) {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #818cf8, #6366f1);
+  background: linear-gradient(90deg, #ff7d4d, #ff4500);
   transition: width 0.3s ease;
 }
 
@@ -290,7 +290,7 @@ function metaText(record) {
 .stat__value {
   font-size: 1.05rem;
   font-weight: 800;
-  color: #4f46e5;
+  color: #cc3700;
   letter-spacing: 0.3px;
 }
 
@@ -351,8 +351,8 @@ function metaText(record) {
 
 .result-card:hover {
   transform: translateY(-3px);
-  border-color: #c7d2fe;
-  box-shadow: 0 10px 24px rgba(99, 102, 241, 0.14);
+  border-color: #ffc7b3;
+  box-shadow: 0 10px 24px rgba(255, 69, 0, 0.14);
 }
 
 .result-card__head {
@@ -378,9 +378,9 @@ function metaText(record) {
   border-radius: 999px;
   font-size: 0.66rem;
   font-weight: 600;
-  color: #4f46e5;
-  background: #eef2ff;
-  border: 1px solid #e0e7ff;
+  color: #cc3700;
+  background: #ffece6;
+  border: 1px solid #ffdacc;
 }
 
 .result-card__score {
@@ -394,7 +394,7 @@ function metaText(record) {
   font-size: 1.9rem;
   font-weight: 800;
   letter-spacing: -0.5px;
-  color: #4f46e5;
+  color: #cc3700;
 }
 
 .result-card__score-unit {
@@ -448,14 +448,14 @@ function metaText(record) {
   font-size: 0.72rem;
   font-weight: 600;
   color: #ffffff;
-  background: linear-gradient(135deg, #6f70f3, #5457e5);
+  background: linear-gradient(135deg, #ff6a2e, #e63e00);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .result-card__view:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 14px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 6px 14px rgba(255, 69, 0, 0.3);
 }
 
 /* 分数档位配色 */
@@ -470,7 +470,7 @@ function metaText(record) {
 }
 
 .result-card--good .result-card__score-value {
-  color: #4f46e5;
+  color: #cc3700;
 }
 
 .result-card--pass .result-card__score-value {

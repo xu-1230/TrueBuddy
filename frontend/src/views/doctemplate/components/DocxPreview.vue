@@ -217,20 +217,20 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
-/* 悬浮预览：浅靛蓝描边（已选中的元素不参与） */
+/* 悬浮预览：浅橙红描边（已选中的元素不参与） */
 .docx-preview--picking
   .docx-preview__body
   :deep(:is(p, h1, h2, h3, h4, h5, h6, table, tr, td, th, li, img):hover:not(.docx-picked)) {
-  outline: 2px solid #a5b4fc;
+  outline: 2px solid #ff9e73;
   outline-offset: 1px;
-  background-color: rgba(99, 102, 241, 0.06);
+  background-color: rgba(255, 69, 0, 0.06);
 }
 
-/* 已选中：实心靛蓝描边 + 淡色底 */
+/* 已选中：实心橙红描边 + 淡色底 */
 .docx-preview__body :deep(.docx-picked) {
-  outline: 2px solid #6366f1;
+  outline: 2px solid #ff4500;
   outline-offset: 1px;
-  background-color: rgba(99, 102, 241, 0.1);
+  background-color: rgba(255, 69, 0, 0.1);
   border-radius: 2px;
 }
 
@@ -254,8 +254,8 @@ onBeforeUnmount(() => {
   height: 30px;
   margin-bottom: 0.35rem;
   border-radius: 50%;
-  border: 3px solid #e0e1fd;
-  border-top-color: var(--primary, #6366f1);
+  border: 3px solid #ffdacc;
+  border-top-color: var(--primary, #ff4500);
   animation: docx-spin 0.8s linear infinite;
 }
 
@@ -286,10 +286,10 @@ onBeforeUnmount(() => {
   margin-top: 0.6rem;
   height: 32px;
   padding: 0 0.9rem;
-  border: 1px solid #c7d2fe;
+  border: 1px solid #ffc7b3;
   border-radius: 8px;
-  background: #eef2ff;
-  color: #4f46e5;
+  background: #ffece6;
+  color: #cc3700;
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
@@ -297,8 +297,8 @@ onBeforeUnmount(() => {
 }
 
 .docx-preview__retry:hover {
-  background: #e0e7ff;
-  border-color: #a5b4fc;
+  background: #ffdacc;
+  border-color: #ff9e73;
 }
 
 .docx-preview__body::-webkit-scrollbar {

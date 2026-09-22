@@ -109,10 +109,13 @@ tb:
     access-key-id: ${DOCMIND_ACCESS_KEY_ID:}
     access-key-secret: ${DOCMIND_ACCESS_KEY_SECRET:}
     # 大模型增强（PPT/图表场景效果更好，耗时与费用上升）
-    llm-enhancement: ${DOCMIND_LLM_ENHANCEMENT:false}
+    llm-enhancement: ${DOCMIND_LLM_ENHANCEMENT:true}
     # 增强模式，仅 llm-enhancement=true 时生效，可填 VLM
     enhancement-mode: ${DOCMIND_ENHANCEMENT_MODE:}
     formula-enhancement: ${DOCMIND_FORMULA_ENHANCEMENT:false}
+    # 表格输出 HTML 正文（版面块的 llmResult 字段）；接口要求必须同时开启 llm-enhancement，否则提交报 Parameter is invalid
+    output-html-table: ${DOCMIND_OUTPUT_HTML_TABLE:true}
+
     # 结果分页拉取步长（接口上限 3000）
     layout-step-size: 3000
     connect-timeout-millis: 20000

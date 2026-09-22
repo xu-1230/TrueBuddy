@@ -169,6 +169,8 @@
           <SquircleButton
             block
             class="create-btn"
+            base="#ff4500"
+            dark="#cc3700"
             :height="42"
             :disabled="!canGenerate"
             @click="handleGenerate"
@@ -726,33 +728,33 @@ watch(historyOpen, (open) => {
   flex-direction: column;
   height: calc(100vh - 2rem);
   min-height: 640px;
-  border-radius: 14px;
+  /* border-radius: 14px; */
   overflow: hidden;
   background: #f6f7f9;
   color: #111827;
   box-shadow: 0 10px 30px rgba(17, 24, 39, 0.06);
 
-  /* 主色：与项目统一（靛蓝） */
-  --primary: #6366f1;
-  --primary-dark: #4f46e5;
-  --primary-soft: #eef2ff;
-  --primary-soft-2: #e0e7ff;
+  /* 主色：#ff4500（橙红） */
+  --primary: #ff4500;
+  --primary-dark: #cc3700;
+  --primary-soft: #ffece6;
+  --primary-soft-2: #ffdacc;
   /* 强调色：琥珀橙（暖色点缀） */
   --accent: #f59e0b;
   --accent-deep: #b45309;
   --accent-soft: #fff7ed;
   --accent-soft-2: #fde68a;
 
-  /* Element Plus 主色对齐项目靛蓝 */
-  --el-color-primary: #6366f1;
-  --el-color-primary-light-3: #8b8ef5;
-  --el-color-primary-light-5: #b1b3f9;
-  --el-color-primary-light-7: #d0d2fc;
-  --el-color-primary-light-8: #e0e1fd;
-  --el-color-primary-light-9: #eef2ff;
-  --el-color-primary-dark-2: #4f46e5;
+  /* Element Plus 主色对齐主题橙红 #ff4500 */
+  --el-color-primary: #ff4500;
+  --el-color-primary-light-3: #ff7d4d;
+  --el-color-primary-light-5: #ffa280;
+  --el-color-primary-light-7: #ffc7b3;
+  --el-color-primary-light-8: #ffdacc;
+  --el-color-primary-light-9: #ffece6;
+  --el-color-primary-dark-2: #cc3700;
   --el-border-radius-base: 8px;
-  --el-slider-main-bg-color: #6366f1;
+  --el-slider-main-bg-color: #ff4500;
 }
 
 /* ================= 主体 ================= */
@@ -772,7 +774,7 @@ watch(historyOpen, (open) => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
+  /* border-radius: 12px; */
   background: #ffffff;
   /* 用 ring 代替 border：不占用内容宽度，收起时可整体淡出 */
   box-shadow: 0 0 0 1px #e8e9ee;
@@ -800,7 +802,7 @@ watch(historyOpen, (open) => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 1.15rem;
+  gap: 1.4rem;
   padding: 1rem;
   overflow-y: auto;
   transition: transform 0.36s cubic-bezier(0.4, 0, 0.2, 1);
@@ -846,20 +848,27 @@ watch(historyOpen, (open) => {
 .section-head__title {
   display: inline-flex;
   align-items: center;
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: 0.99rem;
+  font-weight: 500;
   letter-spacing: 0.2px;
   color: #374151;
 }
 
 /* 琥珀橙色条：统一的分节视觉标记 */
 .section-head__title::before {
-  content: '';
+  /* content: '';
   width: 3px;
   height: 12px;
-  margin-right: 6px;
+
   border-radius: 2px;
   background: linear-gradient(180deg, #fbbf24, #f59e0b);
+ */
+  margin-right: 6px;
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  background-color: #ff4500;
 }
 
 .section-head__hint {
@@ -928,17 +937,17 @@ watch(historyOpen, (open) => {
   height: 50px;
   padding: 0 0.7rem;
   overflow: hidden;
-  border: 1.5px dashed #d9dce6;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #fcfcfd, #f7f8fb);
+  border: 1.5px dashed rgba(0, 0, 0, 0.12);
+  border-radius: 0px;
+  background: #f7f7f7;
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease,
     transform 0.2s ease;
 }
 
 .template-upload :deep(.el-upload-dragger:hover) {
-  border-color: #a5b4fc;
-  background: linear-gradient(180deg, #fbfcff, var(--primary-soft));
-  box-shadow: 0 6px 14px rgba(99, 102, 241, 0.12);
+  border-color: #ff4500;
+  background: #fff0eb;
+  box-shadow: 0 6px 14px rgba(255, 69, 0, 0.12);
   transform: translateY(-1px);
 }
 
@@ -946,14 +955,14 @@ watch(historyOpen, (open) => {
   border-color: var(--primary);
   border-style: solid;
   background: var(--primary-soft);
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+  box-shadow: 0 0 0 4px rgba(255, 69, 0, 0.14);
   transform: translateY(-1px);
 }
 
 /* 键盘操作时的聚焦反馈 */
 .template-upload :deep(.el-upload:focus-visible .el-upload-dragger) {
   border-color: var(--primary);
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+  box-shadow: 0 0 0 4px rgba(255, 69, 0, 0.14);
 }
 
 /* 已选模板：仅换配色（虚线框 → 白底实线卡），高度仍是 50px */
@@ -966,7 +975,7 @@ watch(historyOpen, (open) => {
 }
 
 .template-upload--filled :deep(.el-upload-dragger:hover) {
-  border-color: #c7d2fe;
+  border-color: #ffc7b3;
   background: var(--primary-soft);
 }
 
@@ -990,9 +999,9 @@ watch(historyOpen, (open) => {
   height: 26px;
   border-radius: 8px;
   font-size: 14px;
-  color: var(--primary-dark);
-  background: linear-gradient(135deg, #eef2ff, #dbe2ff);
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.14) inset;
+  color: #FFF;
+  background: #ff4500;
+  /* box-shadow: 0 0 0 1px rgba(255, 69, 0, 0.14) inset; */
   transition: transform 0.2s ease;
 }
 
@@ -1002,14 +1011,14 @@ watch(historyOpen, (open) => {
 
 /* 上传中：小圆角方块内显示旋转指示器 */
 .template-upload__tile--loading {
-  background: linear-gradient(135deg, #eef2ff, #dbe2ff);
+  background: linear-gradient(135deg, #ffece6, #ffd9c7);
 }
 
 .template-upload__spinner {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid #c7d2fe;
+  border: 2px solid #ffc7b3;
   border-top-color: var(--primary);
   animation: doc-studio-spin 0.8s linear infinite;
 }
@@ -1025,7 +1034,7 @@ watch(historyOpen, (open) => {
   border-radius: 8px;
   font-size: 15px;
   color: #ffffff;
-  background: linear-gradient(135deg, #818cf8, #6366f1);
+  background: linear-gradient(135deg, #ff7d4d, #ff4500);
 }
 
 .template-upload__type--pdf {
@@ -1075,7 +1084,7 @@ watch(historyOpen, (open) => {
 .doc-studio :deep(.kb-select .el-select__wrapper) {
   min-height: 40px;
   padding: 0.3rem 0.75rem;
-  border-radius: 10px;
+  border-radius: 0px;
   background: #f7f8fa;
   box-shadow: 0 0 0 1px #e8e9ee inset;
   font-size: 0.8rem;
@@ -1120,14 +1129,14 @@ watch(historyOpen, (open) => {
   border-radius: 8px;
   font-size: 15px;
   color: var(--primary-dark);
-  background: linear-gradient(135deg, #eef2ff, #dbe2ff);
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.12) inset;
+  background: linear-gradient(135deg, #ffece6, #ffd9c7);
+  box-shadow: 0 0 0 1px rgba(255, 69, 0, 0.12) inset;
   transition: color 0.18s ease, background 0.18s ease;
 }
 
 .kb-option__tile--active {
   color: #ffffff;
-  background: linear-gradient(135deg, #818cf8, #6366f1);
+  background: linear-gradient(135deg, #ff7d4d, #ff4500);
   box-shadow: none;
 }
 
@@ -1265,7 +1274,7 @@ watch(historyOpen, (open) => {
   height: 14px;
   border: 2px solid #ffffff;
   background: var(--primary);
-  box-shadow: 0 1px 4px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 1px 4px rgba(255, 69, 0, 0.35);
 }
 
 /* ---------------- 底部按钮 ---------------- */
@@ -1411,7 +1420,7 @@ watch(historyOpen, (open) => {
 
 .ghost-chip:hover:not(:disabled) {
   color: var(--primary-dark);
-  border-color: #c7d2fe;
+  border-color: #ffc7b3;
   background: var(--primary-soft);
 }
 
@@ -1422,9 +1431,9 @@ watch(historyOpen, (open) => {
 
 .ghost-chip--active {
   color: var(--primary-dark);
-  border-color: #a5b4fc;
+  border-color: #ff9e73;
   background: var(--primary-soft);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  box-shadow: 0 0 0 3px rgba(255, 69, 0, 0.12);
 }
 
 .display-box__canvas {
@@ -1449,7 +1458,7 @@ watch(historyOpen, (open) => {
 
 .display-box__icon {
   font-size: 46px;
-  color: #fbbf24;
+  color: var(--primary);
 }
 
 .display-box__title {
@@ -1477,7 +1486,7 @@ watch(historyOpen, (open) => {
   height: 32px;
   margin-bottom: 0.35rem;
   border-radius: 50%;
-  border: 3px solid #e0e1fd;
+  border: 3px solid #ffdacc;
   border-top-color: var(--primary);
   animation: doc-studio-spin 0.8s linear infinite;
 }
@@ -1522,8 +1531,8 @@ watch(historyOpen, (open) => {
 
 .result-card:hover {
   transform: translateY(-3px);
-  border-color: #c7d2fe;
-  box-shadow: 0 10px 24px rgba(99, 102, 241, 0.14);
+  border-color: #ffc7b3;
+  box-shadow: 0 10px 24px rgba(255, 69, 0, 0.14);
 }
 
 .result-card__cover {
@@ -1606,14 +1615,14 @@ watch(historyOpen, (open) => {
   font-size: 0.72rem;
   font-weight: 600;
   color: #ffffff;
-  background: linear-gradient(135deg, #6f70f3, #5457e5);
+  background: linear-gradient(135deg, #ff6a2e, #e63e00);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .result-card__view:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 14px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 6px 14px rgba(255, 69, 0, 0.3);
 }
 
 /* ---------------- 查看模式 ---------------- */
@@ -1789,7 +1798,7 @@ watch(historyOpen, (open) => {
 }
 
 .history-item:hover {
-  border-color: #c7d2fe;
+  border-color: #ffc7b3;
   background: var(--primary-soft);
 }
 
@@ -1805,7 +1814,7 @@ watch(historyOpen, (open) => {
 }
 
 .history-item.is-loading {
-  border-color: #c7d2fe;
+  border-color: #ffc7b3;
   background: var(--primary-soft);
 }
 
@@ -1884,8 +1893,8 @@ watch(historyOpen, (open) => {
   margin-left: auto;
   padding: 1px 7px;
   border-radius: 999px;
-  background: #eef2ff;
-  color: #4f46e5;
+  background: #ffece6;
+  color: #cc3700;
   font-weight: 600;
   font-size: 0.68rem;
 }
@@ -1897,7 +1906,7 @@ watch(historyOpen, (open) => {
   justify-content: center;
   width: 16px;
   height: 16px;
-  color: #c7d2fe;
+  color: #ffc7b3;
   font-size: 0.8rem;
   transition: color 0.2s ease, transform 0.2s ease;
 }
@@ -1911,7 +1920,7 @@ watch(historyOpen, (open) => {
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  border: 2px solid #e0e1fd;
+  border: 2px solid #ffdacc;
   border-top-color: var(--primary);
   animation: doc-studio-spin 0.8s linear infinite;
 }
@@ -2050,7 +2059,7 @@ watch(historyOpen, (open) => {
 .el-popper.kb-select-popper.kb-select-popper {
   padding: 0;
   border: 1px solid #eceef2;
-  border-radius: 12px;
+  /* border-radius: 12px; */
   background: #ffffff;
   box-shadow: 0 14px 34px rgba(17, 24, 39, 0.14);
   overflow: hidden;
@@ -2081,27 +2090,27 @@ watch(historyOpen, (open) => {
 
 .kb-select-popper .el-select-dropdown__item.is-hovering,
 .kb-select-popper .el-select-dropdown__item:hover {
-  background: #eef2ff;
+  background: #ffece6;
 }
 
 .kb-select-popper .el-select-dropdown__item.is-selected {
-  background: #eef2ff;
-  color: #4f46e5;
+  background: #ffece6;
+  color: #ff4500;
 }
 
 .kb-select-popper .el-select-dropdown__item.is-selected .kb-option__name {
-  color: #4f46e5;
+  color: #ff4500;
 }
 
 .kb-select-popper .el-select-dropdown__item.is-selected .kb-option__count {
-  color: #4f46e5;
+  color: #ff4500;
   background: #ffffff;
 }
 
 .kb-select-popper .el-select-dropdown__item.is-selected .kb-option__tag {
-  color: #4f46e5;
+  color: #ff4500;
   background: #ffffff;
-  border-color: #c7d2fe;
+  border-color: #ffc7b3;
 }
 
 .kb-select-popper .el-select-dropdown__empty {

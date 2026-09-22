@@ -71,8 +71,8 @@ function sendCode() {
   width: 100%;
   margin-top: 0.5rem;
   border-radius: 10px;
-  background: #6366f1;
-  border-color: #6366f1;
+  background: #ff4500;
+  border-color: #ff4500;
 }
 
 .form-row {
@@ -82,7 +82,7 @@ function sendCode() {
 
 .form-link {
   font-size: 0.875rem;
-  color: #6366f1;
+  color: #ff4500;
   cursor: pointer;
 }
 </style>
