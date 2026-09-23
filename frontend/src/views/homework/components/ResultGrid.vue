@@ -216,7 +216,7 @@ function metaText(record) {
   align-items: center;
   gap: 0.6rem;
   padding: 0.5rem 0.75rem;
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-primary-soft);
   border: var(--tb-border-width) solid var(--tb-primary-border);
 }
@@ -242,7 +242,7 @@ function metaText(record) {
   flex: 0 0 auto;
   max-width: 240px;
   padding: 1px 8px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   font-size: 0.66rem;
   font-weight: 600;
   color: var(--tb-warning);
@@ -257,7 +257,7 @@ function metaText(record) {
   flex: 1;
   min-width: 40px;
   height: 6px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   background: var(--tb-bg-sunken);
   overflow: hidden;
 }
@@ -265,7 +265,7 @@ function metaText(record) {
 .running__bar {
   display: block;
   height: 100%;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   background: var(--tb-primary);
   transition: width 0.3s ease;
 }
@@ -282,7 +282,7 @@ function metaText(record) {
   flex-direction: column;
   gap: 2px;
   padding: 0.5rem 0.7rem;
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-bg-raised);
   border: var(--tb-border-width) solid var(--tb-border);
 }
@@ -319,7 +319,7 @@ function metaText(record) {
 }
 
 .result-grid::-webkit-scrollbar-thumb {
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   background: var(--tb-border-strong);
 }
 
@@ -331,7 +331,7 @@ function metaText(record) {
   align-self: start;
   padding: 0.75rem;
   border: var(--tb-border-width) solid var(--tb-border);
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-bg-surface);
   cursor: pointer;
   animation: card-in 0.28s ease both;
@@ -375,7 +375,7 @@ function metaText(record) {
 .result-card__badge {
   flex: 0 0 auto;
   padding: 1px 8px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   font-size: 0.66rem;
   font-weight: 600;
   color: var(--tb-primary-text);
@@ -444,7 +444,7 @@ function metaText(record) {
   height: 26px;
   padding: 0 0.6rem;
   border: none;
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--tb-on-primary);
@@ -508,7 +508,7 @@ function metaText(record) {
 
 .display-empty__icon {
   font-size: 46px;
-  color: var(--tb-accent);
+  color: var(--tb-primary);
 }
 
 .display-empty__title {

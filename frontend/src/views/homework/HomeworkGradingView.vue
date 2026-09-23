@@ -34,15 +34,6 @@
                   </span>
                 </div>
                 <div class="display-box__actions">
-                  <button
-                    type="button"
-                    class="ghost-chip"
-                    :disabled="grading"
-                    @click="openWorkflowEditor(config.workflow)"
-                  >
-                    <el-icon><EditPen /></el-icon>
-                    <span>编辑工作流</span>
-                  </button>
                   <button type="button" class="ghost-chip" @click="openHistoryDrawer">
                     <el-icon><Clock /></el-icon>
                     <span>历史记录</span>
@@ -114,7 +105,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Clock, Download, EditPen, Refresh } from '@element-plus/icons-vue'
+import { Clock, Download, Refresh } from '@element-plus/icons-vue'
 import { getSpaceList } from '@/api/knowledgebase'
 import {
   DEMO_KB_LIST,
@@ -414,7 +405,7 @@ onMounted(() => {
   flex-direction: column;
   height: calc(100vh - 2rem);
   min-height: 640px;
-  border-radius: var(--tb-radius-xl);
+  border-radius: 0;
   overflow: hidden;
   background: var(--tb-bg-page);
   color: var(--tb-text-primary);
@@ -462,7 +453,7 @@ onMounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-bg-surface);
   border: var(--tb-border-width) solid var(--tb-border);
   overflow: hidden;
@@ -487,7 +478,7 @@ onMounted(() => {
 
 .display-box__badge {
   padding: 3px 10px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--accent-deep);
@@ -501,7 +492,7 @@ onMounted(() => {
 .demo-chip {
   flex: 0 0 auto;
   padding: 2px 8px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   font-size: 0.66rem;
   font-weight: 600;
   color: var(--tb-text-secondary);
@@ -510,23 +501,28 @@ onMounted(() => {
   cursor: help;
 }
 
+/* 操作区整体不参与收缩：文字换行会被 30px 固定高度裁掉，
+   空间不足时交由可省略的左侧状态标签让位 */
 .display-box__actions {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
 .ghost-chip {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   height: 30px;
   padding: 0 0.7rem;
   border: var(--tb-border-width) solid var(--tb-border);
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
   background: var(--tb-bg-surface);
   color: var(--tb-text-secondary);
   font-size: 0.74rem;
+  white-space: nowrap;
   cursor: pointer;
   transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
@@ -550,7 +546,7 @@ onMounted(() => {
   justify-content: center;
   padding: 1.5rem;
   background-color: var(--tb-bg-sunken);
-  background-image: radial-gradient(var(--tb-border-strong) 1px, transparent 1px);
+  background-image: radial-gradient(var(--tb-border) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 

@@ -436,7 +436,7 @@ function getExt(name) {
   padding: 0 2.1rem 0 0.7rem;
   overflow: hidden;
   border: var(--tb-border-width) dashed var(--tb-border-strong);
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-bg-raised);
   text-align: left;
   cursor: pointer;
@@ -483,7 +483,7 @@ function getExt(name) {
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
   font-size: 14px;
   color: var(--tb-primary-text);
   background: var(--tb-primary-soft);
@@ -558,7 +558,7 @@ function getExt(name) {
   flex-direction: column;
   gap: 0.35rem;
   padding: 0.5rem 0.55rem;
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-bg-raised);
   border: var(--tb-border-width) solid var(--tb-border);
 }
@@ -634,7 +634,7 @@ function getExt(name) {
   flex: 0 0 auto;
   width: 13px;
   height: 13px;
-  border-radius: var(--tb-radius-sm);
+  border-radius: 0;
   border: var(--tb-border-width) solid var(--tb-border-strong);
   background: var(--tb-bg-surface);
   transition: background 0.16s ease, border-color 0.16s ease;
@@ -665,7 +665,7 @@ function getExt(name) {
   top: 5px;
   width: 6px;
   height: 1.6px;
-  border-radius: var(--tb-radius-xs);
+  border-radius: 0;
   background: var(--tb-bg-surface);
 }
 
@@ -734,7 +734,7 @@ function getExt(name) {
 .node__zip {
   flex: 0 0 auto;
   padding: 0 5px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.2px;
@@ -763,7 +763,7 @@ function getExt(name) {
 .node__tag {
   flex: 0 0 auto;
   padding: 0 6px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   font-size: 0.6rem;
   font-weight: 600;
   color: var(--tb-warning);
@@ -782,7 +782,7 @@ function getExt(name) {
 }
 
 .folder__tree::-webkit-scrollbar-thumb {
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   background: var(--tb-border-strong);
 }
 
@@ -790,7 +790,7 @@ function getExt(name) {
   height: 28px;
   margin: 1px 0;
   padding-right: 4px;
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
   transition: background 0.16s ease;
 }
 

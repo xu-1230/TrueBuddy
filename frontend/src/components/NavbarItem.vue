@@ -51,8 +51,18 @@ const { isDark, toggle } = useAppearance()
   position: sticky;
   top: 0;
   z-index: 100;
-  background: var(--tb-bg-surface);
+  /* 半透明 + 背景虚化：内容从导航条下穿过时保留层次，不遮挡阅读 */
+  background: color-mix(in oklab, var(--tb-bg-surface) 86%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
   border-bottom: 1px solid var(--tb-border);
+}
+
+/* 不支持背景虚化的内核退回不透明底色，避免文字叠字 */
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .navbar {
+    background: var(--tb-bg-surface);
+  }
 }
 
 .navbar__container {
@@ -77,6 +87,17 @@ const { isDark, toggle } = useAppearance()
   text-decoration: none;
   /* logo 图形使用 currentColor，故随主题文字色变化 */
   color: var(--tb-text-primary);
+  transition: opacity var(--tb-dur-2) var(--tb-motion-ease);
+}
+
+.navbar__brand:hover {
+  opacity: 0.72;
+}
+
+.navbar__brand:focus-visible {
+  outline: 2px solid var(--tb-primary);
+  outline-offset: 4px;
+  border-radius: var(--tb-radius-sm);
 }
 
 .navbar__logo {
@@ -84,6 +105,11 @@ const { isDark, toggle } = useAppearance()
   width: auto;
   margin-right: 0.5rem;
   flex: 0 0 auto;
+  transition: transform var(--tb-dur-3) var(--tb-ease-spring);
+}
+
+.navbar__brand:hover .navbar__logo {
+  transform: scale(1.06);
 }
 
 .navbar__name {
@@ -95,6 +121,8 @@ const { isDark, toggle } = useAppearance()
 }
 
 .navbar__link {
+  position: relative;
+  padding: var(--tb-size-1) 0;
   text-decoration: none;
   color: var(--tb-text-secondary);
   font-size: 0.95rem;
@@ -102,8 +130,35 @@ const { isDark, toggle } = useAppearance()
   transition: color var(--tb-motion-dur) var(--tb-motion-ease);
 }
 
-.navbar__link:hover {
+/* 下划线由伪元素 scaleX 展开：只动 transform，不触发重排 */
+.navbar__link::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  border-radius: var(--tb-radius-full);
+  background: var(--tb-primary);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--tb-dur-2) var(--tb-ease-out);
+}
+
+.navbar__link:hover,
+.navbar__link.router-link-active {
   color: var(--tb-text-primary);
+}
+
+.navbar__link:hover::after,
+.navbar__link.router-link-active::after {
+  transform: scaleX(1);
+}
+
+.navbar__link:focus-visible {
+  outline: 2px solid var(--tb-primary);
+  outline-offset: 4px;
+  border-radius: var(--tb-radius-sm);
 }
 
 .navbar__right {
@@ -171,17 +226,37 @@ const { isDark, toggle } = useAppearance()
   background: var(--tb-primary);
   transition:
     background var(--tb-motion-dur) var(--tb-motion-ease),
-    box-shadow var(--tb-motion-dur) var(--tb-motion-ease);
+    box-shadow var(--tb-motion-dur) var(--tb-motion-ease),
+    transform var(--tb-dur-2) var(--tb-ease-out);
 }
 
 .navbar__login:hover {
   background: var(--tb-primary-hover);
   box-shadow: var(--tb-shadow-brand);
+  transform: translateY(-1px);
+}
+
+.navbar__login:active {
+  transform: translateY(0);
+}
+
+.navbar__login:focus-visible {
+  outline: 2px solid var(--tb-primary);
+  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .navbar__theme-icon {
+  .navbar__brand,
+  .navbar__logo,
+  .navbar__link::after,
+  .navbar__theme,
+  .navbar__theme-icon,
+  .navbar__login {
     transition: none;
+  }
+
+  .navbar__login:hover {
+    transform: none;
   }
 }
 </style>

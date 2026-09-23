@@ -729,7 +729,6 @@ watch(historyOpen, (open) => {
   min-height: 640px;
   /* border-radius: 14px; */
   overflow: hidden;
-  background: #f6f7f9;
   color: var(--tb-text-primary);
   box-shadow: var(--tb-shadow-2);
 

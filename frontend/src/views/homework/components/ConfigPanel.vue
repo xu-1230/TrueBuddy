@@ -265,7 +265,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-bg-surface);
   box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border);
   overflow: hidden;
@@ -276,7 +276,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 1.15rem;
+  gap: 1.4rem;
   padding: 1rem;
   overflow-y: auto;
 }
@@ -286,7 +286,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 }
 
 .config-panel__scroll::-webkit-scrollbar-thumb {
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   background: var(--tb-border-strong);
 }
 
@@ -321,19 +321,20 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 .section-head__title {
   display: inline-flex;
   align-items: center;
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: 0.99rem;
+  font-weight: 500;
   letter-spacing: 0.2px;
   color: var(--tb-text-primary);
 }
 
+/* 分节色条：用品牌色而非状态色（accent 仅用于状态与数据语义） */
 .section-head__title::before {
   content: '';
   width: 3px;
-  height: 12px;
+  height: 14px;
   margin-right: 6px;
-  border-radius: var(--tb-radius-xs);
-  background: var(--tb-accent);
+  border-radius: 0;
+  background: var(--tb-primary-text);
 }
 
 .section-head__hint,
@@ -381,7 +382,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 :deep(.workflow-select .el-select__wrapper) {
   min-height: 40px;
   padding: 0.3rem 0.75rem;
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-bg-sunken);
   box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border) inset;
   font-size: 0.8rem;
@@ -420,7 +421,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
   font-size: 15px;
   color: var(--tb-primary-text);
   background: var(--tb-primary-soft);
@@ -461,7 +462,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 .kb-option__tag {
   flex: 0 0 auto;
   padding: 1px 8px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   font-size: 0.66rem;
   font-weight: 600;
 }
@@ -514,7 +515,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   height: 27px;
   padding: 0 0.55rem;
   border: var(--tb-border-width) solid var(--tb-border);
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
   background: var(--tb-bg-surface);
   font-size: 0.7rem;
   color: var(--tb-text-secondary);
@@ -536,7 +537,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 /* 文本域 / 分段控件 / 数字输入 */
 :deep(.el-textarea__inner) {
   background: var(--tb-bg-sunken);
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   padding: 0.65rem 0.75rem;
   font-size: 0.8rem;
   line-height: 1.7;
@@ -561,12 +562,12 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   --el-segmented-item-hover-bg-color: var(--tb-bg-sunken);
   --el-segmented-item-hover-color: var(--tb-text-primary);
   padding: 3px;
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
 }
 
 :deep(.el-segmented__item),
 :deep(.el-segmented__item-selected) {
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
 }
 
 :deep(.el-segmented__item) {
@@ -582,7 +583,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 }
 
 :deep(.el-input-number .el-input__wrapper) {
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
   background: var(--tb-bg-sunken);
   box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border) inset;
 }
@@ -628,7 +629,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 .el-popper.hw-kb-select-popper.hw-kb-select-popper {
   padding: 0;
   border: var(--tb-border-width) solid var(--tb-border);
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-bg-surface);
   box-shadow: var(--tb-shadow-4);
   overflow: hidden;
@@ -661,7 +662,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   height: auto;
   margin: 0 0 2px;
   padding: 6px 8px;
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
   line-height: 1.4;
   color: var(--tb-text-primary);
   transition: background 0.18s ease, color 0.18s ease;

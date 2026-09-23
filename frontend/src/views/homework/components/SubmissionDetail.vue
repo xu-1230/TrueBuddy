@@ -112,7 +112,7 @@ const emit = defineEmits(['back'])
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-bg-surface);
   border: var(--tb-border-width) solid var(--tb-border);
   overflow: hidden;
@@ -134,7 +134,7 @@ const emit = defineEmits(['back'])
   height: 30px;
   padding: 0 0.7rem;
   border: var(--tb-border-width) solid var(--tb-border);
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
   background: var(--tb-bg-surface);
   color: var(--tb-text-secondary);
   font-size: 0.74rem;
@@ -170,7 +170,7 @@ const emit = defineEmits(['back'])
 .detail__student {
   flex: 0 0 auto;
   padding: 2px 9px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   font-size: 0.7rem;
   font-weight: 600;
   color: var(--tb-warning);
@@ -194,7 +194,7 @@ const emit = defineEmits(['back'])
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   border: var(--tb-border-width) solid var(--tb-border);
   background: var(--tb-bg-raised);
   overflow: hidden;
@@ -265,7 +265,7 @@ const emit = defineEmits(['back'])
 
 .origin::-webkit-scrollbar-thumb,
 .pane--score::-webkit-scrollbar-thumb {
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   background: var(--tb-border-strong);
 }
 
@@ -296,7 +296,7 @@ const emit = defineEmits(['back'])
 
 .score__grade {
   padding: 3px 12px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   font-size: 0.74rem;
   font-weight: 700;
   color: var(--tb-primary-text);
@@ -351,7 +351,7 @@ const emit = defineEmits(['back'])
   flex-direction: column;
   gap: 2px;
   padding: 0.45rem 0.6rem;
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
   background: var(--tb-bg-raised);
   border: var(--tb-border-width) solid var(--tb-border);
 }
@@ -379,7 +379,7 @@ const emit = defineEmits(['back'])
 .requirement {
   margin: 0 0.9rem 0.7rem;
   padding: 0.7rem 0.8rem;
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-bg-raised);
   border: var(--tb-border-width) solid var(--tb-border);
 }

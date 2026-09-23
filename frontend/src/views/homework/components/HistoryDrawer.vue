@@ -145,7 +145,7 @@ function handleClick(record) {
   width: 30px;
   height: 30px;
   border: none;
-  border-radius: var(--tb-radius-md);
+  border-radius: 0;
   background: transparent;
   color: var(--tb-text-tertiary);
   cursor: pointer;
@@ -184,13 +184,13 @@ function handleClick(record) {
 }
 
 .history-drawer__list::-webkit-scrollbar-thumb {
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   background: var(--tb-border-strong);
 }
 
 .history-item {
   padding: 0.7rem 0.85rem;
-  border-radius: var(--tb-radius-lg);
+  border-radius: 0;
   background: var(--tb-bg-raised);
   border: var(--tb-border-width) solid var(--tb-border);
   cursor: pointer;
@@ -247,7 +247,7 @@ function handleClick(record) {
 .history-item__status {
   flex: 0 0 auto;
   padding: 1px 8px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   font-size: 0.68rem;
   font-weight: 600;
 }
@@ -279,7 +279,7 @@ function handleClick(record) {
 .history-item__count {
   margin-left: auto;
   padding: 1px 7px;
-  border-radius: var(--tb-radius-full);
+  border-radius: 0;
   background: var(--tb-primary-soft);
   color: var(--tb-primary-text);
   font-weight: 600;
