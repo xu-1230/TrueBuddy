@@ -153,7 +153,7 @@
       <div class="toolbar layout-content-right" :style="{ width: sidebarWidth + 'px' }">
         <!-- <div class="resize-handler" @mousedown="resizeSidebar($event)"></div> -->
         <div class="digital-human-placeholder" :class="{ 'screening-mode': screening }">
-          <canvas id="myCanvas" :style="canvasStyle" />
+          <canvas ref="canvasRef" class="digital-human-canvas" />
         </div>
       </div>
     </div>
@@ -164,12 +164,14 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import {
   CaretLeft, CaretRight, DocumentChecked, FullScreen, Minus, Monitor, Plus, UploadFilled, VideoPlay,
 } from '@element-plus/icons-vue'
+import * as PIXI from 'pixi.js'
+import { Live2DModel } from 'pixi-live2d-display/cubism4'
 import { convertPPTXToPPTist } from 'pptx-to-pptist'
 import { useSlidesStore } from './stores/slides'
 import { useScreenStore } from './stores/screen'
@@ -249,8 +251,10 @@ onMounted(() => {
   updateViewport()
   canvasResizeObserver = new ResizeObserver(updateViewport)
   if (canvasWrapRef.value) canvasResizeObserver.observe(canvasWrapRef.value)
-  init();
+  initLive2D()
 })
+// 放在 beforeUnmount：此时 canvas 仍在 DOM 中，PIXI 可安全释放渲染器与 WebGL 上下文
+onBeforeUnmount(() => destroyLive2D())
 onUnmounted(() => canvasResizeObserver && canvasResizeObserver.disconnect())
 
 const viewportWidth = computed(() => VIEWPORT_SIZE * canvasScale.value)
@@ -465,69 +469,74 @@ const importSlideData = (data) => {
 
 
 
-import * as PIXI from "pixi.js";
-import { Live2DModel } from "pixi-live2d-display/cubism4"; 
+// ===== 数字人（Live2D）=====
+// pixi-live2d-display 依赖全局 PIXI 注册 Ticker，必须在任何 Live2DModel 使用前赋值
+window.PIXI = PIXI
 
+const LIVE2D_MODEL_URL = '/live2d/Haru/Haru.model3.json'
 
+const canvasRef = ref(null)
+let app = null // PIXI.Application 单实例
+let model = null // Live2DModel 单实例
+let live2dDisposed = false // 卸载标记：阻断「组件已卸载后才 resolve」的异步回调写入已销毁实例
 
-window.PIXI = PIXI; 
-let app; 
-let model; 
+// 完整释放：停渲染循环 → 销毁模型 → 销毁渲染器
+// 路由 /index/ppt 每次进入都是新实例，若此处不销毁，旧 Ticker 会持续对已被浏览器回收的
+// WebGL 上下文发起 bindBuffer/bindTexture，产生 INVALID_OPERATION 刷屏
+const destroyLive2D = () => {
+  live2dDisposed = true
+
+  // 先停循环，避免销毁过程中 Ticker 仍在绘制
+  if (app?.ticker) app.ticker.stop()
+
+  if (model) {
+    model.removeAllListeners()
+    model.destroy({ children: true, texture: true, baseTexture: true })
+    model = null
+  }
+
+  if (app) {
+    // removeView 传 false：canvas 由 Vue 托管，不能由 PIXI 从 DOM 中移除
+    app.destroy(false, { children: true, texture: true, baseTexture: true })
+    app = null
+  }
+}
 
 const initLive2D = async () => {
+  if (live2dDisposed || app || !canvasRef.value) return
+
   app = new PIXI.Application({
-    view: document.querySelector("#myCanvas"),
+    view: canvasRef.value,
     width: 400,
-    height:800,
+    height: 800,
     // resizeTo: window,
     backgroundAlpha: 0,
     resolution: window.devicePixelRatio || 1,
     autoDensity: true,
   })
-  
-  // 使用形象管理配置的模型，加载失败时回退到第一个内置模型
+
   try {
-    model = await Live2DModel.from('/live2d/Haru/Haru.model3.json', { autoInteract: true })
-  } catch (e) {
-    console.error('配置模型加载失败，回退到默认模型:', e)
-    // model = await Live2DModel.from(live2dModels[0].modelPath, { autoInteract: true })
+    const loadedModel = await Live2DModel.from(LIVE2D_MODEL_URL, { autoInteract: true })
+
+    // 加载期间组件可能已卸载：此时 app 已销毁，丢弃模型而不是挂到失效实例上
+    if (live2dDisposed || !app) {
+      loadedModel.destroy({ children: true, texture: true, baseTexture: true })
+      return
+    }
+
+    model = loadedModel
+    model.scale.set(0.2)
+    model.position.set(-30, -46)
+    app.stage.addChild(model)
+
+    model.on('hit', () => {
+      //  model.expression(4)
+    })
   }
-
-  // 与 Live2DViewer.vue 的 fitModel 保持一致的缩放算法
-  // const naturalWidth = model.width || 850
-  // const naturalHeight = model.height || 1200
-  // const sw = window.innerWidth
-  // const sh = window.innerHeight
-  // const baseScale = Math.min(sw / naturalWidth, sh / naturalHeight) * 0.9
-  // const finalScale = baseScale * (avatarConfig.scale || 1)
-  model.scale.set(0.2)
-  // model.anchor.set(0.5, 0.5)
-
-  // 与 Live2DViewer.vue 一致的水平+垂直定位
-  // const modelW = naturalWidth * finalScale
-  // let posX
-  // if (avatarConfig.position === 'left') {
-  //   posX = modelW / 2
-  // } else if (avatarConfig.position === 'right') {
-  //   posX = sw - modelW / 2
-  // } else {
-  //   posX = sw / 2
-  // }
-  // model.position.set(posX, sh / 2)
-  model.position.set(-30, -46)
-  app.stage.addChild(model)
-  
-  model.on('hit', () => {
-    //  model.expression(4)
-  })
+  catch (e) {
+    console.error('Live2D 模型加载失败:', e)
+  }
 }
-
-
-
-const init = async () => {
-  initLive2D()
-};
-
 </script>
 
 <style lang="css" scoped>
@@ -536,7 +545,8 @@ const init = async () => {
   display: flex;
   flex-direction: column;
   background: var(--tb-bg-page);
-  border-radius: 8px;
+  border: var(--tb-border-width) solid var(--tb-border);
+
   overflow: hidden;
 }
 
@@ -589,6 +599,36 @@ const init = async () => {
   flex-direction: column;
   align-items: center;
   gap: 12px;
+}
+
+/* 滚动条：默认 15px 常显灰条与深色画布不搭，收成 6px（与全站其它滚动区一致）
+   注意：这里只用 ::-webkit-scrollbar，不写 scrollbar-width ——
+   标准属性一旦声明，Chrome 会忽略 webkit 伪元素的样式（含 hover 态） */
+.ppt-thumbnails::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ppt-thumbnails::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 常态克制、悬停才显眼，避免常驻滚动条抢缩略图的视觉焦点 */
+.ppt-thumbnails::-webkit-scrollbar-thumb {
+  border-radius: var(--tb-radius-full);
+  background: var(--tb-text-tertiary);
+  transition: background var(--tb-dur-2) var(--tb-motion-ease);
+}
+
+.ppt-thumbnails::-webkit-scrollbar-thumb:hover {
+  background: var(--tb-text-secondary);
+}
+
+/* Firefox 不支持 ::-webkit-scrollbar，用标准属性给等价效果（Chrome 不会命中此分支） */
+@supports not selector(::-webkit-scrollbar) {
+  .ppt-thumbnails {
+    scrollbar-width: thin;
+    scrollbar-color: var(--tb-text-tertiary) transparent;
+  }
 }
 .thumb-item {
   position: relative;
@@ -763,12 +803,16 @@ const init = async () => {
   align-items: center;
   justify-content: center;
   margin: 20px;
-  border: var(--tb-border-width) dashed var(--tb-border-strong);
-  border-radius: 4px;
+
   color: var(--tb-text-tertiary);
   font-size: 14px;
   text-align: center;
   line-height: 1.6;
+}
+
+/* 画布尺寸由 PIXI autoDensity 以内联样式写入，此处只消除行内元素基线间隙 */
+.digital-human-canvas {
+  display: block;
 }
 
 /* 放映模式下：数字人浮于放映覆盖层之上，随放映一起展示 */
