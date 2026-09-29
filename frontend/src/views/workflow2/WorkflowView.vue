@@ -59,9 +59,12 @@ const handleConnect = (connection) => {
 const drawerVisible = ref(false)
 const activeNodeId = ref(null)
 
-function onNodeClick({ event, node }) {
-  console.log(event);
-}
+/**
+ * 节点点击：抽屉开关（activeNodeId / drawerVisible）尚未接入，此处保留占位。
+ * 原实现是 console.log(event)：每次点选节点都会把 Vue Flow 的合成事件对象写进
+ * Console，面板会长期持有该对象引用并反复展开格式化，高频操作下明显拖慢 DevTools。
+ */
+function onNodeClick() {}
 
 
 const nodes = ref([
