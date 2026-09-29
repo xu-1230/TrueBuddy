@@ -27,23 +27,43 @@
     </script>
 
     <!-- Google Fonts：Playfair Display（优雅衬线体，用于品牌名 / 展示性大标题 / 数字）+ Inter（极简无衬线体，用于正文与 UI） -->
-    <!-- 若所处网络无法访问 fonts.googleapis.com，可将下方两处域名替换为可用镜像（如 fonts.loli.net / fonts.font.im） -->
+    <!--
+      加载策略：media="print" + onload 切回 all，把字体从「阻塞渲染的关键路径」上摘掉。
+      普通 <link rel="stylesheet"> 是 render-blocking 的：一旦 fonts.googleapis.com 不可达
+      （国内网络/校园网很常见），浏览器会一直等这两个请求直到超时，
+      表现为首屏长时间白屏、Network/控制台一直挂 pending 请求。
+      字体只是增强项——加载失败时 fonts.css 的字体栈会整体回退到系统中英文字体，不影响可用性。
+      若所处网络无法访问 fonts.googleapis.com，可将域名替换为可用镜像（如 fonts.loli.net / fonts.font.im）
+    -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap"
+      media="print"
+      onload="this.media='all'"
     >
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap"
+      media="print"
+      onload="this.media='all'"
     >
+    <noscript>
+      <!-- 禁用 JS 时上面的 onload 不会执行，这里兜底保证字体仍然生效 -->
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap"
+      >
+    </noscript>
 
     <title>TrueBuddy</title>
   </head>
   <body>
     <div id="app"></div>
-    <script src="/live2d/live2dcubismcore.min.js"></script>
+    <!-- Live2D Cubism Core：加 defer 从关键路径上摘掉（classic deferred 脚本仍按文档顺序
+         先于 module 脚本执行，pixi-live2d-display 导入时依然能读到 window.Live2DCubismCore） -->
+    <script src="/live2d/live2dcubismcore.min.js" defer></script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
