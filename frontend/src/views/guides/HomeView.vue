@@ -23,7 +23,13 @@ const sections = [
 /** 章节编号（001 ~ 00N），对应参考站的 PAGE 编号 */
 const codeOf = (idx) => String(idx + 1).padStart(3, '0')
 
-const progress = ref(0)
+/**
+ * 滚动进度条走 DOM 直写，不进响应式状态。
+ * 若把进度值放进 ref，ScrollTrigger 的 onUpdate 会在每一帧都触发一次组件重渲染，
+ * 而本页模板有 8 个 section、上千个节点，等于滚动时每帧白跑一次 diff + patch。
+ * 这里只写一个内联 transform，Vue 完全不参与。
+ */
+const progressBarRef = ref(null)
 const activeIndex = ref(0)
 let triggers = []
 
@@ -38,11 +44,15 @@ function setupAnimations() {
   const stages = Array.from(document.querySelectorAll('[data-section]'))
 
   // 滚动进度条
+  // end: 'max' 即「文档最大滚动位置」，由 ScrollTrigger 内部缓存。
+  // 原先写成 () => document.body.scrollHeight - window.innerHeight：
+  // 函数式 end 会在每次刷新时重新读取布局属性，滚动中反复触发强制重排。
   ScrollTrigger.create({
     start: 0,
-    end: () => document.body.scrollHeight - window.innerHeight,
+    end: 'max',
     onUpdate: (self) => {
-      progress.value = self.progress
+      const bar = progressBarRef.value
+      if (bar) bar.style.transform = `scaleX(${self.progress.toFixed(4)})`
     },
   })
 
@@ -275,7 +285,7 @@ function goTo(idx) {
 
     <!-- 滚动进度条 -->
     <div class="progress">
-      <div class="progress__bar" :style="{ transform: `scaleX(${progress})` }"></div>
+      <div ref="progressBarRef" class="progress__bar"></div>
     </div>
 
     <!-- 侧边章节导航 -->
