@@ -1374,6 +1374,21 @@ function goTo(idx) {
   transform: translate(-50%, -50%);
   filter: blur(60px);
 }
+
+/* ===== 视差装饰层：统一提升为独立合成层 =====
+   这些光斑全部由 GSAP 做 yPercent 视差（滚动时每帧位移），
+   自身又是 400~700px 画布 + blur(40~80px) 的大面积模糊。
+   不提升图层时，每帧位移会带着模糊一起重新栅格化，直接吃掉帧预算；
+   统一声明 will-change: transform 后，滚动退化为纯 GPU 位移、模糊只算一次，
+   pointer-events: none 让它们彻底退出命中测试。 */
+.hero__blob,
+.ai__glow,
+.grading__glow,
+.insight__glow,
+.cta__glow {
+  will-change: transform;
+  pointer-events: none;
+}
 .cta__inner {
   position: relative;
   z-index: 1;
