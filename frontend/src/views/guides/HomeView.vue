@@ -31,7 +31,14 @@ const codeOf = (idx) => String(idx + 1).padStart(3, '0')
  */
 const progressBarRef = ref(null)
 const activeIndex = ref(0)
+/** 本页创建的全部 ScrollTrigger：卸载时只回收这些，不再全局清空 */
 let triggers = []
+
+/** 登记本页的 ScrollTrigger（含挂在补间上的），返回原实例便于链式写法 */
+function track(trigger) {
+  if (trigger) triggers.push(trigger)
+  return trigger
+}
 
 onMounted(async () => {
   await nextTick()
@@ -47,14 +54,14 @@ function setupAnimations() {
   // end: 'max' 即「文档最大滚动位置」，由 ScrollTrigger 内部缓存。
   // 原先写成 () => document.body.scrollHeight - window.innerHeight：
   // 函数式 end 会在每次刷新时重新读取布局属性，滚动中反复触发强制重排。
-  ScrollTrigger.create({
+  track(ScrollTrigger.create({
     start: 0,
     end: 'max',
     onUpdate: (self) => {
       const bar = progressBarRef.value
       if (bar) bar.style.transform = `scaleX(${self.progress.toFixed(4)})`
     },
-  })
+  }))
 
   // ① 每个章节一条与滚动进度绑定的时间线（整页连续滚动，不做整屏吸附与钉住）：
   //    区间 = 该章节「进入视口底部 → 完全离开视口顶部」，中线 = 章节居中于视口的时刻；
@@ -222,38 +229,43 @@ function setupAnimations() {
 
     /* ---------------- 装饰层视差：与内容错开节奏 ---------------- */
     parallax.forEach((el) => {
-      gsap.fromTo(
-        el,
-        { yPercent: 0 },
-        {
-          yPercent: Number(el.dataset.speed) || 22,
-          ease: 'none',
-          scrollTrigger: {
-            trigger: sec,
-            start: 'top bottom',
-            end: 'bottom top',
-            scrub: 1,
+      // 视差补间也会各自建一个 ScrollTrigger，必须一并登记，否则卸载后残留
+      track(
+        gsap.fromTo(
+          el,
+          { yPercent: 0 },
+          {
+            yPercent: Number(el.dataset.speed) || 22,
+            ease: 'none',
+            scrollTrigger: {
+              trigger: sec,
+              start: 'top bottom',
+              end: 'bottom top',
+              scrub: 1,
+            },
           },
-        },
+        ).scrollTrigger,
       )
     })
 
     // 首屏滚动提示：向下滚动即淡出
     fades.forEach((el) => {
-      gsap.to(el, {
-        opacity: 0,
-        y: 12,
-        ease: 'none',
-        scrollTrigger: { trigger: sec, start: 'top top', end: '+=25%', scrub: true },
-      })
+      track(
+        gsap.to(el, {
+          opacity: 0,
+          y: 12,
+          ease: 'none',
+          scrollTrigger: { trigger: sec, start: 'top top', end: '+=25%', scrub: true },
+        }).scrollTrigger,
+      )
     })
 
-    triggers.push(tl.scrollTrigger)
+    track(tl.scrollTrigger)
   })
 
   // ② 章节指示：视口中心落入哪一屏，右侧导航就高亮哪一项
   stages.forEach((sec, i) => {
-    ScrollTrigger.create({
+    const stageTrigger = ScrollTrigger.create({
       trigger: sec,
       start: 'top center',
       end: 'bottom center',
@@ -261,11 +273,15 @@ function setupAnimations() {
         if (self.isActive) activeIndex.value = i
       },
     })
+    track(stageTrigger)
   })
 }
 
 onBeforeUnmount(() => {
-  ScrollTrigger.getAll().forEach((t) => t.kill())
+  // 只回收本页登记的实例。原先用 ScrollTrigger.getAll() 是全局清空，
+  // 会把当时挂在页面上的其它组件的 ScrollTrigger 一并杀掉（例如 /docs）。
+  triggers.forEach((t) => t.kill())
+  triggers = []
 })
 
 /** 章节导航：平滑滚动到目标章节 */
