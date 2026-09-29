@@ -768,8 +768,9 @@ watch(historyOpen, (open) => {
   /* border-radius: 12px; */
   background: var(--tb-bg-surface);
   /* 用 ring 代替 border：不占用内容宽度，收起时可整体淡出 */
-  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border);
+  /* box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border); */
   overflow: hidden;
+  border: var(--tb-border-width) solid var(--tb-border);
   /* 查看模式：宽度与间距同步过渡，配合内层内容左移 */
   transition: width 0.36s cubic-bezier(0.4, 0, 0.2, 1),
     margin-right 0.36s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.26s ease;

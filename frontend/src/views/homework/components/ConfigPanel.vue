@@ -1,6 +1,18 @@
 <template>
   <aside class="config-panel">
     <div class="config-panel__scroll">
+
+    
+      <!-- 作业文件夹选择 -->
+      <section class="panel-section">
+        <div class="section-head">
+          <span class="section-head__title">作业文件夹选择</span>
+          <span class="section-head__hint">Word / PDF / 文本 / 图片</span>
+        </div>
+        <FolderUploader v-model="folder" :disabled="grading" />
+      </section>
+
+      
       <!-- 知识库选择 -->
       <section class="panel-section">
         <div class="section-head">
@@ -47,14 +59,6 @@
         </el-select>
       </section>
 
-      <!-- 作业文件夹选择 -->
-      <section class="panel-section">
-        <div class="section-head">
-          <span class="section-head__title">作业文件夹选择</span>
-          <span class="section-head__hint">Word / PDF / 文本 / 图片</span>
-        </div>
-        <FolderUploader v-model="folder" :disabled="grading" />
-      </section>
 
       <!-- AI 描述说明 -->
       <section class="panel-section">
@@ -267,7 +271,8 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   flex-direction: column;
   border-radius: 0;
   background: var(--tb-bg-surface);
-  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border);
+  border: var(--tb-border-width) solid var(--tb-border);
+  /* box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border); */
   overflow: hidden;
 }
 

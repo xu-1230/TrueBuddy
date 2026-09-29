@@ -15,7 +15,6 @@ import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -27,7 +26,7 @@ import java.util.Map;
  * <ol>
  *     <li>{@code SubmitDocParserJobAdvance} —— 本地文件流提交，返回业务订单号（jobId）</li>
  *     <li>{@code QueryDocParserStatus} —— 轮询解析状态与进度</li>
- *     <li>{@code GetDocParserResult} —— 分页拉取版面信息（layouts），拼接为 Markdown</li>
+ *     <li>{@code GetDocParserResult} —— 分页拉取版面信息（layouts）</li>
  * </ol>
  *
  * <p>说明：MinIO 为内网地址，云端无法回拉，因此统一使用 Advance（FileUrlObject）方式直传文件流。
@@ -142,12 +141,6 @@ public class DocMindParseGateway implements DocumentParseGateway {
             }
             offset += stepSize;
         }
-//        if (layouts.isEmpty()) {
-//            log.warn("文档智能返回结果为空: jobId={}", jobId);
-//            return "";
-//        }
-//        String markdown = buildMarkdown(layouts);
-//        log.info("文档智能结果拉取完成: jobId={}, layouts={}, markdownLength={}", jobId, layouts.size(), markdown.length());
         return layouts;
     }
 
@@ -178,42 +171,6 @@ public class DocMindParseGateway implements DocumentParseGateway {
         }
     }
 
-    /**
-     * 将版面块按阅读顺序（index）拼接为 Markdown：
-     * 优先使用版面块自带的 markdownContent，缺失时按 type/level 降级为纯文本 / 标题。
-     */
-    private String buildMarkdown(List<Map<?, ?>> layouts) {
-        // 先按页码、再按页内阅读顺序排序（index 为版面阅读顺序，单独使用在多页文档中会错序）
-        layouts.sort(Comparator
-                .comparingInt((Map<?, ?> layout) -> asInt(layout.get("pageNum")))
-                .thenComparingInt(layout -> asInt(layout.get("index"))));
-        StringBuilder builder = new StringBuilder();
-        for (Map<?, ?> layout : layouts) {
-            String markdown = asString(layout.get("markdownContent"));
-            if (!StringUtils.hasText(markdown)) {
-                markdown = fallbackMarkdown(layout);
-            }
-            if (!StringUtils.hasText(markdown)) {
-                continue;
-            }
-            builder.append(markdown.strip()).append("\n\n");
-        }
-        return builder.toString().strip();
-    }
-
-    private String fallbackMarkdown(Map<?, ?> layout) {
-        String text = asString(layout.get("text"));
-        if (!StringUtils.hasText(text)) {
-            return "";
-        }
-        String type = asString(layout.get("type")).toLowerCase(Locale.ROOT);
-        if ("title".equals(type)) {
-            int level = Math.min(6, Math.max(1, asInt(layout.get("level"))));
-            return "#".repeat(level) + " " + text.strip();
-        }
-        return text.strip();
-    }
-
     private RuntimeOptions runtimeOptions() {
         RuntimeOptions runtime = new RuntimeOptions();
         runtime.setConnectTimeout(properties.getConnectTimeoutMillis());
@@ -225,17 +182,4 @@ public class DocMindParseGateway implements DocumentParseGateway {
         return value == null ? "" : String.valueOf(value);
     }
 
-    private int asInt(Object value) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        if (value == null) {
-            return 0;
-        }
-        try {
-            return Integer.parseInt(String.valueOf(value).strip());
-        } catch (NumberFormatException e) {
-            return 0;
-        }
-    }
 }

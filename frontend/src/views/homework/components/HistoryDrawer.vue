@@ -273,7 +273,7 @@ function handleClick(record) {
 }
 
 .history-item__dot {
-  color: #d1d5db;
+  color: var(--tb-text-tertiary);
 }
 
 .history-item__count {

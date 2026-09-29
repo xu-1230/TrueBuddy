@@ -618,7 +618,7 @@ function getExt(name) {
 }
 
 .picker-split {
-  color: #d1d5db;
+  color: var(--tb-text-tertiary);
   font-size: 0.66rem;
 }
 
@@ -653,7 +653,7 @@ function getExt(name) {
   top: 0.5px;
   width: 4px;
   height: 7px;
-  border: solid #ffffff;
+  border: solid var(--tb-on-primary);
   border-width: 0 1.6px 1.6px 0;
   transform: rotate(45deg);
 }
@@ -666,7 +666,7 @@ function getExt(name) {
   width: 6px;
   height: 1.6px;
   border-radius: 0;
-  background: var(--tb-bg-surface);
+  background: var(--tb-on-primary);
 }
 
 .node {

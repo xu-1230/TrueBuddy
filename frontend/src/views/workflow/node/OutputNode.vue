@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { SwitchButton } from '@element-plus/icons-vue'
+import VariableTags from '../VariableTags.vue'
 
 // 与 Vue Flow 内置节点保持一致：不把 label/selected 等透传属性渲染到 DOM 上
 defineOptions({ inheritAttrs: false })
@@ -11,13 +12,11 @@ const props = defineProps({
   data: { type: Object, default: () => ({}) },
 })
 
-/** 变量列表：兼容字符串数组与 { name, type, description, schema? } 对象数组 */
-const variables = computed(() => {
-  const list = props.data?.outputs ?? props.data?.blocks ?? []
-  return list
-    .map((item) => (typeof item === 'string' ? { name: item } : item))
-    .filter((item) => item?.name)
-})
+/**
+ * 变量声明：结束节点声明的是工作流输出，声明落在 `data.outputs`；运行时由上游节点提供取值。
+ * 归一化（字符串写法 / 过滤空名）由 VariableTags 统一处理。
+ */
+const variables = computed(() => props.data?.outputs ?? [])
 </script>
 
 <template>
@@ -43,19 +42,7 @@ const variables = computed(() => {
       </div>
 
       <!-- 输出变量 -->
-      <div v-if="variables.length" class="node-inputs">
-        <span class="node-inputs-label">输出</span>
-        <div class="node-input-tags">
-          <span
-            v-for="item in variables"
-            :key="item.name"
-            class="node-input-tag"
-            :title="item.description"
-          >
-            {{ item.name }}
-          </span>
-        </div>
-      </div>
+      <VariableTags label="输出" :variables="variables" />
 
       <!-- 目标 Handle（左侧）：结束节点只接收上游连线 -->
       <Handle id="in" type="target" :position="Position.Left" class="node-handle node-handle-target" />
@@ -151,35 +138,7 @@ const variables = computed(() => {
   color: var(--tb-text-secondary);
 }
 
-/* ===== 变量行 ===== */
-.node-inputs {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 0 12px 12px;
-}
-
-.node-inputs-label {
-  flex-shrink: 0;
-  font-size: 13px;
-  line-height: 22px;
-  color: var(--tb-text-tertiary);
-}
-
-.node-input-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.node-input-tag {
-  padding: 0 8px;
-  border-radius: 6px;
-  background: var(--tb-bg-sunken);
-  font-size: 13px;
-  line-height: 22px;
-  color: var(--tb-text-secondary);
-}
+/* ===== 输出变量：标签行样式全部收在 VariableTags 里（四张卡片共用一份） ===== */
 
 /* ===== Handle ===== */
 .node-handle {

@@ -39,6 +39,7 @@ backend/
 ├── tb-module-infra/               # 基础设施：通用文件上传（MinIO）+ infra_file 元数据
 ├── tb-module-knowledgebase/       # 知识库：空间 / 文档 / 解析块 / 分片 / 向量化
 ├── tb-module-doctemplate/         # 文档模板复刻生成（MCP + LLM + 检索增强）
+├── tb-module-workflow/            # 自定义工作流（画布 schema → spring-ai-alibaba-graph 可执行图；MVP 模拟数据）
 ├── tb-server/                     # 启动模块（BackendApplication + application.yml）
 ├── sql/                           # 数据库脚本
 └── mvnw / mvnw.cmd                # Maven Wrapper
@@ -145,15 +146,15 @@ public class ExampleController {
 ## 6. 数据库规范
 
 - **PostgreSQL**：`127.0.0.1:5432/tb`（扩展：`uuid-ossp`、`vector`）
-- **数据库脚本**：`sql/` 目录下按表拆分，共 17 个 `.sql`：
+- **数据库脚本**：`sql/` 目录下按表拆分，共 18 个 `.sql`：
   - `init.sql`：初始化 `uuid-ossp`、`vector` 扩展（只需运行一次）
   - `vector_store.sql`：pgvector 扩展与向量存储前置（对齐 Spring AI PgVectorStore：1024 维 / hnsw / cosine）
   - RBAC 5 张：`system_user` / `system_role` / `system_menu` / `system_user_role` / `system_role_menu`
   - OAuth2 2 张：`system_oauth2_access_token` / `system_oauth2_refresh_token`
-  - 其它：`infra_file`（文件元数据）、`doc_template`（模板生成任务与结果文件）
+  - 其它：`infra_file`（文件元数据）、`doc_template`（模板生成任务与结果文件）、`workflow`（工作流定义：画布 schema 整存）
   - 知识库 4 张：`kb_space` / `kb_document` / `kb_document_parse_block` / `kb_document_chunk`
   - `newsql/`：身份种子数据与数据库全量导出（**仅作参考**，`public.sql` 含 `DROP TABLE` / `DROP TYPE vector`，**禁止在生产库执行**）
-- **软删除约定**：`kb_space` 用 `deleted BOOLEAN`；`kb_document` 用 `deleted_at TIMESTAMP`（`NULL` = 未删除）；从属表（`kb_document_parse_block` / `kb_document_chunk`）为**物理删除**，不设软删列。新增表须明确采用其中一种并与同类表保持一致。
+- **软删除约定**：`kb_space` / `workflow` 用 `deleted BOOLEAN`；`kb_document` 用 `deleted_at TIMESTAMP`（`NULL` = 未删除）；从属表（`kb_document_parse_block` / `kb_document_chunk`）为**物理删除**，不设软删列。新增表须明确采用其中一种并与同类表保持一致。
 - **Mapper**：`@Mapper` 接口 + 注解 SQL，**无 MyBatis XML**；动态语句用 `<script>` + `<foreach>`（如解析块批量插入）。
 - **字段映射**：开启下划线转驼峰，`mybatis.configuration.map-underscore-to-camel-case: true`。
 - 连接配置放在 `tb-server` 的 `application.yml`，账号密码等敏感信息通过环境变量注入，禁止硬编码。
@@ -170,7 +171,7 @@ spring:
 
 ## 7. 接口规范
 
-接口清单以 [../docs/05-API规范.md](../docs/05-API规范.md) §2.5 为唯一权威来源，当前为 **9 个 Controller / 23 个接口**：
+接口清单以 [../docs/05-API规范.md](../docs/05-API规范.md) §2.5 为唯一权威来源，当前为 **10 个 Controller / 30 个接口**：
 
 | 模块 | 前缀 | 接口数 | 代表接口 |
 |------|------|--------|----------|
@@ -182,6 +183,7 @@ spring:
 | 知识库空间 | `/knowledge-base/space` | 4 | `list` / `create` / `update` / `delete` |
 | 知识库文档 | `/knowledge-base/document` | 7 | `list` / `create` / `upload` / `parse-status` / `vectorize` / `delete` / `abandon` |
 | 知识库分片 | `/knowledge-base/chunk` | 1 | `GET /knowledge-base/chunk/list` |
+| 自定义工作流 | `/workflow` | 5 | `POST /workflow/run`（**SSE** 提交执行 / 恢复人工确认，双语义）、`GET /workflow/get_process`（节点级执行状态轮询兜底，建议 2s）、`POST /workflow/save`、`GET /workflow/detail`、`GET /workflow/list`（定义已落库；大模型仍为模拟数据，白名单放行 `/workflow/**`） |
 
 - **上下文路径**：`/api`（端口 8086）
 
@@ -246,6 +248,24 @@ tb:
 
 - **docx-mcp 子进程**：`tb-module-doctemplate` 的 `mcp-servers-config.json` 不再内联任何凭据，由后端进程环境继承 `MINIO_*`；`docx-mcp/config.yaml` 同样只写 `${VAR}` 占位符。
 
+### 9.1 自定义工作流（`tb-module-workflow`）
+
+- **引擎依赖**：`com.alibaba.cloud.ai:spring-ai-alibaba-graph-core:2.0.0-M1.1`（2.0 线唯一可用版本，编译期面向 Spring AI 2.0.0-M1；本项目由 `spring-ai-bom` 统一到 2.0.0-M3）。版本在模块 POM 显式声明，**不进入 `tb-dependencies` BOM**，避免影响其它模块。
+- **必须排除** graph-core 传递的 `io.modelcontextprotocol.sdk:mcp`（0.14.0）：否则会把 `spring-ai-mcp` 2.0.0-M3 所需的 mcp 1.1.0 降级，影响 doctemplate 的 docx-mcp 链路。
+- **状态键约定**：`{nodeId}.{outputName}`（如 `100002.output`），开始节点输出额外写入裸变量名。建图时必须用 `KeyStrategyFactoryBuilder` **显式注册每个状态键**——其 `defaultStrategy` 在 `build()` 中被忽略，而检查点合并时 `OverAllState.input(checkpointState)` 会按策略表过滤，未注册的键会被静默丢弃。
+- **执行模型（SSE 实时推送 + 轮询兜底）**：`POST /workflow/run` 同步校验画布后落执行会话（状态=执行中）、注册 SSE 通道并推 `created`，再交由专用守护线程池（`tb-workflow-run-*`，并发度 2）执行整个图，事件流为 `created` → `message`\* → `completed` → `done`（失败为 `error` + `done`，HTTP 仍 200，校验失败也在流内回传）。`GET /workflow/get_process?workflow_id=` 为**轮询兜底**（断线重连 / 刷新页面后取回进度）。
+  - **流注册表** `WorkflowStreamRegistry`：持有「executeId → `SseEmitter`」映射，负责命名事件推送、20s 心跳注释帧、断开清理与 `done` 收尾；`SseEmitter` 属 Web 类型，不下沉到会话层。断开只注销通道，**不打断**图执行。`spring.mvc.async.request-timeout: -1ms` + `new SseEmitter(0L)` 保证长连接不被容器 30s 掐断。
+  - **人工确认中断**：`HumanConfirmNodeAction` 同时实现 `AsyncNodeActionWithConfig` 与 `InterruptableAction`；节点执行前框架回调 `interrupt(...)`，清单未确认且有可确认内容时返回 `InterruptionMetadata`（元数据携带 `plan` / `defaultPlan`），图在此中断，会话置 `WAITING_CONFIRM` 并推 `message`（`type = requires_action`），**通道保持打开**。
+  - **恢复**：调用方再调一次 `POST /workflow/run`（带 `executeId` + `confirmedPlan`）→ `CompiledGraph.updateState(config, {nodeId}.{outputName} → confirmedPlan, nodeId)` 注入状态 → `RunnableConfig.builder(...).addHumanFeedback(中断元数据)` → `stream(null, resumeConfig)` 从断点续跑，事件继续写回**原通道**。`interrupt(...)` 再次被调用时因状态中已有清单（且配置已带人工反馈）直接返回空，节点 `apply` 走「原样写回」分支，下游口径不变。
+  - 人工确认**在循环体内部仍不支持**（容器内中断语义），建图期直接报 `1005000002`。
+- **节点级执行结果**：执行线程在 `CompiledGraph.stream(...)` 的 `doOnNext` 中逐步记录每个节点的完成时刻（相邻差值即该节点耗时）、输入与输出，并推进 `NodeResultVO.nodeStatus`（1 未执行 / 2 执行中 / 3 成功 / 4 失败），随后推一条 `message`（`node_started` / `node_finished`）。循环节点由进度监听器 `StreamProgressListener` 在 `onLoopStart` 标为「执行中」并推 `node_started`，每完成一条在 `onLoopItem` 推 `message`（`record`，含 `index` / `total` / `record`），实现「批改一份回传一份」。耗时游标与 `nodeResults` 的读写都在会话对象上加锁（执行线程写、请求线程读）。
+- **执行会话**：`GraphSessionStore` 以 `executeId` 为键保存「已编译图 + 运行配置 + 节点结果 + 终态结果 + 等待确认信息（`interruptNodeId` / `pendingPlan` / `pendingDefaultPlan` / 中断元数据）」，`tb.workflow.session-ttl-minutes` 到期惰性清理；执行结束后会话**保留**至 TTL 到期，保证断线后仍能取到终态；进程重启即失效。等待确认迟迟不提交时，到期后恢复接口报 `1005000005`。
+- **持久化（已落地）**：工作流定义落库到 `workflow` 表（`sql/workflow.sql`）——画布结构**整存**于 `schema_json`（不拆节点 / 连线子表，保真迭代 `blocks` 与后端 `inputs` ref 配置）、主键为**雪花 ID**（`IdUtil.getSnowflakeNextId()`，由应用生成，故表不用自增）、`deleted BOOLEAN` 软删、**不做版本管理**。接口：`POST /workflow/save`（新建 / 更新，返回 String 类型的 id——19 位雪花号超出 JS `Number` 安全范围，统一字符串）、`GET /workflow/detail`、`GET /workflow/list`（列表不查 `schema_json`）。
+  前端保存的是**画布渲染格式**（`type` 为语义名、含 `position` / `parentNode` / `data.backendInputs`），由 `views/workflow/utils/workflow-canvas.js` 的 `toCanvasSnapshot` 生成，与执行用的后端格式（`toWorkflowSchema`）是两套结构，不可混用。
+- **MVP 边界**：大模型与知识库检索为**模拟实现**；执行用的画布由调用方经 `POST /workflow/run` 的 `schemaJson` 传入（`views/homework/HomeworkWorkflowView.vue` 取自其本地文件 `views/homework/mock/workflow-canvas.json`），后端不再内置兜底画布；执行会话**不落库**（`GraphSessionStore` 内存实现），进程重启即失效。
+- **模拟耗时**：`tb.workflow.mock-llm-delay-ms` 控制每次模拟大模型调用的延迟（当前 `5000`，用于模拟真实批改耗时）。注意它是**按次**生效：规划 1 次 + 逐份批改 n 次，串行（`loop-concurrency=1`）时总耗时 ≈ 延迟 ×(1+n)，例如 6 份作业约 30s；快速回归时可设为 `0`。这段时间页面上能看到循环节点「执行中」以及逐条到达的 `record` 事件。
+- **状态响应契约**：`GET /workflow/get_process` 的 `data` 口径对齐 Coze 的执行状态接口（`executeId` / `workFlowId` / `exeHistoryStatus` / `executeStatus` / `workflowExeCost` / `nodeResults` / `tokenAndCost` / `projectId`），外层仍用项目 `CommonResult`；`tokenAndCost` 与 `nodeEvents` 为占位（固定零值 / 空数组），`nodeResults` 不做循环内部子节点的 `batch` 拆解。`exeHistoryStatus = 4` 表示**等待用户输入**（非终态，此时额外返回 `pendingConfirm` 待确认清单）；轮询的终止条件必须是 `2` / `3`，把 `4` 当终态会丢掉确认后的全部进度。
+
 ---
 
 ## 10. 启动
@@ -291,7 +311,7 @@ java -jar tb-server/target/tb-server-0.0.1-SNAPSHOT.jar   # 端口 8086，contex
 | 数据格式 | JSON |
 | 统一返回 | `CommonResult<T>`（code=0 成功，code≠0 失败） |
 | 跨域 | 全局 CORS（由 `SecurityConfig.cors()` 开启） |
-| 实时通信 | SSE（`text/event-stream`）推送（规划） |
+| 实时通信 | SSE（`text/event-stream`）：`POST /workflow/run` 推送执行事件（`WorkflowStreamRegistry` + `SseEmitter(0L)` + 20s 心跳），`GET /workflow/get_process` 作轮询兜底 |
 
 ---
 

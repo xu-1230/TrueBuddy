@@ -351,6 +351,7 @@ function onDelete(doc) {
   flex-direction: column;
   background: var(--tb-bg-surface);
   border-radius: var(--tb-radius-lg);
+  border: var(--tb-border-width) solid var(--tb-border);
   box-shadow: var(--tb-shadow-1);
   overflow: hidden;
 }

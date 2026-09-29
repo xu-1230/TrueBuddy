@@ -6,7 +6,7 @@ import java.util.Map;
 
 /**
  * 文档解析网关
- * 统一为「提交任务 → 查询状态 → 拉取 Markdown」三段式。
+ * 统一为「提交任务 → 查询状态 → 拉取版面块」三段式。
  *
  */
 public interface DocumentParseGateway {
@@ -29,10 +29,10 @@ public interface DocumentParseGateway {
     ParseTaskStatus query(String jobId);
 
     /**
-     * 拉取解析结果（Markdown）。仅在 {@link ParseTaskStatus.State#SUCCESS} 后调用。
+     * 拉取解析结果的版面块列表。仅在 {@link ParseTaskStatus.State#SUCCESS} 后调用。
      *
      * @param jobId 提交时返回的任务句柄
-     * @return Markdown 全文
+     * @return 版面块（layouts）列表，由上层按块切分为知识库分片
      */
     List<Map<?, ?>> fetchMarkdown(String jobId);
 

@@ -49,7 +49,7 @@ import static org.example.backend.module.knowledgebase.enums.ErrorCodeConstants.
  *
  * <p>文档处理链路：上传（MinIO + 落库）→ 提交解析任务 → 轮询解析状态 → 解析产物落库（块级）
  * → AI 语义分片 → 分片落库 → 用户确认 → 向量化。
- * 解析引擎为 {@link DocumentParseGateway}（阿里云文档智能·文档解析大模型版），统一产出 Markdown；
+ * 解析引擎为 {@link DocumentParseGateway}（阿里云文档智能·文档解析大模型版），产出块级版面信息（layouts）；
  * 分片策略由 {@link DocumentChunkService} 决定。
  *
  * <p>状态机：0=待处理 → 1=解析中 → 5=解析完成待分片 → 6=AI分片中 → 4=分片待确认

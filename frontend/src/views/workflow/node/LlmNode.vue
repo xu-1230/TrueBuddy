@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { Box } from '@element-plus/icons-vue'
+import { hasBoundValue } from '../utils/variable-type'
+import VariableTags from '../VariableTags.vue'
 
 // 与 Vue Flow 内置节点保持一致：不把 label/selected 等透传属性渲染到 DOM 上
 defineOptions({ inheritAttrs: false })
@@ -11,14 +13,29 @@ const props = defineProps({
   data: { type: Object, default: () => ({}) },
 })
 
-/** 变量列表：兼容字符串数组与 { name, type, description, schema? } 对象数组 */
-const normalize = (list) =>
-  (list ?? [])
-    .map((item) => (typeof item === 'string' ? { name: item } : item))
-    .filter((item) => item?.name)
+/** 变量声明：归一化（字符串写法 / 过滤空名）由 VariableTags 统一处理 */
+const inputs = computed(() => props.data?.inputs ?? [])
+const outputs = computed(() => props.data?.outputs ?? [])
 
-const inputs = computed(() => normalize(props.data?.inputs))
-const outputs = computed(() => normalize(props.data?.outputs))
+/**
+ * 未绑定取值的输入变量名（交给 VariableTags 打告警色）。
+ *
+ * 画布上「声明」不等于「能取到值」——取决于 backendInputs 里的取值（ref 有效或字面量非空），
+ * 未绑定的输入用告警色提示「尚未定义」。只算输入：输出是本节点产出的，不存在「没取值」。
+ */
+const unboundInputNames = computed(() => {
+  const params = props.data?.backendInputs?.inputParameters
+  const bound = new Set()
+  for (const param of Array.isArray(params) ? params : []) {
+    if (param?.name && hasBoundValue(param.input?.value)) bound.add(param.name)
+  }
+  const unbound = new Set()
+  for (const item of inputs.value) {
+    const name = typeof item === 'string' ? item : item?.name
+    if (name && !bound.has(name)) unbound.add(name)
+  }
+  return unbound
+})
 </script>
 
 <template>
@@ -43,35 +60,16 @@ const outputs = computed(() => normalize(props.data?.outputs))
         </button>
       </div>
 
-      <!-- 输入变量 -->
-      <div v-if="inputs.length" class="node-vars">
-        <span class="node-vars-label">输入</span>
-        <div class="node-var-tags">
-          <span
-            v-for="item in inputs"
-            :key="item.name"
-            class="node-var-tag"
-            :title="item.description"
-          >
-            {{ item.name }}
-          </span>
-        </div>
-      </div>
+      <!-- 输入变量：未绑定取值的用告警色提示「尚未定义」 -->
+      <VariableTags
+        label="输入"
+        :variables="inputs"
+        :undefined-names="unboundInputNames"
+        :last="false"
+      />
 
       <!-- 输出变量 -->
-      <div v-if="outputs.length" class="node-vars">
-        <span class="node-vars-label">输出</span>
-        <div class="node-var-tags">
-          <span
-            v-for="item in outputs"
-            :key="item.name"
-            class="node-var-tag"
-            :title="item.description"
-          >
-            {{ item.name }}
-          </span>
-        </div>
-      </div>
+      <VariableTags label="输出" :variables="outputs" />
 
       <!-- 源 Handle（右侧） -->
       <Handle id="out" type="source" :position="Position.Right" class="node-handle node-handle-source" />
@@ -170,39 +168,7 @@ const outputs = computed(() => normalize(props.data?.outputs))
   color: var(--tb-text-secondary);
 }
 
-/* ===== 变量行 ===== */
-.node-vars {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 0 12px 8px;
-}
-
-.node-vars:last-of-type {
-  padding-bottom: 12px;
-}
-
-.node-vars-label {
-  flex-shrink: 0;
-  font-size: 13px;
-  line-height: 22px;
-  color: var(--tb-text-tertiary);
-}
-
-.node-var-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.node-var-tag {
-  padding: 0 8px;
-  border-radius: 6px;
-  background: var(--tb-bg-sunken);
-  font-size: 13px;
-  line-height: 22px;
-  color: var(--tb-text-secondary);
-}
+/* ===== 变量行：标签行样式全部收在 VariableTags 里（四张卡片共用一份） ===== */
 
 /* ===== Handle ===== */
 .node-handle {

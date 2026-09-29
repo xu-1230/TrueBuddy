@@ -32,6 +32,8 @@
         <module>tb-module-infra</module>
         <!-- 文档模板生成模块（模板复刻：MCP docx 工具 + LLM + 知识库检索增强） -->
         <module>tb-module-doctemplate</module>
+        <!-- 自定义工作流模块（画布 schema → spring-ai-alibaba-graph 可执行图） -->
+        <module>tb-module-workflow</module>
 
         <!-- 启动模块 -->
         <module>tb-server</module>

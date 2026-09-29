@@ -59,7 +59,6 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
             if (userType != null && ObjectUtil.notEqual(accessToken.getUserType(), userType)) {
                 throw new AccessDeniedException("错误的用户类型");
             }
-            System.out.println(accessToken.getExpiresTime());
             // 构建登录用户
             return new LoginUser().setId(accessToken.getUserId()).setUserType(accessToken.getUserType())
                     .setInfo(accessToken.getUserInfo()) // 额外的用户信息

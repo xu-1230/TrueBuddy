@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.example</groupId>
+        <artifactId>backend</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>tb-module-workflow</artifactId>
+    <name>tb-module-workflow</name>
+    <description>自定义工作流模块：画布 schema → spring-ai-alibaba-graph 可执行图；工作流定义持久化到 workflow 表（MVP：大模型与知识库检索为模拟实现）</description>
+
+    <dependencies>
+        <!-- Web 组件：提供 spring-boot-starter-web 注解 + CommonResult -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-spring-boot-starter-web</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 统一返回对象 CommonResult -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-common</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <!--
+          工作流引擎：Spring AI Alibaba Graph。
+          版本说明：2.0 线仅发布 2.0.0-M1.1（编译期面向 Spring AI 2.0.0-M1）；
+          本项目由 spring-ai-bom 2.0.0-M3 统一管理 spring-ai 构件版本，故运行时实际使用 M3。
+          graph-core 未纳入 tb-dependencies BOM（避免影响其它模块），版本在此显式声明。
+        -->
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-graph-core</artifactId>
+            <version>2.0.0-M1.1</version>
+            <exclusions>
+                <!--
+                  graph-core 传递依赖 io.modelcontextprotocol.sdk:mcp（0.14.0，非 optional），
+                  而本项目 spring-ai-mcp 2.0.0-M3 需要 mcp 1.1.0（doctemplate 的 docx-mcp 链路依赖它）。
+                  本模块不使用 graph 的 MCP 能力，直接排除该传递依赖，避免全项目 MCP SDK 被降级。
+                -->
+                <exclusion>
+                    <groupId>io.modelcontextprotocol.sdk</groupId>
+                    <artifactId>mcp</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- 数据访问：与 tb-module-knowledgebase 保持一致，使用 MyBatis 注解 Mapper -->
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <!-- Hutool：雪花 ID（IdUtil.getSnowflakeNextId）用于 workflow 表主键 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+        </dependency>
+        <!-- Lombok：@Data / @Slf4j（版本由 Spring Boot 父工程管理，编译期生效） -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
+</project>

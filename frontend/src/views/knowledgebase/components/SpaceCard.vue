@@ -65,6 +65,7 @@ defineEmits(['click', 'edit', 'delete'])
   border-radius: var(--tb-radius-lg);
   background: var(--tb-bg-surface);
   box-shadow: var(--tb-shadow-1);
+  border: var(--tb-border-width) solid var(--tb-border);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   display: flex;
   flex-direction: column;

@@ -50,6 +50,12 @@
             <artifactId>tb-module-doctemplate</artifactId>
             <version>${revision}</version>
         </dependency>
+        <!-- 自定义工作流模块：画布 schema → spring-ai-alibaba-graph 可执行图 -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-workflow</artifactId>
+            <version>${revision}</version>
+        </dependency>
 
         <!-- 测试 -->
         <dependency>

@@ -33,7 +33,6 @@ public class IdentityController {
 
     private String checkIdentity(UserTypeEnum expected) {
         LoginUser loginUser = SecurityFrameworkUtils.getLoginUser();
-        System.out.println(loginUser);
         if (loginUser == null || !expected.getValue().equals(loginUser.getUserType())) {
             throw exception(AUTH_PERMISSION_DENIED);
         }
