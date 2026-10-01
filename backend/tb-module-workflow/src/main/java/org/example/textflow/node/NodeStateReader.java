@@ -3,6 +3,7 @@ package org.example.textflow.node;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import org.example.textflow.entity.NodeFieldRef;
 
+import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -33,21 +34,32 @@ public final class NodeStateReader {
     }
 
     /**
-     * 把取值归一化成列表：List 原样返回，数组转成 List，其余（含 null）返回空列表。
-     * <p>用于迭代节点的迭代源：声明为 list 的输入可能来自数组或单个值。
+     * 把取值归一化成列表，用于迭代节点的迭代源（声明为 list 的输入可能来自 List、数组或单个值）：
+     * <ul>
+     *   <li>{@link List} 原样复制返回；</li>
+     *   <li>数组按元素逐个取出（用 {@link Array} 反射取值，**原始类型数组 int[] 也能正确处理**，
+     *       不会被 {@code (Object[]) } 强转抛 {@link ClassCastException}）；</li>
+     *   <li>{@code null} 返回空列表（迭代源还没产出）；</li>
+     *   <li>其余标量 / 对象按**单项列表**处理（旧实现直接丢弃成空列表，会让迭代体一轮都不跑且没有任何告警）。</li>
+     * </ul>
      */
     public static List<Object> toList(Object value) {
         if (value instanceof List<?> list) {
             return new ArrayList<>(list);
         }
         if (value != null && value.getClass().isArray()) {
-            Object[] array = (Object[]) value;
-            List<Object> result = new ArrayList<>(array.length);
-            for (Object element : array) {
-                result.add(element);
+            int length = Array.getLength(value);
+            List<Object> result = new ArrayList<>(length);
+            for (int index = 0; index < length; index++) {
+                result.add(Array.get(value, index));
             }
             return result;
         }
-        return new ArrayList<>();
+        if (value == null) {
+            return new ArrayList<>();
+        }
+        List<Object> single = new ArrayList<>(1);
+        single.add(value);
+        return single;
     }
 }

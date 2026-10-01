@@ -49,7 +49,8 @@ const listSourceOf = (inputs = []) => {
 
 /**
  * 迭代进度建档：从画布节点推导「容器 id → 子块集合 + 迭代源引用」。
- * 轮次靠子块的 node 事件累计（后端每轮把子块事件转发一次），总轮数取迭代源数组的长度。
+ * 总轮数取迭代源数组的长度；已完成轮次取后端事件里携带的权威轮次下标
+ * （`state[容器id].index`，见 {@link roundOfEvent}），拿不到时才退回「按子块事件累加」。
  */
 const iterationPlanOf = (nodes = []) => {
   const list = (nodes ?? []).filter((node) => node && typeof node !== 'string')
@@ -68,7 +69,18 @@ const iterationPlanOf = (nodes = []) => {
   return plan
 }
 
-/** node 事件 → 迭代进度：子块事件累计轮次，迭代源的产出到达时补总轮数 */
+/**
+ * 事件里的**权威轮次**（1 起）：迭代节点每轮执行时会把轮次下标写进 `state[迭代节点id].index`
+ * （后端 `IterateNode#buildRoundInput`），子块事件转发出来时也带着它，因此前端直接取用即可。
+ *
+ * @returns {number} 轮次（1 起）；事件里没有该下标时返回 0
+ */
+const roundOfEvent = (eventState, containerId) => {
+  const index = eventState?.[containerId]?.index
+  return Number.isInteger(index) && index >= 0 ? index + 1 : 0
+}
+
+/** node 事件 → 迭代进度：按事件里的权威轮次取已完成轮次，迭代源的产出到达时补总轮数 */
 const withIterationProgress = (state, nodeId, eventState) => {
   const plan = state.iterations
   if (!plan || !Object.keys(plan).length) return state
@@ -78,7 +90,12 @@ const withIterationProgress = (state, nodeId, eventState) => {
   for (const [containerId, info] of Object.entries(plan)) {
     let next = info
     if (info.children.has(nodeId)) {
-      next = { ...next, done: next.done + 1 }
+      const round = roundOfEvent(eventState, containerId)
+      next = round
+        // 取事件自带的轮次（幂等：同轮多个子块事件都取到同一个轮次，不会重复计数）
+        ? { ...next, done: Math.max(next.done, round) }
+        // 兜底：事件里没有轮次下标时退回「按子块事件累加」（含多子块时会多算，仅用于兼容旧后端）
+        : { ...next, done: next.done + 1 }
     }
     if (info.source?.blockID === nodeId) {
       const value = eventState?.[nodeId]?.[info.source.name]
@@ -134,7 +151,7 @@ export const applyRunEvent = (state, event, payload) => {
       result: payload?.state?.[nodeId] ?? null,
       waitLabel: '',
     })
-    // 迭代体每完成一轮就推一次子块事件，据此累计迭代进度
+    // 迭代体子块事件按事件里携带的轮次下标累计迭代进度（见 roundOfEvent）
     return withIterationProgress(next, nodeId, payload?.state)
   }
   if (event === 'interrupt') {

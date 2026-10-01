@@ -6,6 +6,8 @@ import org.example.textflow.entity.NodeData;
 import org.example.textflow.entity.NodeField;
 import org.example.textflow.entity.NodeFieldRef;
 import org.example.textflow.entity.WorkflowNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -20,6 +22,8 @@ import java.util.regex.Pattern;
  * 待接入模型后把模拟产出替换为模型返回即可，提示词与 JSON Schema 的组装逻辑无需改动。
  */
 public class LlmNode implements NodeAction {
+
+    private static final Logger log = LoggerFactory.getLogger(LlmNode.class);
 
     /** 变量类型为 list 时，结构化输出里用 array 表达 */
     private static final String LIST_TYPE = "list";
@@ -56,10 +60,11 @@ public class LlmNode implements NodeAction {
 
         // TODO 接入真实模型后替换：当前不调用模型，按 outputs 声明生成模拟产出，保证下游（迭代 / 结束）拿得到数据
         Map<String, Object> output = mockOutputs(nodeData == null ? null : nodeData.getOutputs());
-        System.out.println("大模型节点 " + definition.getId() + " 模拟执行，产出变量: " + output.keySet());
-        System.out.println("  输入取值: " + inputValues);
-        System.out.println("  输出结构: " + outputSchema);
-        System.out.println("  渲染后 user 提示词: " + userPrompt);
+        // 只记节点 id 与变量名：输入取值、输出结构与渲染后的提示词都是用户数据，不进日志
+        // （联调要看渲染结果时把本类日志级别调到 DEBUG，并自行承担日志里出现用户内容的风险）
+        log.debug("大模型节点 {} 模拟执行，输入变量: {}，产出变量: {}，提示词长度: system={} user={}",
+                definition.getId(), inputValues.keySet(), output.keySet(),
+                systemPrompt.length(), userPrompt.length());
 
         return Map.of(definition.getId(), output);
     }

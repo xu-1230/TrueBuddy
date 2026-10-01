@@ -15,7 +15,10 @@ import org.example.textflow.entity.NodeData;
 import org.example.textflow.entity.NodeField;
 import org.example.textflow.entity.WorkflowEdge;
 import org.example.textflow.entity.WorkflowNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -35,8 +38,22 @@ import java.util.Set;
  * <p>取值约定与其它节点一致：{@code state[节点 id][变量名]}。每轮子图状态里，迭代节点自身 id 下会放入
  * {@code index}（轮次下标）、{@code item}（当前项）、当前项的别名（子块引用迭代节点时的变量名，如 {@code input}）
  * 以及 {@code variableParameters} 声明的中间变量。
+ *
+ * <p>健壮性约定：
+ * <ul>
+ *   <li><b>出口节点与出口边同一套口径</b>：出口节点取「没有出边的子块」，与 {@link #buildSubGraph} 把这类子块接到
+ *       {@code END} 的兜底完全一致——迭代体内部边漏声明出口边时，子图仍会执行且结果照常收集；</li>
+ *   <li><b>单轮失败不再静默</b>：某一轮抛异常时记 ERROR 日志（含堆栈）、该轮的产出变量按 {@code null} 补齐
+ *       （结果列表长度始终等于执行的轮次数，界面上「空值」即这一轮没产出）；**每一轮都失败**时整节点抛异常，
+ *       由上层把流程标记为失败，不再出现「流程成功但没有结果」；</li>
+ *   <li><b>轮数上限与单轮超时</b>：默认最多 {@value #DEFAULT_MAX_ROUNDS} 轮、单轮 {@value #DEFAULT_ROUND_TIMEOUT_MS} ms，
+ *       可用系统属性 {@value #MAX_ROUNDS_PROPERTY} / {@value #ROUND_TIMEOUT_PROPERTY} 覆盖；</li>
+ *   <li><b>日志不含用户内容</b>：只记节点 / 子块 id 与变量名，用户填写的节点定义与渲染后的提示词不进日志。</li>
+ * </ul>
  */
 public class IterateNode implements NodeAction {
+
+    private static final Logger log = LoggerFactory.getLogger(IterateNode.class);
 
     /** 变量类型为 list 时视为可迭代的输入来源 */
     private static final String LIST_TYPE = "list";
@@ -46,6 +63,24 @@ public class IterateNode implements NodeAction {
 
     /** 每轮注入的当前项变量名 */
     private static final String ITEM_VAR = "item";
+
+    /** 轮数上限的系统属性名 */
+    private static final String MAX_ROUNDS_PROPERTY = "tb.workflow.iterate.max-rounds";
+
+    /** 单轮超时的系统属性名 */
+    private static final String ROUND_TIMEOUT_PROPERTY = "tb.workflow.iterate.round-timeout-ms";
+
+    /** 单次执行的最大轮数（默认值），超出部分不再执行 */
+    private static final int DEFAULT_MAX_ROUNDS = 50;
+
+    /** 单轮执行的超时（默认值，毫秒） */
+    private static final long DEFAULT_ROUND_TIMEOUT_MS = 120_000L;
+
+    /** 单次执行的最大轮数 */
+    private static final int MAX_ROUNDS = Integer.getInteger(MAX_ROUNDS_PROPERTY, DEFAULT_MAX_ROUNDS);
+
+    /** 单轮执行的超时（毫秒） */
+    private static final long ROUND_TIMEOUT_MS = Long.getLong(ROUND_TIMEOUT_PROPERTY, DEFAULT_ROUND_TIMEOUT_MS);
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -71,7 +106,7 @@ public class IterateNode implements NodeAction {
         this.listener = listener == null ? NodeEventListener.NO_OP : listener;
         this.blocks = convertBlocks(definition.getBlocks());
         this.itemVarNames = collectItemVarNames(this.blocks, definition.getId());
-        this.terminalBlockIds = collectTerminalBlockIds(definition.getEdges(), definition.getId());
+        this.terminalBlockIds = collectTerminalBlockIds(definition.getEdges(), definition.getId(), this.blocks);
     }
 
     @Override
@@ -79,22 +114,35 @@ public class IterateNode implements NodeAction {
         List<Object> items = readItems(state);
         if (items.isEmpty()) {
             // 没有可迭代项也要按 outputs 声明写空列表，否则下游取变量会拿到 null
-            System.out.println("迭代节点 " + definition.getId() + " 没有可迭代的列表输入，返回空汇总");
-            return Map.of(definition.getId(), aggregate(List.of()));
+            log.debug("迭代节点 {} 没有可迭代的列表输入，返回空汇总", definition.getId());
+            return Map.of(definition.getId(), aggregate(List.of(), Set.of()));
         }
 
         CompiledGraph graph = subGraph();
         if (graph == null) {
             // 没有迭代体子块：同样返回空汇总，保证输出变量在状态里存在
-            return Map.of(definition.getId(), aggregate(List.of()));
+            return Map.of(definition.getId(), aggregate(List.of(), Set.of()));
         }
 
-        List<Map<String, Object>> rounds = new ArrayList<>();
-        for (int index = 0; index < items.size(); index++) {
+        int rounds = Math.min(items.size(), MAX_ROUNDS);
+        if (items.size() > MAX_ROUNDS) {
+            log.warn("迭代节点 {} 的可迭代项有 {} 个，超过上限 {}，只执行前 {} 轮（可用 -D{}= 调整）",
+                    definition.getId(), items.size(), MAX_ROUNDS, rounds, MAX_ROUNDS_PROPERTY);
+        }
+
+        List<Map<String, Object>> roundResults = new ArrayList<>(rounds);
+        Set<Integer> failedRounds = new LinkedHashSet<>();
+        for (int index = 0; index < rounds; index++) {
             Map<String, Object> roundInput = buildRoundInput(state, items.get(index), index);
             try {
-                List<NodeOutput> outputs = graph.stream(roundInput).collectList().block();
+                List<NodeOutput> outputs = graph.stream(roundInput)
+                        .collectList()
+                        .block(Duration.ofMillis(ROUND_TIMEOUT_MS));
                 if (outputs == null || outputs.isEmpty()) {
+                    failedRounds.add(index);
+                    roundResults.add(Map.of());
+                    log.error("迭代节点 {} 第 {} 轮没有产生任何节点输出（超时 {} ms），该轮产出按空值补齐",
+                            definition.getId(), index, ROUND_TIMEOUT_MS);
                     continue;
                 }
                 // 迭代体内部的节点事件转发给上层（SSE），否则前端只能看到迭代节点整体执行一次
@@ -102,14 +150,22 @@ public class IterateNode implements NodeAction {
                     listener.onEvent(output);
                 }
                 Map<String, Object> roundResult = collectRoundResult(outputs.get(outputs.size() - 1));
-                rounds.add(roundResult);
-                System.out.println("迭代节点 " + definition.getId() + " 第 " + index + " 轮完成，产出变量: " + (roundResult.isEmpty() ? "无" : roundResult.keySet()));
+                roundResults.add(roundResult);
+                log.debug("迭代节点 {} 第 {} 轮完成，产出变量: {}", definition.getId(), index, roundResult.keySet());
             } catch (Exception e) {
-                System.out.println("迭代节点 " + definition.getId() + " 第 " + index + " 轮执行失败: " + e.getMessage());
+                // 单轮失败不再静默：记 ERROR 日志（含堆栈），并把该轮标记为失败，让汇总长度与轮次对齐
+                failedRounds.add(index);
+                roundResults.add(Map.of());
+                log.error("迭代节点 {} 第 {} 轮执行失败，该轮产出按空值补齐", definition.getId(), index, e);
             }
         }
 
-        return Map.of(definition.getId(), aggregate(rounds));
+        if (rounds > 0 && failedRounds.size() == rounds) {
+            // 每一轮都失败：抛异常让上层把流程标记为失败，避免出现「流程成功但没有结果」
+            throw new IllegalStateException("迭代节点 " + definition.getId() + " 的 " + rounds + " 轮全部执行失败");
+        }
+
+        return Map.of(definition.getId(), aggregate(roundResults, failedRounds));
     }
 
     /** 惰性编译迭代体子图（没有子块时返回 null，表示不执行迭代体） */
@@ -122,7 +178,7 @@ public class IterateNode implements NodeAction {
                 return subGraph;
             }
             if (blocks.isEmpty()) {
-                System.out.println("迭代节点 " + definition.getId() + " 没有迭代体子块，跳过");
+                log.debug("迭代节点 {} 没有迭代体子块，跳过", definition.getId());
                 return null;
             }
             subGraph = buildSubGraph();
@@ -140,7 +196,8 @@ public class IterateNode implements NodeAction {
 
         Set<String> blockIds = new HashSet<>();
         for (WorkflowNode block : blocks) {
-            System.out.println(block);
+            // 只记子块 id：用户填写的子块定义（名称 / 输入 / 提示词等）不进日志
+            log.debug("迭代节点 {} 编译子块 {}", definition.getId(), block.getId());
             graph.addNode(block.getId(), NodeActionFactory.of(block, listener));
             blockIds.add(block.getId());
         }
@@ -251,10 +308,14 @@ public class IterateNode implements NodeAction {
 
     /**
      * 汇总各轮结果，产出迭代节点的输出：按 {@code outputs} 声明的变量名，把每轮子块的同名产出聚合成列表。
-     * <p>某一轮没有产出该变量时跳过该轮（不补 null），因此结果列表长度可能小于实际轮次；
+     * <p>**失败轮次按 {@code null} 补齐**（结果列表长度始终等于执行的轮次数，界面上该轮显示「空值」，
+     * 不会像旧实现那样让列表悄悄变短）；成功轮次里本来就没有该变量时仍跳过该轮；
      * 没有轮次或没有声明输出时返回空 Map。
+     *
+     * @param rounds       每轮的产出（失败轮次是空 Map）
+     * @param failedRounds 失败轮次的下标集合
      */
-    private Map<String, Object> aggregate(List<Map<String, Object>> rounds) {
+    private Map<String, Object> aggregate(List<Map<String, Object>> rounds, Set<Integer> failedRounds) {
         Map<String, Object> output = new LinkedHashMap<>();
         NodeData data = definition.getData();
         List<NodeField> declared = data == null || data.getOutputs() == null ? List.of() : data.getOutputs();
@@ -263,14 +324,21 @@ public class IterateNode implements NodeAction {
                 continue;
             }
             List<Object> values = new ArrayList<>(rounds.size());
-            for (Map<String, Object> round : rounds) {
+            for (int index = 0; index < rounds.size(); index++) {
+                if (failedRounds.contains(index)) {
+                    values.add(null);
+                    continue;
+                }
+                Map<String, Object> round = rounds.get(index);
                 if (round != null && round.containsKey(field.getName())) {
                     values.add(round.get(field.getName()));
                 }
             }
             output.put(field.getName(), values);
         }
-        System.out.println("迭代节点 " + definition.getId() + " 共执行 " + rounds.size() + " 轮，输出: " + output);
+        // 只记变量名与轮次数，产出内容（用户数据）不进日志
+        log.debug("迭代节点 {} 共执行 {} 轮（失败 {} 轮），输出变量: {}",
+                definition.getId(), rounds.size(), failedRounds.size(), output.keySet());
         return output;
     }
 
@@ -332,12 +400,33 @@ public class IterateNode implements NodeAction {
         return names;
     }
 
-    /** 迭代体出口节点：边中指向迭代节点自身的起点；没有这类边时取所有子块 */
-    private static Set<String> collectTerminalBlockIds(List<Map<String, Object>> rawEdges, String iterateId) {
-        Set<String> ids = new LinkedHashSet<>();
+    /**
+     * 迭代体出口节点：**没有出边的子块**（出边指「指向另一个子块」的边；指向迭代节点自身的边表示接 {@code END}）。
+     * <p>必须与 {@link #buildSubGraph} 的兜底同一套口径——那里会给没有出边的子块补一条到 {@code END} 的边。
+     * 旧实现只认「指向迭代节点自身的边」，漏声明出口边时子图照常执行、但每轮结果收集恒为空
+     * （表现为「流程成功但没有结果」），因此这里改为直接从子图结构推导。
+     */
+    private static Set<String> collectTerminalBlockIds(List<Map<String, Object>> rawEdges, String iterateId,
+                                                       List<WorkflowNode> blocks) {
+        Set<String> blockIds = new LinkedHashSet<>();
+        for (WorkflowNode block : blocks) {
+            blockIds.add(block.getId());
+        }
+        Set<String> withOutbound = new LinkedHashSet<>();
         for (WorkflowEdge edge : convertEdges(rawEdges)) {
-            if (iterateId.equals(edge.getTarget()) && edge.getSource() != null && !iterateId.equals(edge.getSource())) {
-                ids.add(edge.getSource());
+            String source = edge.getSource();
+            String target = edge.getTarget();
+            if (source == null || iterateId.equals(source) || !blockIds.contains(source)) {
+                continue;
+            }
+            if (target != null && !iterateId.equals(target) && blockIds.contains(target)) {
+                withOutbound.add(source);
+            }
+        }
+        Set<String> ids = new LinkedHashSet<>();
+        for (String blockId : blockIds) {
+            if (!withOutbound.contains(blockId)) {
+                ids.add(blockId);
             }
         }
         return ids;

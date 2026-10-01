@@ -26,6 +26,8 @@ import org.example.textflow.entity.WorkflowProcessRespVO;
 import org.example.textflow.node.NodeActionFactory;
 import org.example.textflow.node.NodeEventListener;
 import org.example.textflow.service.WorkflowService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,6 +45,8 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/workflow")
 public class WorkflowController {
+
+    private static final Logger log = LoggerFactory.getLogger(WorkflowController.class);
 
     /** 变量类型为 list 时视为可累积的“记忆”变量 */
     private static final String LIST_TYPE = "list";
@@ -189,7 +193,8 @@ public class WorkflowController {
     public void text() throws GraphStateException {
         CompiledGraph compiledGraph = createGraph(workflowService.getProcess(DEFAULT_WORKFLOW_ID));
         compiledGraph.invoke(Map.of())
-                .ifPresent(state -> System.out.println("执行结束，最终状态: " + state.data()));
+                // 只记状态键：终态里是各节点的产出（用户数据），不整体打进日志
+                .ifPresent(state -> log.info("/workflow/text 执行结束，终态状态键: {}", state.data().keySet()));
     }
 
     /** 创建图：按 process 定义装配节点、边、入口出口并编译（不转发节点内部事件） */

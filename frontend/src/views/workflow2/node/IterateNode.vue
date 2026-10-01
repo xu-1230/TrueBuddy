@@ -11,15 +11,17 @@
  *
  * 三点实现约定：
  * 1. 尺寸是「活的」：初始尺寸由 `expandIteration` 按 `containerSizeOf(子块数, 变量行数)` 写进节点 style，
- *    用户可拖住卡片右下角把手改变（`updateNode` 更新 style，下限 `minNodeSizeOf(变量行数)`）。
- *    卡片 `height: 100%` 跟随节点盒，画布区以 `top/bottom` 锚定在卡片内随之伸缩；
+ *    用户可拖住卡片右下角把手改变（`updateNode` 更新 style，下限 `minNodeSizeOf(变量行数, 子块数)`——
+ *    缩到装不下子块就没有意义）。卡片 `height: 100%` 跟随节点盒，画布区以 `top/bottom` 锚定在卡片内随之伸缩。
+ *    改尺寸**不重排子块**：宽度变化只让子块横向重新居中（x 是自动轴），高度变化保留用户摆放的 y；
  * 2. 「迭代开始 / 结束」是画布区左右两侧的**视觉标记**（不是画布节点），**固定在画布区的垂直中点**
- *    （CSS 锚定，不随子块拖动移动；子块区初始也在画布区内垂直居中，与标记同一水平线）；
+ *    （CSS 锚定，不随子块拖动移动；子块区在子块增删时按真实高度重新垂直居中）；
  *    迭代体内部连线由放在标记元素内部的内侧 handle（`iterate-in` / `iterate-out`）承载
  *    （DOM 锚定），折叠回后端时不会多出节点；
  * 3. 在抽屉里增删变量（变量行数变化）时，`watch` 把节点高度同步增高 / 降低差值，画布区高度
  *    保持不变，子块与标记不会跳动；子块不各自展示运行结果（见 `utils/use-nested-node`），
- *    迭代体各轮的产出统一由结果区体现。
+ *    迭代体各轮的产出统一由结果区体现。内层嵌套迭代体（自身仍带 `blocks`）画布上不展开，
+ *    卡片上以「嵌套 N」徽标标明（数据不丢，提交后端时原样带回）。
  */
 import { computed, inject, watch } from 'vue'
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
@@ -36,6 +38,7 @@ import {
   canvasTopOf,
   cardAnchorYOf,
   cardRowCountOf,
+  childXOfNodeWidth,
   minNodeSizeOf,
 } from '../utils/iteration'
 
@@ -122,35 +125,61 @@ const canvasHeight = computed(() => {
   return boxHeight - canvasTopOf(rowCount.value) - ITERATION_LAYOUT.canvasInset
 })
 
+/** 子块的真实渲染高度（尚未测量时退回预估高度） */
+const childHeightOf = (child) => child.dimensions?.height ?? ITERATION_LAYOUT.childHeight
+
 /**
- * 子块实际渲染高度与预估不一致（子块卡片高度由内容决定）时，
- * 按真实高度把子块区重新垂直居中；只在「子块高度 / 画布区高度」变化时触发，
- * 不干预用户拖动子块的位置（拖动只改 position，不会触发本 watch）。
+ * 把子块按真实高度在画布区内**重新垂直居中**（子块增删、子块内容变高变矮时调用）。
+ * <p>**节点尺寸变化不触发重排**：用户把子块拖到别处后再改尺寸，摆放必须保留——
+ * 画布区只是跟着变大变小，不能把用户摆好的子块强行拉回居中位置（旧实现把画布区高度也放进触发键里，
+ * 拖拽把手每帧都会把子块拽回原位）。
  */
+const restackChildren = () => {
+  const list = childrenInCanvas.value
+  if (!list.length) return
+  const heights = list.map(childHeightOf)
+  const blockHeight = heights.reduce((sum, height) => sum + height, 0)
+    + (list.length - 1) * ITERATION_LAYOUT.childGap
+  const top = Math.max(
+    ITERATION_LAYOUT.canvasPaddingY,
+    Math.round((canvasHeight.value - blockHeight) / 2),
+  )
+  let offsetY = canvasTopOf(rowCount.value) + top
+  list.forEach((child, index) => {
+    const y = Math.round(offsetY)
+    if (Math.abs((child.position?.y ?? 0) - y) > 1) {
+      updateNode(child.id, { position: { x: child.position?.x ?? 0, y } })
+    }
+    offsetY += heights[index] + ITERATION_LAYOUT.childGap
+  })
+}
+
+/** 子块集合与各自高度：增删子块 / 子块内容变化时重排（键里刻意不含节点尺寸） */
 watch(
-  () => `${Math.round(canvasHeight.value)}|${childrenInCanvas.value
-    .map((child) => `${child.id}:${Math.round(child.dimensions?.height ?? 0)}`)
-    .join('|')}`,
-  () => {
-    const list = childrenInCanvas.value
-    if (!list.length) return
-    const heights = list.map((child) => child.dimensions?.height ?? ITERATION_LAYOUT.childHeight)
-    const blockHeight = heights.reduce((sum, height) => sum + height, 0)
-      + (list.length - 1) * ITERATION_LAYOUT.childGap
-    const top = Math.max(
-      ITERATION_LAYOUT.canvasPaddingY,
-      Math.round((canvasHeight.value - blockHeight) / 2),
-    )
-    let offsetY = canvasTopOf(rowCount.value) + top
-    list.forEach((child, index) => {
-      const y = Math.round(offsetY)
-      if (Math.abs((child.position?.y ?? 0) - y) > 1) {
-        updateNode(child.id, { position: { x: child.position?.x ?? 0, y } })
-      }
-      offsetY += heights[index] + ITERATION_LAYOUT.childGap
-    })
-  },
+  () => childrenInCanvas.value
+    .map((child) => `${child.id}:${Math.round(childHeightOf(child))}`)
+    .join('|'),
+  restackChildren,
 )
+
+/** 节点盒的真实宽度（拖拽把手改宽度后跟随；未写 style 时为 0） */
+const boxWidth = computed(() => parseFloat(container.value?.style?.width) || 0)
+
+/**
+ * 节点宽度变化（拖拽把手改宽度）时子块横向**重新居中**：
+ * x 是自动轴（横向只有「两个标记之间居中」这一个正确位置），y 保留用户摆放。
+ */
+watch(boxWidth, (width) => {
+  if (!width) return
+  const x = childXOfNodeWidth(width)
+  childrenInCanvas.value.forEach((child) => {
+    if (child.position?.x === x) return
+    updateNode(child.id, { position: { x, y: child.position?.y ?? 0 } })
+  })
+})
+
+/** 该迭代节点自身仍带 blocks（内层嵌套迭代体，画布上不展开）时的提示徽标 */
+const nestedBlockCount = computed(() => (container.value?.blocks?.length ?? 0))
 
 /** 迭代开始标记：画布区左侧，垂直位置固定在画布区中点（CSS 锚定，不随子块拖动移动） */
 const entryMarkerStyle = computed(() => ({
@@ -184,7 +213,7 @@ watch(rowCount, (next, prev) => {
   if (!delta) return
   const currentHeight = parseFloat(container.value?.style?.height) || 0
   if (!currentHeight) return
-  const min = minNodeSizeOf(next)
+  const min = minNodeSizeOf(next, childrenInCanvas.value.length)
   const width = container.value?.style?.width
   updateNode(props.id, {
     style: {
@@ -202,7 +231,7 @@ const onResizeStart = (event) => {
   grip.setPointerCapture?.(event.pointerId)
 
   const start = { x: event.clientX, y: event.clientY }
-  const min = minNodeSizeOf(rowCount.value)
+  const min = minNodeSizeOf(rowCount.value, childrenInCanvas.value.length)
   const style = getNodes.value.find((node) => node.id === props.id)?.style ?? {}
   const startWidth = parseFloat(style.width) || min.width
   const startHeight = parseFloat(style.height) || min.height
@@ -242,6 +271,12 @@ const onResizeStart = (event) => {
           </div>
         </div>
         <span v-if="badgeText" class="node-badge">{{ badgeText }}</span>
+        <!-- 内层嵌套迭代体：blocks 留在定义里（提交后端不丢），但画布上不展开，这里明确标出来 -->
+        <span
+          v-if="nestedBlockCount"
+          class="node-badge node-badge--nested"
+          :title="`该迭代节点内含 ${nestedBlockCount} 个嵌套子块：画布上不展开，运行时会照常执行`"
+        >嵌套 {{ nestedBlockCount }}</span>
       </div>
 
       <VariableTags label="输入" :variables="inputVars" :last="!hasParams && !hasOutputs" />
@@ -422,6 +457,13 @@ const onResizeStart = (event) => {
   font-size: 11px;
   font-weight: 500;
   color: var(--tb-primary-text);
+}
+
+/* 嵌套迭代体提示：内层子块不在画布上展开 */
+.node-badge--nested {
+  border: var(--tb-border-width) solid var(--tb-warning);
+  background: transparent;
+  color: var(--tb-warning);
 }
 
 /* ===== 卡片内嵌的子节点画布（浅色底 + 边框 + 圆角；左右 / 上下偏移由行内 style 锚定，随卡片伸缩） ===== */

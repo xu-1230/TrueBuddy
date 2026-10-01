@@ -6,6 +6,8 @@ import com.alibaba.cloud.ai.graph.action.InterruptableAction;
 import com.alibaba.cloud.ai.graph.action.InterruptionMetadata;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
 import org.example.textflow.entity.WorkflowNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.Optional;
@@ -14,6 +16,8 @@ import java.util.Optional;
  * 人工确认节点（type = 5）：执行前中断流程，等待人工确认后再继续。
  */
 public class HumanNode implements NodeAction, InterruptableAction {
+
+    private static final Logger log = LoggerFactory.getLogger(HumanNode.class);
 
     private final WorkflowNode definition;
 
@@ -30,7 +34,7 @@ public class HumanNode implements NodeAction, InterruptableAction {
         if (config.metadata(RunnableConfig.HUMAN_FEEDBACK_METADATA_KEY).isPresent()) {
             return Optional.empty();
         }
-        System.out.println("中断，等待人工确认: " + nodeId);
+        log.info("人工确认节点 {} 中断，等待人工确认", nodeId);
         return Optional.of(InterruptionMetadata.builder(nodeId, state)
                 .addMetadata("nodeId", nodeId)
                 .addMetadata("label", definition.getData().getLabel())
@@ -39,7 +43,8 @@ public class HumanNode implements NodeAction, InterruptableAction {
 
     @Override
     public Map<String, Object> apply(OverAllState state) {
-        System.out.println("执行节点: " + definition.getId() + " (" + definition.getData().getLabel() + ")");
+        // 只记节点 id：label 是用户填写的内容，不进日志
+        log.info("人工确认节点 {} 已确认，继续执行", definition.getId());
         // TODO 读取人工确认结果，写入 definition 中声明的输出变量
         return Map.of();
     }

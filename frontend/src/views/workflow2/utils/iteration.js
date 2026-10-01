@@ -8,6 +8,9 @@
  * 画布页 / 节点组件只调用导出函数，不自行估算尺寸。
  * 「迭代开始 / 结束」标记与内侧连接点不在本模块口径内：组件把它们锚定在画布区的左 / 右侧、
  * 与首 / 末子块**上下居中**（同一水平线，跟随子块实际位置），拖拽改尺寸时自动跟随。
+ *
+ * 已知限制：{@link expandIteration} 只展开**一层**——迭代体里再放一个迭代节点时，内层迭代体的 `blocks`
+ * 原样留在子块定义里（提交后端不丢数据），但内层子块不在画布上展开；组件会在内层卡片上标出「嵌套 N」提示。
  */
 import { MarkerType } from '@vue-flow/core'
 
@@ -177,21 +180,44 @@ export function canvasHeightOf(childCount) {
  */
 export function childPositionOf(index, childCount, rowCount = 0) {
   return {
-    // 画布区在卡片内左右内缩；子块夹在两个标记之间：左标记 + 间距之后，剩余空间内居中
-    x: ITERATION_LAYOUT.canvasInset
-      + ITERATION_LAYOUT.paddingX
-      + ITERATION_LAYOUT.markerWidth
-      + ITERATION_LAYOUT.markerGap
-      + Math.max(0, Math.round((spaceBetweenMarkersOf() - ITERATION_LAYOUT.childWidth) / 2)),
+    x: childXOf(),
     y: canvasTopOf(rowCount)
       + childrenTopOf(childCount)
       + index * (ITERATION_LAYOUT.childHeight + ITERATION_LAYOUT.childGap),
   }
 }
 
-/** 两个标记之间的可用宽度（画布区内口径）：画布区宽 − 左右两条「内边距 + 标记 + 间距」 */
-function spaceBetweenMarkersOf() {
-  return canvasWidthOf() - (ITERATION_LAYOUT.paddingX + ITERATION_LAYOUT.markerWidth + ITERATION_LAYOUT.markerGap) * 2
+/**
+ * 子块在画布区内的横向坐标（相对节点根，**x 方向的唯一来源**）：
+ * 画布区在卡片内左右内缩，子块夹在两个标记之间（左标记 + 间距之后，剩余空间内居中）。
+ *
+ * @param {number} canvasWidth 画布区宽度；默认取设计宽度口径，传**真实宽度**时可用于
+ *   「节点被拖宽 / 拖窄后子块重新居中」（见 {@link childXOfNodeWidth}）
+ * @returns {number} 相对节点盒左上角的 x
+ */
+export function childXOf(canvasWidth = canvasWidthOf()) {
+  const spaceBetween = canvasWidth
+    - (ITERATION_LAYOUT.paddingX + ITERATION_LAYOUT.markerWidth + ITERATION_LAYOUT.markerGap) * 2
+  return ITERATION_LAYOUT.canvasInset
+    + ITERATION_LAYOUT.paddingX
+    + ITERATION_LAYOUT.markerWidth
+    + ITERATION_LAYOUT.markerGap
+    + Math.max(0, Math.round((spaceBetween - ITERATION_LAYOUT.childWidth) / 2))
+}
+
+/**
+ * 节点盒宽度 → 子块横坐标：节点被拖拽改宽度后，画布区比设计宽度更宽 / 更窄，
+ * 子块要跟着重新在两个标记之间居中（否则会一直停在设计宽度的位置上）。
+ *
+ * @param {number} nodeWidth 节点盒的当前宽度（px）
+ * @returns {number} 相对节点盒左上角的 x
+ */
+export function childXOfNodeWidth(nodeWidth) {
+  const canvasWidth = Math.max(
+    ITERATION_LAYOUT.paddingX * 2 + ITERATION_LAYOUT.childWidth,
+    (Number(nodeWidth) || 0) - ITERATION_LAYOUT.canvasInset * 2,
+  )
+  return childXOf(canvasWidth)
 }
 
 /** 节点宽度 = 卡片宽度：要放得下「开始标记 → 子块 → 结束标记」的横向排列（含内缩），不小于 minWidth */
@@ -210,19 +236,16 @@ function canvasWidthOf() {
 }
 
 /**
- * 拖拽改尺寸的下限：宽度要放得下子块与画布区内边距，
- * 高度要放得下顶部内容区 + 画布区最小高度 + 底部内边距。
+ * 拖拽改尺寸的下限：宽度要放得下子块与画布区内边距，高度要装得下顶部内容区 + 画布区 + 底部内边距，
+ * 而画布区高度又必须装得下**当前子块**（与初始尺寸 {@link containerSizeOf} 同源）。
+ * <p>旧实现的高度恒用 `canvasMinHeight`、与子块数量无关，子块一多就能缩到「子块溢出画布区」。
  *
  * @param {number} rowCount 顶部卡片的变量行数
+ * @param {number} childCount 子块个数
  * @returns {{ width: number, height: number }} 单位 px
  */
-export function minNodeSizeOf(rowCount = 0) {
-  return {
-    width: containerWidthOf(),
-    height: canvasTopOf(rowCount)
-      + ITERATION_LAYOUT.canvasMinHeight
-      + ITERATION_LAYOUT.canvasInset,
-  }
+export function minNodeSizeOf(rowCount = 0, childCount = 0) {
+  return containerSizeOf(childCount, rowCount)
 }
 
 /**
@@ -246,6 +269,7 @@ export function containerSizeOf(childCount, rowCount = 0) {
 
 /**
  * 迭代节点 → 画布表示：`blocks` 物化为挂在容器下的子节点，节点级 `edges` 转成内部连线。
+ * <p>只展开一层：子块本身若是迭代节点，它的 `blocks` / `edges` 原样保留在定义里（不递归展开）。
  *
  * @param {object} node 后端结构的迭代节点（含 blocks / edges）
  * @returns {{ nodes: Array, edges: Array }} 可直接并入画布 nodes / edges 的定义
@@ -308,8 +332,12 @@ export function collapseIterations(nodes = [], edges = []) {
     else outerEdges.push(edge)
   })
 
+  const containerIds = new Set(containers.map((container) => container.id))
+  /** 顶层节点：没有 parentNode，或 parentNode 指向**不存在的容器**（画布残留数据，不能静默丢弃） */
+  const isTopLevel = (node) => !node.parentNode || !containerIds.has(node.parentNode)
+
   const collapsed = nodes
-    .filter((node) => !node.parentNode)
+    .filter(isTopLevel)
     .map((node) => {
       if (node.type !== ITERATE_NODE_TYPE) return node
 
