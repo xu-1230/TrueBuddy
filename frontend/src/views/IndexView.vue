@@ -278,7 +278,6 @@ const menuGroups = [
     items: [
       { path: '/index/knowledge-base', label: '知识库模块', icon: 'knowledge' },
       { path: '/index/workflow', label: '工作流编排', icon: 'workflow' },
-      { path: '/index/homework-workflow', label: '工作流批改实测', icon: 'workflow' },
     ],
   },
 ]

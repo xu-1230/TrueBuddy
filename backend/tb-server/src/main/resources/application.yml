@@ -98,24 +98,12 @@ tb:
     max-fix-rounds: 2
     # 严格自检：旧主题关键词仍有残留 / 新主题关键词缺失时标记为「部分成功」
     strict-self-check: true
-  # 自定义工作流（画布定义已落库到 workflow 表；大模型与知识库检索仍为模拟实现）
-  workflow:
-    # 执行会话有效期，单位分钟：等待确认迟迟不提交 / 执行结束后超出该时长，
-    # 恢复与状态查询接口报「会话不存在或已过期」
-    session-ttl-minutes: 30
-    # 循环节点并发度：1 = 串行
-    loop-concurrency: 1
-    # 单次循环最大条目数，超出截断并告警
-    max-loop-items: 50
-    # 模拟大模型单次调用延迟（毫秒）：模拟真实批改耗时，便于观察前端「执行中」状态与链路耗时。
-    # 规划 1 次 + 逐份批改 n 次，串行（loop-concurrency=1）时总耗时 ≈ 延迟 ×(1+n)；
-    # 例如 6 份作业、5000ms → 确认执行约 30s。想快速回归时可改小或设为 0。
-    mock-llm-delay-ms: 5000
   security:
     permit-all-urls:
       - /system/auth/login
       - /test2/read-pptx
       - /doc-template/**
+      # 自定义工作流：/run、/resume 为 SSE 流，需免登录（画布定义经请求体提交）
       - /workflow/**
   # 知识库文档解析：阿里云文档智能（文档解析大模型版）
   # AK/SK 为必填项，一律通过环境变量注入（项目根目录 .env，模板见 .env.example），缺失时启动即失败

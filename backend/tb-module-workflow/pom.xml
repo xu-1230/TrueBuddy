@@ -13,19 +13,16 @@
 
     <artifactId>tb-module-workflow</artifactId>
     <name>tb-module-workflow</name>
-    <description>自定义工作流模块：画布 schema → spring-ai-alibaba-graph 可执行图；工作流定义持久化到 workflow 表（MVP：大模型与知识库检索为模拟实现）</description>
+    <description>自定义工作流模块：流程定义（workflow 表 / classpath text.json）→ spring-ai-alibaba-graph 可执行图，SSE 推送节点执行进度</description>
 
     <dependencies>
-        <!-- Web 组件：提供 spring-boot-starter-web 注解 + CommonResult -->
+        <!--
+          Web 组件：传递引入 spring-boot-starter-web、tb-common、hutool-all、lombok，
+          提供 SseEmitter、CommonResult、ServiceException 等基础能力。
+        -->
         <dependency>
             <groupId>org.example</groupId>
             <artifactId>tb-spring-boot-starter-web</artifactId>
-            <version>${revision}</version>
-        </dependency>
-        <!-- 统一返回对象 CommonResult -->
-        <dependency>
-            <groupId>org.example</groupId>
-            <artifactId>tb-common</artifactId>
             <version>${revision}</version>
         </dependency>
 
@@ -52,25 +49,28 @@
             </exclusions>
         </dependency>
 
-        <!-- 数据访问：与 tb-module-knowledgebase 保持一致，使用 MyBatis 注解 Mapper -->
+        <!-- 数据访问：流程定义从 workflow 表读取，单表只读查询直接用 JdbcTemplate -->
         <dependency>
-            <groupId>org.mybatis.spring.boot</groupId>
-            <artifactId>mybatis-spring-boot-starter</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
         </dependency>
-        <!-- Hutool：雪花 ID（IdUtil.getSnowflakeNextId）用于 workflow 表主键 -->
-        <dependency>
-            <groupId>cn.hutool</groupId>
-            <artifactId>hutool-all</artifactId>
-        </dependency>
+
         <!-- Lombok：@Data / @Slf4j（版本由 Spring Boot 父工程管理，编译期生效） -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- 测试：流程定义来源与图引擎的冒烟用例（不依赖数据库与 Spring 容器） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

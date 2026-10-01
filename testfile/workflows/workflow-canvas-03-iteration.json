@@ -142,10 +142,12 @@
       },
       "edges": [
         {
+          "id": "e-132996-173594",
           "sourceNodeID": "132996",
           "targetNodeID": "173594"
         },
         {
+          "id": "e-173594-132996",
           "sourceNodeID": "173594",
           "targetNodeID": "132996"
         }
@@ -157,10 +159,12 @@
   ],
   "edges": [
     {
+      "id": "e-100001-132996",
       "sourceNodeID": "100001",
       "targetNodeID": "132996"
     },
     {
+      "id": "e-132996-900001",
       "sourceNodeID": "132996",
       "targetNodeID": "900001"
     }

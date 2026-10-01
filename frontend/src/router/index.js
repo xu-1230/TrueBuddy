@@ -33,10 +33,9 @@ const router = createRouter({
         { path: "home", name: "system-home", component: () => import("../views/system/SystemHomeView.vue") },
         { path: "doc-template", name: "doc-template", component: () => import("../views/doctemplate/DocTemplateView.vue") },
         { path: "homework-grading", name: "homework-grading", component: () => import("../views/homework/HomeworkGradingView.vue") },
-        { path: "homework-workflow", name: "homework-workflow", component: () => import("../views/homework/HomeworkWorkflowView.vue") },
         { path: "knowledge-base", name: "knowledge-base", component: () => import("../views/knowledgebase/KnowledgeBaseView.vue") },
         { path: "ppt", name: "ppt", component: () => import("../views/ppt/index.vue") },
-        // 工作流编排：新版实现（workflow2），旧版保留在 views/workflow 下待整体替换
+        // 工作流编排：画布页（workflow2）
         { path: "workflow", name: "workflow", component: () => import("../views/workflow2/WorkflowView.vue") },
       ],
     },

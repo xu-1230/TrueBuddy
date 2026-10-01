@@ -8,7 +8,7 @@
  * 双向同步：抽屉里的每一次编辑（输入、下拉切换、增删变量行）都立即写回画布上的节点数据，
  * 卡片当场跟着变 —— 没有「保存」这一步，也就没有「未保存」这个状态。
  *
- * 覆盖 workflow2 现有的三类节点：1 开始 / 2 结束 / 3 大模型。变量按「分组」呈现（折叠面板，
+ * 覆盖 workflow2 现有的五类节点：1 开始 / 2 结束 / 3 大模型 / 4 迭代 / 5 人工确认。变量按「分组」呈现（折叠面板，
  * 与旧版抽屉同一套观感）：输入组是「变量名 | 变量值 | 删除」，取值段由类型段 + 取值选择器
  * 拼成分段控件；输出组是「变量名 | 变量类型 | 描述 | 删除」，描述折叠在行内展开。
  *
@@ -21,7 +21,7 @@
  */
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CloseBold, Delete, FullScreen, Plus, MagicStick, SwitchButton, VideoPlay } from '@element-plus/icons-vue'
+import { CloseBold, Delete, FullScreen, Plus, MagicStick, RefreshRight, SwitchButton, User, VideoPlay } from '@element-plus/icons-vue'
 import { useVueFlow } from '@vue-flow/core'
 
 defineOptions({ name: 'NodeDataDrawer' })
@@ -58,6 +58,18 @@ const NODE_META = {
     icon: MagicStick,
     desc: '按提示词调用大模型：读取输入变量，产出输出变量',
     flags: { prompt: true, inputs: true, outputs: true },
+  },
+  '4': {
+    name: '迭代',
+    icon: RefreshRight,
+    desc: '迭代容器：对列表输入逐项执行容器内的子步骤',
+    flags: { prompt: false, inputs: true, outputs: true },
+  },
+  '5': {
+    name: '人工确认',
+    icon: User,
+    desc: '人工确认：执行到此暂停，确认后从断点继续',
+    flags: { prompt: false, inputs: true, outputs: true },
   },
 }
 
@@ -151,7 +163,7 @@ const refBlockIdOf = (refKey) => {
 const applyType = (declaration, typeKey) => {
   const { type, schema } = typeDeclOf(typeKey)
   declaration.type = type
-  if (schema) declaration.schema = { ...(declaration.schema ?? {}), ...schema }
+  if (schema) declaration.schema = { ...declaration.schema, ...schema }
   else delete declaration.schema
 }
 
@@ -317,7 +329,7 @@ const sync = () => {
   const current = node.value
   if (!current) return
   const flags = meta.value.flags
-  const data = { ...(current.data ?? {}), label: draft.label }
+  const data = { ...current.data, label: draft.label }
 
   if (flags.prompt) {
     data.system = draft.system
@@ -326,7 +338,7 @@ const sync = () => {
 
   if (flags.inputs) {
     data.inputs = draft.inputs.map((row) => {
-      const declaration = { ...(row.src ?? {}), name: row.name.trim() }
+      const declaration = { ...row.src, name: row.name.trim() }
       applyType(declaration, row.typeKey)
       const literal = row.literal.trim()
       const slot = row.refKey ? slotOfRefKey(row.refKey) : null
@@ -345,7 +357,7 @@ const sync = () => {
 
   if (flags.outputs) {
     data.outputs = draft.outputs.map((row) => {
-      const declaration = { ...(row.src ?? {}), name: row.name.trim() }
+      const declaration = { ...row.src, name: row.name.trim() }
       applyType(declaration, row.typeKey)
       const description = row.description.trim()
       if (description) declaration.description = description

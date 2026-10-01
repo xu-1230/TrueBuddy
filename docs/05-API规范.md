@@ -97,7 +97,7 @@
 | 21 | `KbDocumentController` | DELETE | `/knowledge-base/document/delete` | 删除文档（`id`） | `CommonResult<Boolean>` |
 | 22 | `KbDocumentController` | POST | `/knowledge-base/document/abandon` | 放弃未向量化的文档（`documentId`） | `CommonResult<Boolean>` |
 | 23 | `KbDocumentChunkController` | GET | `/knowledge-base/chunk/list` | 文档分片列表（`documentId`） | `CommonResult<List<ChunkRespVO>>` |
-| 24 | `WorkflowController` | POST | `/workflow/run` | 提交执行 / 恢复人工确认（**单接口双语义**：不带 `executeId` = 新建执行；带 `executeId` + `confirmedPlan` = 提交确认清单续跑） | `SseEmitter`（`text/event-stream`） |
+| 24 | `WorkflowController` | POST | `/workflow/run` | 提交执行：请求体为画布定义（`{nodes, edges}`，可省略，省略时回落 classpath `text.json`）；人工确认由 `POST /workflow/resume` 单独承接（详见 [12-工作流规范.md](./12-工作流规范.md) §2.1） | `SseEmitter`（`text/event-stream`） |
 | 25 | `WorkflowController` | GET | `/workflow/get_process` | 查询执行状态与结果（`workflow_id`；SSE 的**轮询兜底**，建议每 2s，`exeHistoryStatus` 1=执行中 / 2=成功 / 3=失败 / 4=等待用户输入） | `CommonResult<WorkflowProcessRespVO>` |
 | 26 | `WorkflowController` | POST | `/workflow/save` | 保存工作流定义（`id` 空 = 新建，非空 = 更新；画布 JSON 整存，**不做版本管理**；返回 String 类型的雪花 id） | `CommonResult<String>` |
 | 27 | `WorkflowController` | GET | `/workflow/detail` | 工作流详情（含 `schema_json` 画布字符串） | `CommonResult<WorkflowDetailRespVO>` |

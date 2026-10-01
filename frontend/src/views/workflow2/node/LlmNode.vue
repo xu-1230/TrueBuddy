@@ -1,8 +1,11 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { Box } from '@element-plus/icons-vue'
 import VariableTags from '../components/VariableTags.vue'
+import NodeResultPanel from '../components/NodeResultPanel.vue'
+import { RUN_STATE_KEY } from '../utils/run-inject'
+import { nodeRuntimeOf } from '../utils/run-state'
 
 // 与 Vue Flow 内置节点保持一致：不把 label/selected 等透传属性渲染到 DOM 上
 defineOptions({ inheritAttrs: false })
@@ -15,6 +18,10 @@ const props = defineProps({
 /** 变量声明：归一化（字符串写法 / 过滤空名）由 VariableTags 统一处理 */
 const inputs = computed(() => props.data?.inputs ?? [])
 const outputs = computed(() => props.data?.outputs ?? [])
+
+/** 运行态由画布页 provide；卡片可能在无运行态的上下文复用，故允许缺省 */
+const runState = inject(RUN_STATE_KEY, null)
+const runtime = computed(() => (runState ? nodeRuntimeOf(runState.value, props.id) : null))
 
 /**
  * 未绑定取值的输入变量名（交给 VariableTags 打告警色）。
@@ -80,14 +87,18 @@ const unboundInputNames = computed(() => {
       <!-- 目标 Handle（左侧） -->
       <Handle id="in" type="target" :position="Position.Left" class="node-handle node-handle-target" />
     </div>
+
+    <!-- 运行结果：贴在卡片正下方；节点在迭代容器内时由结果面板自行跳过（容器统一展示） -->
+    <NodeResultPanel v-if="runtime" :runtime="runtime" :node-id="id" />
   </div>
 </template>
 
 <style scoped>
-/* ===== 节点容器 ===== */
+/* ===== 节点容器：卡片在上，运行结果在下 ===== */
 .node-wrapper {
   position: relative;
   display: flex;
+  flex-direction: column;
   width: auto;
 }
 

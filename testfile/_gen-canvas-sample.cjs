@@ -47,7 +47,6 @@ const backendInputsOf = (node) => {
 
 /** 与 workflow-canvas.js 的 CANVAS_EDGE_STYLE 保持一致（markerEnd.type 序列化为 'arrow'） */
 const EDGE_STYLE = {
-  type: 'default',
   style: { stroke: 'var(--tb-text-primary)', strokeWidth: 1.5 },
   animated: true,
   markerEnd: { type: 'arrow', color: 'var(--tb-primary)', width: 15, height: 15 },
@@ -64,7 +63,6 @@ const nodes = [
     id: '100001',
     type: 'input',
     position: { x: 100, y: 120 },
-    deletable: false,
     sourcePosition: 'right',
     targetPosition: 'left',
     data: {
@@ -186,7 +184,6 @@ const nodes = [
     position: { x: 8, y: 56 },
     zIndex: CHILD_Z_INDEX,
     draggable: false,
-    deletable: false,
   },
   {
     id: 'iter-grading-end',
@@ -195,13 +192,11 @@ const nodes = [
     position: { x: 560, y: 56 },
     zIndex: CHILD_Z_INDEX,
     draggable: false,
-    deletable: false,
   },
   {
     id: '__END__',
     type: 'output',
     position: { x: 1960, y: 120 },
-    deletable: false,
     sourcePosition: 'right',
     targetPosition: 'left',
     data: {

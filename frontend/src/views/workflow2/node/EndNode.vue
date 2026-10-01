@@ -1,13 +1,20 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { SwitchButton } from '@element-plus/icons-vue'
 import VariableTags from '../components/VariableTags.vue'
+import NodeResultPanel from '../components/NodeResultPanel.vue'
+import { RUN_STATE_KEY } from '../utils/run-inject'
+import { nodeRuntimeOf } from '../utils/run-state'
 
 const props = defineProps({
   id: { type: String, required: true },
   data: { type: Object, default: () => ({}) },
 })
+
+/** 运行态由画布页 provide；卡片可能在无运行态的上下文复用，故允许缺省 */
+const runState = inject(RUN_STATE_KEY, null)
+const runtime = computed(() => (runState ? nodeRuntimeOf(runState.value, props.id) : null))
 
 </script>
 
@@ -37,14 +44,18 @@ const props = defineProps({
       <!-- 目标 Handle（左侧）：结束节点只接收上游连线 -->
       <Handle id="in" type="target" :position="Position.Left" class="node-handle node-handle-target" />
     </div>
+
+    <!-- 运行结果：贴在卡片正下方；节点在迭代容器内时由结果面板自行跳过（容器统一展示） -->
+    <NodeResultPanel v-if="runtime" :runtime="runtime" :node-id="id" />
   </div>
 </template>
 
 <style scoped>
-/* ===== 节点容器 ===== */
+/* ===== 节点容器：卡片在上，运行结果在下 ===== */
 .node-wrapper {
   position: relative;
   display: flex;
+  flex-direction: column;
   width: auto;
 }
 

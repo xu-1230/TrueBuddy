@@ -744,11 +744,13 @@
       },
       "edges": [
         {
+          "id": "e-100004-100004-1",
           "sourceNodeID": "100004",
           "targetNodeID": "100004-1",
           "sourcePortID": "loop-function-inline-output"
         },
         {
+          "id": "e-100004-1-100004",
           "sourceNodeID": "100004-1",
           "targetNodeID": "100004",
           "targetPortID": "loop-function-inline-input"
@@ -823,18 +825,22 @@
   ],
   "edges": [
     {
+      "id": "e-100001-100002",
       "sourceNodeID": "100001",
       "targetNodeID": "100002"
     },
     {
+      "id": "e-100002-100003",
       "sourceNodeID": "100002",
       "targetNodeID": "100003"
     },
     {
+      "id": "e-100003-100004",
       "sourceNodeID": "100003",
       "targetNodeID": "100004"
     },
     {
+      "id": "e-100004-900001",
       "sourceNodeID": "100004",
       "targetNodeID": "900001",
       "sourcePortID": "loop-output"
