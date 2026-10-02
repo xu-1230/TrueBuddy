@@ -356,21 +356,63 @@ const removeCrossLevelEdges = () => {
   return invalid.length
 }
 
-/** 判定「真的在拖拽」而不是 Ctrl + 点选（Ctrl 同时是 Vue Flow 的多选键）所需的最小位移 */
-const DRAG_DISTANCE = 4
+/**
+ * 修饰键状态（Ctrl / Meta）由**全局**键盘监听维护，不再依赖 Vue Flow 拖拽事件携带的 `ctrlKey`。
+ *
+ * 原因：Windows 上 Vue Flow 把 Ctrl 当成多选键（`multiSelectionKeyCode` 默认 `"Control"`，见
+ * `@vue-flow/core` 的 `defaultVueFlowProps`），且节点拖拽的夹取范围在 `pointerdown` 之后「超过
+ * 拖拽阈值」那一刻就被快照固定（`getDragItems`），拖拽中途改 store 解不开夹取。所以必须在快照
+ * 生成之前——即 `pointerdown` 捕获阶段——若节点是迭代子块且按住修饰键，就把它即时提为顶层，
+ * 让这次拖拽全程自由。
+ */
+const modifierActive = ref(false)
+const isModifierEvent = (event) => Boolean(event?.ctrlKey || event?.metaKey)
 
-/** 一次节点拖拽的起手信息：`{ nodeId, x, y, wantsOut }`（wantsOut = 起手时按住了 Ctrl / Meta） */
-const dragIntent = ref(null)
+/** 这次拖拽是否因按住修饰键而在 `pointerdown` 时解除了子块约束（松手结算时用） */
+const detachArmed = ref(false)
+/** 解除约束前子块所属的容器 id（脱离后用于清掉它与原容器的内部连线） */
+const detachFrom = ref(null)
 
-/** Vue Flow 节点拖拽开始：记下起手位置与是否按住 Ctrl，供松手时判定「是否真的在拖拽」 */
-const handleNodeDragStart = ({ node, event }) => {
-  if (!node?.id) return
-  dragIntent.value = {
-    nodeId: node.id,
-    startX: Number(event?.clientX),
-    startY: Number(event?.clientY),
-    wantsOut: Boolean(event?.ctrlKey || event?.metaKey),
-  }
+/** 全局监听 Ctrl / Meta：按下即激活，松开 / 失焦即复位 */
+const onModifierKeyDown = (event) => { if (isModifierEvent(event)) modifierActive.value = true }
+const onModifierKeyUp = (event) => { if (isModifierEvent(event)) modifierActive.value = false }
+const onWindowBlur = () => { modifierActive.value = false }
+
+onMounted(() => {
+  window.addEventListener('keydown', onModifierKeyDown)
+  window.addEventListener('keyup', onModifierKeyUp)
+  window.addEventListener('blur', onWindowBlur)
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', onModifierKeyDown)
+  window.removeEventListener('keyup', onModifierKeyUp)
+  window.removeEventListener('blur', onWindowBlur)
+})
+
+/**
+ * `pointerdown` 捕获阶段：若落在迭代子块上且按住修饰键，立即把子块提为顶层节点。
+ *
+ * 时机比 Vue Flow 的拖拽快照（超过拖拽阈值后才取 `getDragItems`）更早，因此快照会捕获到
+ * 「已解约束」的状态，整段拖拽都自由——子块得以被拖到容器外。具体改动：清掉 `parentNode`
+ * 与 `extent`、把层级设回 0，并把 `position` 从「相对容器」换算成「绝对坐标」（用当前
+ * `computedPosition`，它本来就是绝对坐标），否则解约束瞬间节点会跳回原点。
+ */
+const handleCanvasPointerDown = (event) => {
+  if (!modifierActive.value) return
+  const nodeEl = event?.target?.closest?.('.vue-flow__node')
+  const nodeId = nodeEl?.getAttribute?.('data-id')
+  if (!nodeId) return
+  const node = getNodes.value.find((item) => item?.id === nodeId)
+  if (!node?.parentNode || !node?.computedPosition) return
+
+  detachArmed.value = true
+  detachFrom.value = node.parentNode
+  updateNode(node.id, {
+    parentNode: undefined,
+    extent: undefined,
+    zIndex: 0,
+    position: { x: Math.round(node.computedPosition.x), y: Math.round(node.computedPosition.y) },
+  })
 }
 
 /**
@@ -393,21 +435,19 @@ const handleNodeDrag = ({ node, event }) => {
 /**
  * 拖拽结束：按落点结算节点属于哪一层。
  *
- * 两条路径都走这里：
- * - **进容器**：顶层节点（或从面板拖进来的新节点）落在容器画布区上 → 转成该容器的子块；
- * - **出容器**：子块按住 Ctrl 拖到容器画布区之外 → 变回顶层节点；落到**另一个**容器的画布区上
- *   则直接换宿主（跨容器移动）。
+ * 子块若是在 `pointerdown` 时按住修饰键被即时提为顶层（见 {@link handleCanvasPointerDown}），
+ * 那么它已经脱离了容器、整段拖拽都是自由的；这里只需决定「松手时落在哪」：
+ * - **落在某容器画布区** → 通过 {@link planMigration} 挂进该容器（跨容器移动也走这条）；
+ * - **落在空白** → 已是顶层，什么也不用做，只清一遍跨层线；
+ * - **普通拖拽出界**（没按修饰键）→ 维持原状，留在原容器。
  *
- * **为什么在松手时才结算，而不是按下时解除子块的 `extent` 约束**：Vue Flow 在拖拽开始时对
- * `dragItems` 做 `extent` 的**快照**（`@vue-flow/core` 的 `getDragItems`），拖拽中途清除
- * `node.extent` 不会影响夹取，而且 `IterateNode` 自己的 watcher 会把约束装回去——两个途径都
- * 走不通。所以子块在拖拽过程中视觉上仍被夹在容器内，松手后才落到指针位置；`extent` 继续由
- * 容器组件负责，画布页不碰它。
+ * 不再需要「松手后写 `computedPosition` 补丁」：解约束发生在 `pointerdown`、早于 Vue Flow 的
+ * 拖拽快照，松手时节点已经是顶层自由状态，Vue Flow 收尾写回的就是正确坐标。
  *
  * @param {object} node 被拖拽的节点（Vue Flow 的实时节点）
  * @param {Event} event 拖拽结束事件（取指针位置）
  */
-const settleNodeLevel = (node, event) => {
+const settleNodeLevel = (node, event, fromContainer = null) => {
   if (!node?.id) return
   const nodes = getNodes.value
   const currentParent = node.parentNode ?? null
@@ -415,65 +455,72 @@ const settleNodeLevel = (node, event) => {
 
   // 排掉自己与自己的后代：容器拖进自己里会形成环（画布只展开一层，后代最多是当前子块）
   const target = containerAtPoint(nodes, point, { exclude: descendantIdsOf(nodes, node.id) })
-  if (target === currentParent) return
 
-  const intent = dragIntent.value
-  const isSameDrag = intent?.nodeId === node.id
-  // 位移用**屏幕坐标**比较：起手与松手是同一套 clientX / clientY，与缩放无关
-  const moved = isSameDrag
-    ? Math.hypot(
-        Number(event?.clientX) - Number(intent.startX),
-        Number(event?.clientY) - Number(intent.startY),
-      ) > DRAG_DISTANCE
-    : false
-  const wantsOut = Boolean(isSameDrag && intent.wantsOut && moved)
+  // 真正脱离容器（按住修饰键拖到空白）：节点已在 pointerdown 提为顶层，这里只清跨层线 + 与原容器的内部线
+  if (!target && detachArmed.value) {
+    setTimeout(() => cleanupCrossLevelEdges(node.id, { detach: true, fromContainer }), 0)
+    return
+  }
 
-  // 子块拖到容器外但没按 Ctrl：保持原状（extent 本来就把它夹在容器里，这里什么都不用做）
-  if (!target && currentParent && !wantsOut) return
+  // 落回原容器（非脱离情形）：无需迁移，但仍清一遍跨层线
+  if (target === currentParent) return cleanupCrossLevelEdges(node.id)
+
+  // 拖到空白但没按修饰键：普通拖拽出界，维持原状（子块本就被 extent 夹在容器内）
+  if (!target && currentParent) return cleanupCrossLevelEdges(node.id)
 
   const plan = planMigration(nodes, node.id, target, {
-    // 脱离容器时子块被夹在容器内，它的当前坐标不是用户想要的落点——改用指针位置（节点居中）
+    // 脱离容器时节点已被提为顶层，其当前绝对坐标就是用户想要的落点；
+    // detachAt 仅在「起手没解约束、松手却要求脱离」的兜底路径使用（节点居中于指针）
     detachAt: target ? undefined : centeredPositionOf(node, point),
   })
-  if (!plan) return
 
-  /**
-   * 必须延迟到 Vue Flow 的拖拽收尾**之后**再结算。
-   *
-   * `node-drag-stop` 触发时，Vue Flow 还会把拖拽期间（被 `extent` 夹取过）的位置写回节点——
-   * 同一帧里写会被它覆盖，表现为「节点看起来移出去了，松手却又回到容器边上」。
-   * 让出这一个宏任务，等它的回写落定之后再写我们要的层级与坐标。
-   */
+  // 跨容器挂入需要延迟到 Vue Flow 拖拽收尾之后，避免被它回写覆盖；
+  // 已顶层的脱离路径无需补丁，这里统一用 setTimeout 收口即可
   setTimeout(() => {
     const latest = getNodes.value.find((item) => item?.id === node.id)
     if (!latest) return
-
-    /**
-     * 脱离容器的方向必须连 `computedPosition` 一起写。
-     *
-     * Vue Flow 在 `extent` 变化时会用**旧的** `computedPosition` 重算一遍 `position`
-     * （`clampPosition2`，而位置换算的 watcher 是 `flush: "post"`、排在它后面）——
-     * 只写 `position` 的话，会被它用容器内的旧绝对坐标写回去，节点看起来又缩回容器边上。
-     * 把 `computedPosition` 一起摆到位，这次重算就是恒等运算。挂载方向不需要：
-     * 那时 `computedPosition` 本来就是绝对坐标，由它换算出的相对坐标是正确的。
-     */
-    const patch = target
-      ? plan
-      : { ...plan, computedPosition: { x: plan.position.x, y: plan.position.y, z: plan.zIndex ?? 0 } }
-
-    updateNode(latest.id, patch)
-    // 新宿主的扩容与子块排布交给 IterateNode 自己（childrenKey / 子块高度两个 watcher）
-    const removedEdges = removeCrossLevelEdges()
-    if (removedEdges) {
-      ElMessage.warning(`已删除 ${removedEdges} 条跨层连线（迭代体内外不能直接相连）`)
-    }
+    if (plan) updateNode(latest.id, plan)
+    cleanupCrossLevelEdges(node.id, { detach: !target })
   }, 0)
 }
 
-/** Vue Flow 节点拖拽结束：先按落点结算层级，再清掉拖拽高亮 */
+/**
+ * 清理迁移后变跨层的连线，并提示用户。
+ *
+ * `detach` 为真（子块真正脱离容器、落到空白）时，除了常规跨层边，还要清掉它与**原容器**之间的
+ * 内部连线（`容器 ↔ 子块` 按 {@link isCrossLevelEdge} 不算跨层、不会被前一步删掉，但它已经不是
+ * 迭代体的一部分了，留着会变成「顶层节点直接连到迭代容器」这条语义错乱的线）。重新挂入另一容器
+ * （`detach` 为假）则不动这些线。
+ *
+ * @param {string} nodeId 被迁移的节点 id
+ * @param {object} [options]
+ * @param {boolean} [options.detach] 是否本次为「脱离容器」
+ */
+const cleanupCrossLevelEdges = (nodeId, { detach = false, fromContainer = null } = {}) => {
+  let removed = removeCrossLevelEdges()
+  if (detach && nodeId && fromContainer) {
+    const cid = fromContainer
+    const internal = getEdges.value.filter(
+      (edge) => (edge.source === nodeId && edge.target === cid)
+        || (edge.target === nodeId && edge.source === cid),
+    )
+    if (internal.length) {
+      removeEdges(internal)
+      removed += internal.length
+    }
+  }
+  if (removed) {
+    ElMessage.warning(`已删除 ${removed} 条跨层连线（迭代体内外不能直接相连）`)
+  }
+}
+
+/** Vue Flow 节点拖拽结束：先按落点结算层级，再清掉拖拽高亮与本轮解约束标记 */
 const handleNodeDragStop = ({ node, event }) => {
-  settleNodeLevel(node, event)
+  const fromContainer = detachFrom.value
+  settleNodeLevel(node, event, fromContainer)
   iterationDropTarget.value = null
+  detachArmed.value = false
+  detachFrom.value = null
 }
 
 
@@ -626,6 +673,7 @@ const edges = ref(defaultCanvas.edges)
     @dragleave="handleNodeDragLeave"
     @dragend="handleNodeDragEnd"
     @drop="handleNodeDrop"
+    @pointerdown.capture="handleCanvasPointerDown"
   >
     <!-- elevate-nodes-on-select 关闭：迭代节点是不透明卡片，子块与内部连线靠固定层级（见 utils/iteration 的
          ITERATION_LAYER）压在卡片之上；若保留「选中即抬到 1000」的默认行为，选中迭代节点时会把这两者反压回去 -->
@@ -635,10 +683,10 @@ const edges = ref(defaultCanvas.edges)
       :node-types="nodeTypes"
       :elevate-nodes-on-select="false"
       :delete-key-code="null"
+      :multi-selection-key-code="['Alt']"
       fit-view-on-init
       @connect="handleConnect"
       @node-click="onNodeClick"
-      @node-drag-start="handleNodeDragStart"
       @node-drag="handleNodeDrag"
       @node-drag-stop="handleNodeDragStop"
     >
