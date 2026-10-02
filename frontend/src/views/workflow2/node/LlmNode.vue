@@ -6,6 +6,7 @@ import VariableTags from '../components/VariableTags.vue'
 import NodeResultPanel from '../components/NodeResultPanel.vue'
 import { RUN_STATE_KEY } from '../utils/run-inject'
 import { nodeRuntimeOf } from '../utils/run-state'
+import { unboundNamesOf } from '../utils/variable-sources'
 
 // 与 Vue Flow 内置节点保持一致：不把 label/selected 等透传属性渲染到 DOM 上
 defineOptions({ inheritAttrs: false })
@@ -26,26 +27,12 @@ const runtime = computed(() => (runState ? nodeRuntimeOf(runState.value, props.i
 /**
  * 未绑定取值的输入变量名（交给 VariableTags 打告警色）。
  *
- * 画布上「声明」不等于「能取到值」：变量行后面跟了取值槽（引用上游变量 `{ blockID, name }`
- * 或字面量 `{ content }`）才算定义好，取值槽由数据抽屉写入 `data.inputs[].input`。
- * 只算输入：输出是本节点产出的，不存在「没取值」。
+ * 画布上「声明」不等于「能取到值」：变量行必须绑定了取值来源（引用上游变量 `{ blockID, name }`）
+ * 才算定义好，取值槽由数据抽屉写入 `data.inputs[].input`。只算输入：输出是本节点产出的，
+ * 不存在「没取值」。口径（含「常量不算绑定」）收在 `utils/variable-sources` 的 `unboundNamesOf`，
+ * 与其余卡片、运行前校验共用同一份实现。
  */
-const unboundInputNames = computed(() => {
-  const unbound = new Set()
-  for (const item of inputs.value) {
-    // 字符串写法即「只声明了名字」，没有任何取值槽
-    if (typeof item === 'string') {
-      if (item) unbound.add(item)
-      continue
-    }
-    const name = item?.name
-    if (!name) continue
-    const slot = item.input
-    const bound = Boolean((slot?.blockID && slot?.name) || String(slot?.content ?? '').trim())
-    if (!bound) unbound.add(name)
-  }
-  return unbound
-})
+const unboundInputNames = computed(() => unboundNamesOf(inputs.value))
 </script>
 
 <template>

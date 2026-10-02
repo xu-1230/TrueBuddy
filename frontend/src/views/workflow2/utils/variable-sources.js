@@ -26,6 +26,34 @@ const declaredOf = (list) => (Array.isArray(list) ? list.filter((item) => nameOf
 /** 节点 id → 其父容器 id（顶层节点返回 null） */
 const parentIdOf = (node) => node?.parentNode ?? null
 
+/**
+ * 变量声明里**没有绑定取值来源**的变量名集合：卡片告警色与运行前校验共用这同一份口径。
+ *
+ * 只认引用：`input` 里同时有 `blockID` 与 `name` 才算绑定。常量（`{ content }`）**不算绑定**——
+ * 后端取值统一走 `NodeStateReader#read(state, { blockID, name })`，`NodeFieldRef` 里没有 `content`
+ * 字段，写了常量在运行时同样取到 `null`（提示词占位符被替换成空串）。
+ *
+ * 字符串写法（`['x']`）与对象写法（`[{ name: 'x' }]`）都按「只声明、没有取值槽」算；空名忽略，与
+ * `VariableTags` 的可见性口径一致。
+ *
+ * @param {Array} declared 变量声明数组（`data.inputs` / `data.variableParameters`）
+ * @returns {Set<string>} 未绑定取值的变量名
+ */
+export function unboundNamesOf(declared = []) {
+  const unbound = new Set()
+  for (const item of Array.isArray(declared) ? declared : []) {
+    if (typeof item === 'string') {
+      if (item) unbound.add(item)
+      continue
+    }
+    const name = nameOf(item)
+    if (!name) continue
+    const slot = item.input
+    if (!(slot?.blockID && slot?.name)) unbound.add(name)
+  }
+  return unbound
+}
+
 /** 单个节点的产出声明 → 候选项（附加来源信息） */
 const outputsOf = (node) =>
   declaredOf(node?.data?.outputs).map((output) => ({

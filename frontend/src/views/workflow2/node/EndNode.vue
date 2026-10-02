@@ -2,14 +2,25 @@
 import { computed, inject } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { SwitchButton } from '@element-plus/icons-vue'
+import VariableTags from '../components/VariableTags.vue'
 import NodeResultPanel from '../components/NodeResultPanel.vue'
 import { RUN_STATE_KEY } from '../utils/run-inject'
 import { nodeRuntimeOf } from '../utils/run-state'
+import { unboundNamesOf } from '../utils/variable-sources'
 
 const props = defineProps({
   id: { type: String, required: true },
   data: { type: Object, default: () => ({}) },
 })
+
+/** 输入变量声明（归一化与可见性由 VariableTags 统一处理） */
+const inputs = computed(() => props.data?.inputs ?? [])
+
+/**
+ * 未绑定取值的输入变量名（交给 VariableTags 打告警色）：结束节点的输入要指向产出方，
+ * 运行时才组装得出最终结果；口径与其余卡片、运行前校验共用 `unboundNamesOf`。
+ */
+const unboundInputNames = computed(() => unboundNamesOf(inputs.value))
 
 /** 运行态由画布页 provide；卡片可能在无运行态的上下文复用，故允许缺省 */
 const runState = inject(RUN_STATE_KEY, null)
@@ -39,6 +50,9 @@ const runtime = computed(() => (runState ? nodeRuntimeOf(runState.value, props.i
         </button>
       </div>
 
+
+      <!-- 输入变量：结束节点把上游变量绑定成最终结果；未绑定取值的用告警色提示「尚未定义」 -->
+      <VariableTags label="输入" :variables="inputs" :undefined-names="unboundInputNames" />
 
       <!-- 目标 Handle（左侧）：结束节点只接收上游连线 -->
       <Handle id="in" type="target" :position="Position.Left" class="node-handle node-handle-target" />
@@ -138,7 +152,7 @@ const runtime = computed(() => (runState ? nodeRuntimeOf(runState.value, props.i
   color: var(--tb-text-secondary);
 }
 
-/* ===== 输出变量：标签行样式全部收在 VariableTags 里（四张卡片共用一份） ===== */
+/* ===== 变量行：标签行样式全部收在 VariableTags 里（五张卡片共用一份） ===== */
 
 /* ===== Handle ===== */
 .node-handle {

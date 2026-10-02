@@ -48,6 +48,7 @@ import {
   minNodeSizeOf,
   restackChildPositions,
 } from '../utils/iteration'
+import { unboundNamesOf } from '../utils/variable-sources'
 
 // 与 Vue Flow 内置节点保持一致：不把 label/selected 等透传属性渲染到 DOM 上
 defineOptions({ name: 'IterateNode', inheritAttrs: false })
@@ -103,6 +104,16 @@ const topAreaHeight = computed(() => measuredTopArea.value ?? estimatedTopAreaOf
 const inputVars = computed(() => props.data?.inputs ?? [])
 const paramVars = computed(() => props.data?.variableParameters ?? [])
 const outputVars = computed(() => props.data?.outputs ?? [])
+
+/**
+ * 未绑定取值的变量名（交给 VariableTags 打告警色），口径与大模型卡片、运行前校验同一份。
+ *
+ * 迭代容器同样要取值：输入是迭代源（`IterateNode#readItems`），迭代变量在每轮由
+ * `buildRoundInput` 从父状态读取——没绑定就是取不到值（0 轮 / 注入 `null`），不是「迭代节点没有
+ * 取值这个概念」。输出是本节点产出的，不存在「没取值」。
+ */
+const unboundInputNames = computed(() => unboundNamesOf(inputVars.value))
+const unboundParamNames = computed(() => unboundNamesOf(paramVars.value))
 
 /** 该组变量是否有可见行（空名不可见，与 VariableTags 的过滤口径一致） */
 const hasVisible = (list) =>
@@ -416,8 +427,18 @@ onUnmounted(() => {
           >嵌套 {{ nestedBlockCount }}</span>
         </div>
 
-        <VariableTags label="输入" :variables="inputVars" :last="!hasParams && !hasOutputs" />
-        <VariableTags label="迭代变量" :variables="paramVars" :last="!hasOutputs" />
+        <VariableTags
+          label="输入"
+          :variables="inputVars"
+          :undefined-names="unboundInputNames"
+          :last="!hasParams && !hasOutputs"
+        />
+        <VariableTags
+          label="迭代变量"
+          :variables="paramVars"
+          :undefined-names="unboundParamNames"
+          :last="!hasOutputs"
+        />
         <VariableTags label="输出" :variables="outputVars" />
       </div>
 

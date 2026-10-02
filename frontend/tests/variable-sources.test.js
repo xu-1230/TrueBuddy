@@ -11,11 +11,13 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { DEFAULT_FLOW_DEFINITION } from '../src/views/workflow2/default-flow.js'
 import { expandIteration } from '../src/views/workflow2/utils/iteration.js'
 import {
   injectOutputsOf,
   iterationOutputWarningsOf,
+  unboundNamesOf,
   upstreamOutputsOf,
 } from '../src/views/workflow2/utils/variable-sources.js'
 
@@ -98,6 +100,65 @@ test('顶层节点没有「每轮注入」变量', () => {
   const { nodes } = canvas()
   const container = nodes.find((node) => node.id === CONTAINER)
   assert.deepEqual(injectOutputsOf(nodes, container, END), [])
+})
+
+/* ===== 未绑定取值：卡片告警色与运行前校验共用的口径 ===== */
+
+test('未绑定取值：只认 { blockID, name } 引用，常量（content）不算绑定', () => {
+  const declared = [
+    'plain', // 字符串写法 = 只有名字
+    { name: 'named' }, // 对象写法、没有取值槽
+    { name: 'bound', input: { blockID: '100001', name: 'file_tree' } },
+    { name: 'half', input: { blockID: '100001' } }, // 有 blockID 没 name
+    { name: 'constant', input: { content: '固定文案' } },
+    { name: '' }, // 空名在卡片上不可见，忽略
+  ]
+  assert.deepEqual(
+    [...unboundNamesOf(declared)],
+    ['plain', 'named', 'half', 'constant'],
+    '常量不算绑定：后端 NodeStateReader#read 只看 blockID / name，写了常量运行时同样取 null',
+  )
+  assert.deepEqual([...unboundNamesOf(undefined)], [], '缺省安全')
+})
+
+test('未绑定取值：默认流程的所有输入 / 迭代变量都有来源（卡片不该出现告警色）', () => {
+  const { nodes } = canvas()
+  const offenders = nodes.flatMap((node) => [
+    ...[...unboundNamesOf(node.data?.inputs)].map((name) => `${node.id}:输入:${name}`),
+    ...[...unboundNamesOf(node.data?.variableParameters)].map((name) => `${node.id}:迭代变量:${name}`),
+  ])
+  assert.deepEqual(offenders, [])
+})
+
+/** 卡片源码（SFC 无法在零依赖的 node:test 里挂载，接线用源码契约守住） */
+const cardSourceOf = (file) =>
+  readFileSync(new URL(`../src/views/workflow2/node/${file}`, import.meta.url), 'utf8')
+
+test('卡片接线：输入 / 迭代变量行都挂上未绑定告警，且口径唯一', () => {
+  // 旧实现只有大模型卡片挂了这个 prop（VariableTags 的注释还写着「其余节点没有这个概念」），
+  // 于是迭代节点的迭代源完全没绑定时卡片毫无提示、人工确认同理——这里把三张卡片一起锁住
+  const cards = {
+    'LlmNode.vue': [['输入', 'unboundInputNames']],
+    'IterateNode.vue': [['输入', 'unboundInputNames'], ['迭代变量', 'unboundParamNames']],
+    'HumanNode.vue': [['输入', 'unboundInputNames']],
+    'EndNode.vue': [['输入', 'unboundInputNames']],
+  }
+
+  for (const [file, rows] of Object.entries(cards)) {
+    const source = cardSourceOf(file)
+    assert.match(
+      source,
+      /import \{ unboundNamesOf \} from '\.\.\/utils\/variable-sources'/,
+      `${file} 必须复用统一口径（unboundNamesOf），不能自己写一份判定`,
+    )
+    for (const [label, names] of rows) {
+      assert.match(
+        source,
+        new RegExp(`<VariableTags[^>]*label="${label}"[\\s\\S]*?:undefined-names="${names}"`),
+        `${file} 的「${label}」行要挂上未绑定告警`,
+      )
+    }
+  }
 })
 
 test('迭代输出与子块产出同名时不告警，不同名时告警', () => {

@@ -637,21 +637,67 @@ function belongsToContainer(edge, containerId, childIds) {
 }
 
 /**
+ * 迭代体内部连线的**字段口径**（唯一实现，两个来源共用，避免各写一份而漂移）：
+ * 1. 折叠定义展开时新建的内部边（{@link toCanvasInnerEdge}）；
+ * 2. 「迁移之后才变成迭代体内部」的连线归一化（{@link internalEdgePatchOf}）。
+ *
+ * 两个硬性口径（为什么必需见 {@link ITERATION_EDGE_STYLE} 与 `ITERATION_LAYER`）：
+ * - `zIndex` 必须抬到容器卡片之上，否则整段被不透明卡片盖住；
+ * - 连到**容器自身**的那一端必须落在内侧 handle（`iterate-in` / `iterate-out`）上，
+ *   否则会默认落到容器外侧的入 / 出 handle 上、路径从卡片边缘进出。
+ *
+ * @param {object} edge 连线（只需 `source` / `target`）
+ * @param {string} containerId 所属迭代容器 id
+ */
+function innerEdgeFieldsOf(edge, containerId) {
+  const fields = { ...ITERATION_EDGE_STYLE }
+  if (edge?.source === containerId) fields.sourceHandle = ITERATE_ENTRY_HANDLE
+  if (edge?.target === containerId) fields.targetHandle = ITERATE_EXIT_HANDLE
+  return fields
+}
+
+/**
  * 后端内部边 → 画布连线。
  * 连到容器自身的那一端要显式指定 handle，否则会默认落到容器外侧的入 / 出 handle 上。
  */
 function toCanvasInnerEdge(edge, containerId) {
   const source = edge?.sourceNodeID ?? edge?.source
   const target = edge?.targetNodeID ?? edge?.target
-  const canvasEdge = {
+  return {
     id: edge?.id ?? `e-${source}-${target}`,
     source,
     target,
-    ...ITERATION_EDGE_STYLE,
+    ...innerEdgeFieldsOf({ source, target }, containerId),
   }
-  if (source === containerId) canvasEdge.sourceHandle = ITERATE_ENTRY_HANDLE
-  if (target === containerId) canvasEdge.targetHandle = ITERATE_EXIT_HANDLE
-  return canvasEdge
+}
+
+/**
+ * 连线的**迭代体内部边归一化补丁**：该连线的两端现在都落在某个迭代体范围内、但字段还不是内部边
+ * 口径时，返回需要写回 vue-flow 的字段；本身就是顶层边、或已经合规时返回 `null`。
+ *
+ * 为什么必须要有这一步：节点被拖进 / 拖回容器时，画布页只写回节点（`planMigration`）并删掉跨层的
+ * 边，那些「原来在顶层画的、迁移后才变成内部」的线会留下顶层样式——没有 `zIndex` → 整段被不透明的
+ * 容器卡片盖住（表现为「线在 store 里、画布上却看不见」），handle 还挂在外侧 → 路径从卡片边缘进出。
+ * 内部边样式的另外两个来源（展开定义、手动新建）都是合规的，只有「迁移」这条路会漏，所以由本函数
+ * 统一补齐。
+ *
+ * 已合规的边取到的字段与本常量同源（引用相同），比较后补丁为空 —— 因此可以无脑整表过一遍，
+ * 也不会把用户 / 其它来源的边反复重写。
+ *
+ * @param {Array} nodes 画布节点（迁移之后的**最新**状态：节点必须已经落在容器里）
+ * @param {object} edge 画布连线
+ * @returns {object|null} 需要写回的字段；无需改动时为 null
+ */
+export function internalEdgePatchOf(nodes, edge) {
+  if (!edge?.id) return null
+  const ownerId = iterationOwnerOf(nodes, edge.source, edge.target)
+  if (!ownerId) return null
+  const fields = innerEdgeFieldsOf(edge, ownerId)
+  const patch = {}
+  Object.keys(fields).forEach((key) => {
+    if (edge[key] !== fields[key]) patch[key] = fields[key]
+  })
+  return Object.keys(patch).length ? patch : null
 }
 
 /** 画布子块 → 后端节点：只保留后端字段，去掉 parentNode / extent / dimensions 等画布运行时字段 */

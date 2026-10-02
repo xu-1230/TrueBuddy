@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  ITERATE_ENTRY_HANDLE,
+  ITERATE_EXIT_HANDLE,
   ITERATION_EDGE_STYLE,
   ITERATION_LAYER,
   ITERATION_LAYOUT,
   canvasTopOf,
   cardTopAreaHeightOf,
   childPositionOf,
+  internalEdgePatchOf,
   iterationChildExtent,
   iterationOwnerOf,
 } from '../src/views/workflow2/utils/iteration.js'
@@ -52,6 +55,66 @@ test('内部连线样式必须带层级，否则会被容器卡片整段盖住',
     ITERATION_LAYER.edge < ITERATION_LAYER.child,
     '内部连线要低于子块，否则线会画在子块卡片上面',
   )
+})
+
+test('迁移后变为迭代体内部的连线：归一化补丁补齐 zIndex 与内侧 handle', () => {
+  const nodes = canvas()
+  // 「顶层状态下画的、迁移后才变成内部」的连线：没有 zIndex，handle 用的是外侧的 out / in
+  const topLevelEdge = {
+    id: 'e-a-c1',
+    source: 'a',
+    target: 'c1',
+    sourceHandle: 'out',
+    targetHandle: 'in',
+    style: { stroke: 'var(--tb-text-primary)', strokeWidth: 1.5 },
+  }
+
+  const patch = internalEdgePatchOf(nodes, topLevelEdge)
+  assert.ok(patch, '两端都落在迭代体内的连线必须被归一化')
+  assert.equal(patch.zIndex, ITERATION_EDGE_STYLE.zIndex, '补齐 zIndex（否则被容器卡片整段盖住）')
+  assert.equal(patch.targetHandle, ITERATE_EXIT_HANDLE, '连到容器的那一端改用内侧 handle')
+  assert.equal(patch.sourceHandle, undefined, '子块那一端保持它自己的出连接点')
+
+  // 归一化之后与另一个来源（展开定义）口径一致；再取补丁为空 —— 所以画布页可以无脑整表过一遍
+  const normalized = { ...topLevelEdge, ...patch }
+  assert.deepEqual(
+    {
+      zIndex: normalized.zIndex,
+      animated: normalized.animated,
+      style: normalized.style,
+      markerEnd: normalized.markerEnd,
+    },
+    {
+      zIndex: ITERATION_EDGE_STYLE.zIndex,
+      animated: ITERATION_EDGE_STYLE.animated,
+      style: ITERATION_EDGE_STYLE.style,
+      markerEnd: ITERATION_EDGE_STYLE.markerEnd,
+    },
+  )
+  assert.equal(internalEdgePatchOf(nodes, normalized), null, '已合规的内部边不再产生补丁')
+
+  // 容器在起点一侧：改的是 sourceHandle
+  const entryPatch = internalEdgePatchOf(nodes, { id: 'e-c1-a', source: 'c1', target: 'a' })
+  assert.equal(entryPatch.sourceHandle, ITERATE_ENTRY_HANDLE)
+
+  // 同容器的两个子块之间：只需补内部边样式，不动 handle
+  const siblingPatch = internalEdgePatchOf(nodes, { id: 'e-a-b', source: 'a', target: 'b' })
+  assert.deepEqual(siblingPatch, {
+    zIndex: ITERATION_EDGE_STYLE.zIndex,
+    style: ITERATION_EDGE_STYLE.style,
+    animated: ITERATION_EDGE_STYLE.animated,
+    markerEnd: ITERATION_EDGE_STYLE.markerEnd,
+  })
+
+  // 顶层连线与脏数据：不处理
+  assert.equal(internalEdgePatchOf(nodes, { id: 'e-start-end', source: 'start', target: 'end' }), null)
+  assert.equal(
+    internalEdgePatchOf(nodes, { id: 'e-start-c1', source: 'start', target: 'c1' }),
+    null,
+    '主链路连入 / 连出容器不算内部边，不能被套上内部边样式',
+  )
+  assert.equal(internalEdgePatchOf(nodes, null), null)
+  assert.equal(internalEdgePatchOf([], { id: 'e-a-b', source: 'a', target: 'b' }), null, '空画布不报错')
 })
 
 test('标记与子块之间那段内部连线足够长（可点性只能靠长度）', () => {

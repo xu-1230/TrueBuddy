@@ -1,6 +1,6 @@
 <script setup>
-import { computed, markRaw, onMounted, onUnmounted, provide, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, h, markRaw, onMounted, onUnmounted, provide, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import '@vue-flow/core/dist/style.css'
@@ -23,6 +23,7 @@ import {
 } from './utils/node-factory'
 import { hasNodeDragPayload, readNodeDragPayload } from './utils/node-drag'
 import { NODE_META, metaOf } from './utils/node-meta'
+import { runValidationErrors } from './utils/run-validation'
 import {
   centeredPositionOf,
   containerAtPoint,
@@ -34,7 +35,13 @@ import {
 } from './utils/iteration-membership'
 import { buildResumeUrl, buildRunDefinition, WORKFLOW_API } from '@/api/workflow'
 import { readWorkflowStream } from '@/utils/workflow-sse'
-import { ITERATE_NODE_TYPE, ITERATION_EDGE_STYLE, expandIteration, iterationOwnerOf } from './utils/iteration'
+import {
+  ITERATE_NODE_TYPE,
+  ITERATION_EDGE_STYLE,
+  expandIteration,
+  internalEdgePatchOf,
+  iterationOwnerOf,
+} from './utils/iteration'
 import { ITERATION_DROP_TARGET_KEY, RUN_ACTION_KEY, RUN_STATE_KEY } from './utils/run-inject'
 import { DEFAULT_FLOW_DEFINITION } from './default-flow'
 import { applyRunEvent, beginRun, createRunState, finishRun, resumeRun } from './utils/run-state'
@@ -49,6 +56,7 @@ const {
   removeEdges,
   removeNodes,
   screenToFlowCoordinate,
+  setEdges,
   updateNode,
 } = useVueFlow()
 
@@ -357,15 +365,22 @@ const removeCrossLevelEdges = () => {
 }
 
 /**
- * 修饰键状态（Ctrl / Meta）由**全局**键盘监听维护，不再依赖 Vue Flow 拖拽事件携带的 `ctrlKey`。
+ * 「按住 Ctrl / Meta 把迭代子块拖出容器」的判据：直接读**当前手势**的 `pointerdown` 事件。
  *
- * 原因：Windows 上 Vue Flow 把 Ctrl 当成多选键（`multiSelectionKeyCode` 默认 `"Control"`，见
- * `@vue-flow/core` 的 `defaultVueFlowProps`），且节点拖拽的夹取范围在 `pointerdown` 之后「超过
- * 拖拽阈值」那一刻就被快照固定（`getDragItems`），拖拽中途改 store 解不开夹取。所以必须在快照
- * 生成之前——即 `pointerdown` 捕获阶段——若节点是迭代子块且按住修饰键，就把它即时提为顶层，
- * 让这次拖拽全程自由。
+ * 时机：节点拖拽的夹取范围在 `pointerdown` 之后「超过拖拽阈值」那一刻就被 Vue Flow 快照固定
+ * （`getDragItems` 取 `node.extent`），拖拽中途改 store 解不开夹取。所以必须在快照生成之前——
+ * 即 `pointerdown` 捕获阶段——若节点是迭代子块且按住修饰键，就把它即时提为顶层，让这次拖拽全程自由。
+ *
+ * 为什么用事件自带的修饰键、而不是维护一份全局键盘状态：`pointerdown` 是原生 PointerEvent，
+ * 其 `ctrlKey` / `metaKey` 就是这一下手势的真实状态；而全局 `keydown` / `keyup` 维护的状态机一定会
+ * **长期失准**——`keyup` 事件在修饰键抬起时 `ctrlKey` / `metaKey` 已经是 `false`，
+ * `Boolean(event.ctrlKey || event.metaKey)` 这种守卫永远进不了复位分支。于是「Ctrl 拖出去过一次」
+ * 之后，任何一次落在子块上的按下都会被误判成 Ctrl 解约束：子块看着还在容器里，却不再被 `extent`
+ * 夹住，不按 Ctrl 也能拖出容器（回归用例见 tests/repro-iteration-reattach.test.js）。
+ *
+ * 注意 Windows 上 Vue Flow 默认把 Ctrl 当多选键（`multiSelectionKeyCode` 默认 `"Control"`），
+ * 画布页已把它改成 Alt（见模板），所以 Ctrl 在这里只承担「解约束」这一个语义。
  */
-const modifierActive = ref(false)
 const isModifierEvent = (event) => Boolean(event?.ctrlKey || event?.metaKey)
 
 /** 这次拖拽是否因按住修饰键而在 `pointerdown` 时解除了子块约束（松手结算时用） */
@@ -373,32 +388,23 @@ const detachArmed = ref(false)
 /** 解除约束前子块所属的容器 id（脱离后用于清掉它与原容器的内部连线） */
 const detachFrom = ref(null)
 
-/** 全局监听 Ctrl / Meta：按下即激活，松开 / 失焦即复位 */
-const onModifierKeyDown = (event) => { if (isModifierEvent(event)) modifierActive.value = true }
-const onModifierKeyUp = (event) => { if (isModifierEvent(event)) modifierActive.value = false }
-const onWindowBlur = () => { modifierActive.value = false }
-
-onMounted(() => {
-  window.addEventListener('keydown', onModifierKeyDown)
-  window.addEventListener('keyup', onModifierKeyUp)
-  window.addEventListener('blur', onWindowBlur)
-})
-onUnmounted(() => {
-  window.removeEventListener('keydown', onModifierKeyDown)
-  window.removeEventListener('keyup', onModifierKeyUp)
-  window.removeEventListener('blur', onWindowBlur)
-})
-
 /**
- * `pointerdown` 捕获阶段：若落在迭代子块上且按住修饰键，立即把子块提为顶层节点。
+ * `pointerdown` 捕获阶段：若落在迭代子块上且**本次按下**按住修饰键，立即把子块提为顶层节点。
  *
+ * 修饰键取本事件自带的 `ctrlKey` / `metaKey`（判定见 {@link isModifierEvent}），不依赖任何全局状态。
  * 时机比 Vue Flow 的拖拽快照（超过拖拽阈值后才取 `getDragItems`）更早，因此快照会捕获到
  * 「已解约束」的状态，整段拖拽都自由——子块得以被拖到容器外。具体改动：清掉 `parentNode`
  * 与 `extent`、把层级设回 0，并把 `position` 从「相对容器」换算成「绝对坐标」（用当前
  * `computedPosition`，它本来就是绝对坐标），否则解约束瞬间节点会跳回原点。
  */
 const handleCanvasPointerDown = (event) => {
-  if (!modifierActive.value) return
+  // 每次按下都是一次全新的手势：先清掉上一轮的解约束标记。
+  // 必须清——「按住 Ctrl 点一下子块」不会产生拖拽，Vue Flow 也就不会派发 `node-drag-stop`
+  // （`getDragItems` 为空时不触发 onStop），标记会一直挂到下一次拖拽：那时若松手落在空白，
+  // 就会被当成「脱离容器」，把「被拖节点 ↔ 上一轮那个容器」这条与本轮无关的连线删掉。
+  detachArmed.value = false
+  detachFrom.value = null
+  if (!isModifierEvent(event)) return
   const nodeEl = event?.target?.closest?.('.vue-flow__node')
   const nodeId = nodeEl?.getAttribute?.('data-id')
   if (!nodeId) return
@@ -481,6 +487,9 @@ const settleNodeLevel = (node, event, fromContainer = null) => {
     if (!latest) return
     if (plan) updateNode(latest.id, plan)
     cleanupCrossLevelEdges(node.id, { detach: !target })
+    // 「迭代体内部」这个身份是迁移之后才成立的：先删掉跨层的边，再把它新带来的内部连线
+    // 补成内部边口径，否则它会带着顶层样式被不透明的容器卡片盖住（见 normalizeIterationEdges）
+    normalizeIterationEdges()
   }, 0)
 }
 
@@ -512,6 +521,34 @@ const cleanupCrossLevelEdges = (nodeId, { detach = false, fromContainer = null }
   if (removed) {
     ElMessage.warning(`已删除 ${removed} 条跨层连线（迭代体内外不能直接相连）`)
   }
+}
+
+/**
+ * 把「迁移之后才变成迭代体内部」的连线归一到内部边口径（迭代体样式 + 内侧 handle）。
+ *
+ * 为什么需要：入容器（含跨容器移动）只写回节点与删掉跨层的边，而「属于某个迭代体内部」这个身份
+ * 是迁移**之后**才成立的——那些原来在顶层画的线不会自己长出 `zIndex`，于是被不透明的容器卡片
+ * 整段盖住（线在 store 里、画布上却看不见），handle 还挂在外侧则让路径从卡片边缘进出。
+ * 口径本身收在 `utils/iteration` 的 `internalEdgePatchOf` 里，这里只负责写回。
+ *
+ * 写回用 `setEdges` 整表替换：Vue Flow 没有「按字段更新单条边」的动作（`updateEdge` 是「改接」
+ * 语义、`applyEdgeChanges` 只认 select / remove 之类），而未命中的边原样引用回写、不会引起重渲染。
+ * 已合规的边拿不到补丁，所以整表过一遍的代价可以忽略（节点数与连线数都很小）。
+ *
+ * @returns {number} 本次被写回的连线条数
+ */
+const normalizeIterationEdges = () => {
+  const nodes = getNodes.value
+  const patches = new Map()
+  getEdges.value.forEach((edge) => {
+    const patch = internalEdgePatchOf(nodes, edge)
+    if (patch) patches.set(edge.id, patch)
+  })
+  if (!patches.size) return 0
+  setEdges(getEdges.value.map((edge) => (
+    patches.has(edge.id) ? { ...edge, ...patches.get(edge.id) } : edge
+  )))
+  return patches.size
 }
 
 /** Vue Flow 节点拖拽结束：先按落点结算层级，再清掉拖拽高亮与本轮解约束标记 */
@@ -571,7 +608,25 @@ const execute = async (url, options = {}) => {
 }
 
 /**
+ * 运行前校验未通过：把全部原因一次列给用户（对应 flowgram 示例 4 里 `result.errors?.forEach` 的提示）。
+ *
+ * 用 vnode 列表而不是 HTML 字符串：错误信息里会带上用户填写的节点名称，不能当 HTML 渲染。
+ */
+const showRunValidationErrors = (errors) => {
+  // `alert` 返回的 Promise 在用户点右上角关闭时以 `'cancel'` reject，这里必须吞掉，
+  // 否则控制台会出现未捕获的 promise rejection（与 NodeDataDrawer 里 try/catch 吞掉「取消」同因）
+  ElMessageBox.alert(
+    h('div', errors.map((message) => h('div', message))),
+    '运行前校验未通过',
+    { type: 'warning', confirmButtonText: '知道了' },
+  ).catch(() => {})
+}
+
+/**
  * 工具栏「运行」：把当前画布提交给后端执行，节点进度与产出通过 SSE 回传。
+ *
+ * 提交前先做一次**运行前校验**（复刻 flowgram 运行时的 TaskValidate：先校验再运行，见
+ * utils/run-validation）：不通过就拦住本次运行并把原因全部列出，不进入执行。
  */
 const handleRun = () => {
   if (runState.value.streaming) {
@@ -583,6 +638,16 @@ const handleRun = () => {
   const definition = buildRunDefinition(getNodes.value, getEdges.value)
   if (!definition.nodes.length) {
     ElMessage.warning('画布上还没有节点，先添加节点再运行')
+    return
+  }
+  console.log("测试")
+  // 校验读的是与提交同一份 store 实时数据（刚做过悬空子块清理），不会出现「校验的是旧画布」
+  const errors = runValidationErrors(getNodes.value, getEdges.value)
+  console.log(errors)
+  // 校验通过时页面不会有任何反馈（只有失败才弹窗），开发期留一条日志，便于确认「这次校验到底跑没跑」
+  if (import.meta.env.DEV) console.debug('[workflow] 运行前校验', errors.length ? errors : '通过')
+  if (errors.length) {
+    showRunValidationErrors(errors)
     return
   }
   execute(WORKFLOW_API.run, { body: definition })

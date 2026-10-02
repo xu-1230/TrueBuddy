@@ -13,6 +13,7 @@ import VariableTags from '../components/VariableTags.vue'
 import NodeResultPanel from '../components/NodeResultPanel.vue'
 import { RUN_ACTION_KEY, RUN_STATE_KEY } from '../utils/run-inject'
 import { nodeRuntimeOf, RUN_STATUS } from '../utils/run-state'
+import { unboundNamesOf } from '../utils/variable-sources'
 
 // 与 Vue Flow 内置节点保持一致：不把 label/selected 等透传属性渲染到 DOM 上
 defineOptions({ name: 'HumanNode', inheritAttrs: false })
@@ -24,6 +25,12 @@ const props = defineProps({
 
 const inputs = computed(() => props.data?.inputs ?? [])
 const outputs = computed(() => props.data?.outputs ?? [])
+
+/**
+ * 未绑定取值的输入变量名（交给 VariableTags 打告警色）：口径与大模型 / 迭代卡片、
+ * 运行前校验共用 `unboundNamesOf`。输出是本节点产出的，不存在「没取值」。
+ */
+const unboundInputNames = computed(() => unboundNamesOf(inputs.value))
 
 /** 运行态与运行动作由画布页 provide；卡片可能在无运行态的上下文复用，故允许缺省 */
 const runState = inject(RUN_STATE_KEY, null)
@@ -55,7 +62,7 @@ const confirm = () => {
       </div>
 
       <!-- 输入变量：人工确认的待确认内容来源 -->
-      <VariableTags label="输入" :variables="inputs" :last="false" />
+      <VariableTags label="输入" :variables="inputs" :undefined-names="unboundInputNames" :last="false" />
 
       <!-- 输出变量 -->
       <VariableTags label="输出" :variables="outputs" />
