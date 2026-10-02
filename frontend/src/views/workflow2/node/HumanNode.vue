@@ -71,7 +71,8 @@ const confirm = () => {
     <template v-if="runtime">
       <NodeResultPanel :runtime="runtime" :node-id="id" />
 
-      <div v-if="waiting" class="node-confirm">
+      <!-- 等待确认区不属于节点本体：终止 click 冒泡，避免点输入框 / 「确认继续」时打开节点抽屉 -->
+      <div v-if="waiting" class="node-confirm nodrag" @click.stop>
         <input
           v-model="content"
           class="node-confirm__input nodrag"

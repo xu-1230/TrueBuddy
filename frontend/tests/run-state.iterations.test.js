@@ -14,6 +14,7 @@ import {
   beginRun,
   createRunState,
   iterationProgressOf,
+  toListLength,
 } from '../src/views/workflow2/utils/run-state.js'
 
 const CONTAINER_ID = '132996'
@@ -75,4 +76,57 @@ test('兜底：事件里没有轮次下标时退回按子块事件累加', () =>
   }
 
   assert.equal(iterationProgressOf(state, CONTAINER_ID).done, 2)
+})
+
+test('标量迭代源按单项列表计 1 轮（与后端 toList 同口径）', () => {
+  let state = beginRun(createRunState(), canvasNodes())
+  state = applyRunEvent(state, 'node', {
+    node: SOURCE_ID,
+    state: { [SOURCE_ID]: { description: '只有一项' } },
+  })
+
+  assert.equal(iterationProgressOf(state, CONTAINER_ID).total, 1, '标量会被后端当成单项列表跑一轮')
+})
+
+test('兜底累加不会让已完成轮数超过总轮数', () => {
+  let state = beginRun(createRunState(), canvasNodes())
+  state = withTotal(state, 2)
+
+  // 老后端：事件不带轮次下标，且每轮的每个子块都各推一次
+  for (let round = 0; round < 5; round += 1) {
+    for (const nodeId of [CHILD_A, CHILD_B]) {
+      state = applyRunEvent(state, 'node', { node: nodeId, state: { [nodeId]: { result: '模拟文本1' } } })
+    }
+  }
+
+  const progress = iterationProgressOf(state, CONTAINER_ID)
+  assert.equal(progress.done, 2, '累加多算的部分被总轮数钳住，文案不会出现「10/2 轮」')
+  assert.equal(progress.total, 2)
+})
+
+test('画布上没有子块的迭代节点不登记进度（嵌套迭代体不显示误导性的 0/N）', () => {
+  const nodes = [
+    {
+      id: 'outer',
+      type: '4',
+      data: { inputs: [{ name: 'items', type: 'list', input: { blockID: SOURCE_ID, name: 'items' } }] },
+    },
+    // 内层嵌套迭代节点：画布只展开一层，它没有任何画布子块
+    { id: 'inner', type: '4', parentNode: 'outer', data: {} },
+    { id: 'leaf', type: '3', parentNode: 'outer' },
+    { id: SOURCE_ID, type: '3' },
+  ]
+
+  const state = beginRun(createRunState(), nodes)
+
+  assert.notEqual(iterationProgressOf(state, 'outer'), null, '有子块的容器照常登记')
+  assert.equal(iterationProgressOf(state, 'inner'), null, '没有画布子块的容器不登记，卡片退回产出个数')
+})
+
+test('toListLength 覆盖后端 toList 的三种归一化结果', () => {
+  assert.equal(toListLength([1, 2, 3]), 3)
+  assert.equal(toListLength(null), 0, 'null 在后端是空列表，一轮都不跑')
+  assert.equal(toListLength(undefined), 0)
+  assert.equal(toListLength('标量'), 1)
+  assert.equal(toListLength({ a: 1 }), 1)
 })

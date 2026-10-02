@@ -48,6 +48,25 @@ const listSourceOf = (inputs = []) => {
 }
 
 /**
+ * 迭代项个数：与后端 `NodeStateReader#toList` 同口径（见 12-工作流规范 §4.5）。
+ *
+ * 后端把迭代源归一化成一个列表：`List` / 数组原样使用，`null` 返回空列表（一轮都不跑），
+ * 其余标量 / 对象按**单项列表**处理（跑 1 轮）。前端据此推断总轮数，不能只认数组——
+ * 否则迭代源是标量时总轮数恒为 0，界面上只显示「1 轮」且进度条永远停在 0%。
+ *
+ * @param {*} value 迭代源节点的产出
+ * @returns {number} 轮数
+ */
+export const toListLength = (value) => {
+  if (Array.isArray(value)) return value.length
+  if (value === null || value === undefined) return 0
+  return 1
+}
+
+/** 已完成轮次不会超过总轮数；总轮数未知（0）时不设上限（迭代源产出还没到） */
+const clampDone = (done, total) => (total > 0 ? Math.min(done, total) : Math.max(done, 0))
+
+/**
  * 迭代进度建档：从画布节点推导「容器 id → 子块集合 + 迭代源引用」。
  * 总轮数取迭代源数组的长度；已完成轮次取后端事件里携带的权威轮次下标
  * （`state[容器id].index`，见 {@link roundOfEvent}），拿不到时才退回「按子块事件累加」。
@@ -57,10 +76,15 @@ const iterationPlanOf = (nodes = []) => {
   const plan = {}
   for (const node of list) {
     if (String(node.type) !== ITERATE_TYPE) continue
+    /** 迭代体内的子块 id 集合：命中一次即完成一轮 */
+    const children = new Set(list.filter((child) => child.parentNode === node.id).map((child) => child.id))
+    // 画布只展开一层迭代体：内层嵌套迭代节点在画布上没有子块，收不到任何子块事件。
+    // 登记它只会让卡片挂上一个永远不动的「0/N 轮」，因此跳过（进度查询返回 null，
+    // 徽标退回「产出变量个数」，内层的存在感由卡片上的「嵌套 N」徽标承担）。
+    if (!children.size) continue
     plan[node.id] = {
-      /** 迭代体内的子块 id 集合：命中一次即完成一轮 */
-      children: new Set(list.filter((child) => child.parentNode === node.id).map((child) => child.id)),
-      /** 迭代源引用：其产出到达后据数组长度得出总轮数 */
+      children,
+      /** 迭代源引用：其产出到达后据列表长度得出总轮数 */
       source: listSourceOf(node.data?.inputs),
       done: 0,
       total: 0,
@@ -91,15 +115,15 @@ const withIterationProgress = (state, nodeId, eventState) => {
     let next = info
     if (info.children.has(nodeId)) {
       const round = roundOfEvent(eventState, containerId)
-      next = round
-        // 取事件自带的轮次（幂等：同轮多个子块事件都取到同一个轮次，不会重复计数）
-        ? { ...next, done: Math.max(next.done, round) }
-        // 兜底：事件里没有轮次下标时退回「按子块事件累加」（含多子块时会多算，仅用于兼容旧后端）
-        : { ...next, done: next.done + 1 }
+      // 取事件自带的轮次（幂等：同轮多个子块事件都取到同一个轮次，不会重复计数）；
+      // 兜底分支按子块事件累加，含多个子块时会多算成 N 倍——用总轮数钳住，不让文案出现「4/2 轮」
+      const done = round ? Math.max(next.done, round) : next.done + 1
+      next = { ...next, done: clampDone(done, next.total) }
     }
     if (info.source?.blockID === nodeId) {
-      const value = eventState?.[nodeId]?.[info.source.name]
-      if (Array.isArray(value)) next = { ...next, total: value.length }
+      // 总轮数与后端 `NodeStateReader#toList` 同口径：标量源也算 1 轮
+      const total = toListLength(eventState?.[nodeId]?.[info.source.name])
+      if (total !== next.total) next = { ...next, total, done: clampDone(next.done, total) }
     }
     if (next !== info) {
       iterations[containerId] = next

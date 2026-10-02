@@ -2,7 +2,6 @@
 import { computed, inject } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { SwitchButton } from '@element-plus/icons-vue'
-import VariableTags from '../components/VariableTags.vue'
 import NodeResultPanel from '../components/NodeResultPanel.vue'
 import { RUN_STATE_KEY } from '../utils/run-inject'
 import { nodeRuntimeOf } from '../utils/run-state'

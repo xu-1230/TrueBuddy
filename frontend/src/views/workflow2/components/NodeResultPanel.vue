@@ -33,10 +33,17 @@ const toggleJson = (name) => {
 </script>
 
 <template>
+  <!--
+    结果面板不属于节点本体：在根元素上终止 click 冒泡，避免被 Vue Flow 识别成「节点点击」
+    （节点根元素上绑着 onClick → nodeClick，画布页据此打开节点数据抽屉）。
+    同时补 `nodrag`（Vue Flow 的 noDragClassName 默认就是它）：否则在面板上按住拖动会拖走节点，
+    面板内的文本也没法选中。
+  -->
   <div
     v-if="!nested"
-    class="node-result"
+    class="node-result nodrag"
     :class="`node-result--${status}`"
+    @click.stop
   >
     <div class="node-result__status">
       <span class="node-result__dot" />

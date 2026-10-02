@@ -1,6 +1,7 @@
 <script setup>
 /**
- * 画布左上角竖向工具栏（workflow2 版）。
+ * 画布左侧浮层里的竖向工具栏（workflow2 版），与节点库面板并排停靠（定位由 WorkflowView 的
+ * `.wf-left-rail` 负责，本组件不再自己定位）。
  *
  * 只负责「用户意图」：把按钮点击转成事件发给 WorkflowView，真正的行为由画布页决定 ——
  * 画布页会把当前画布提交给后端执行，并在执行期间把 `running` 置为 true 禁用按钮。
@@ -35,13 +36,10 @@ defineEmits(['run'])
 </template>
 
 <style scoped>
-/* ===== 竖向工具条：浮在画布左上角，不参与画布布局 ===== */
+/* ===== 竖向工具条：由画布页的左侧浮层容器（.wf-left-rail）负责定位与排布 ===== */
 .tools-wrap {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  z-index: 10;
   display: flex;
+  flex-shrink: 0;
   flex-direction: column;
   gap: 4px;
   padding: 4px;

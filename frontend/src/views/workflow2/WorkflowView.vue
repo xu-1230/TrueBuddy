@@ -1,5 +1,5 @@
 <script setup>
-import { computed, markRaw, onUnmounted, provide, ref } from 'vue'
+import { computed, markRaw, onMounted, onUnmounted, provide, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -12,15 +12,45 @@ import IterateNode from './node/IterateNode.vue'
 import HumanNode from './node/HumanNode.vue'
 import ConnectionLine from './ConnectionLine.vue'
 import NodeDataDrawer from './components/NodeDataDrawer.vue'
+import NodePanel from './components/NodePanel.vue'
 import ToolsWrap from './components/ToolsWrap.vue'
+import {
+  createWorkflowNode,
+  nextNodeId,
+  nextNodePosition,
+  nominalSizeOf,
+  uniqueLabelOf,
+} from './utils/node-factory'
+import { hasNodeDragPayload, readNodeDragPayload } from './utils/node-drag'
+import { NODE_META, metaOf } from './utils/node-meta'
+import {
+  centeredPositionOf,
+  containerAtPoint,
+  descendantIdsOf,
+  invalidEdgesOf,
+  isCrossLevelEdge,
+  nodeCenterOf,
+  planMigration,
+} from './utils/iteration-membership'
 import { buildResumeUrl, buildRunDefinition, WORKFLOW_API } from '@/api/workflow'
 import { readWorkflowStream } from '@/utils/workflow-sse'
-import { RUN_ACTION_KEY, RUN_STATE_KEY } from './utils/run-inject'
-import { ITERATE_NODE_TYPE, expandIteration } from './utils/iteration'
+import { ITERATE_NODE_TYPE, ITERATION_EDGE_STYLE, expandIteration, iterationOwnerOf } from './utils/iteration'
+import { ITERATION_DROP_TARGET_KEY, RUN_ACTION_KEY, RUN_STATE_KEY } from './utils/run-inject'
 import { DEFAULT_FLOW_DEFINITION } from './default-flow'
 import { applyRunEvent, beginRun, createRunState, finishRun, resumeRun } from './utils/run-state'
 
-const { addEdges, getEdges} = useVueFlow()
+const {
+  addEdges,
+  addNodes,
+  getEdges,
+  getNodes,
+  getSelectedEdges,
+  getSelectedNodes,
+  removeEdges,
+  removeNodes,
+  screenToFlowCoordinate,
+  updateNode,
+} = useVueFlow()
 
 /**
  * 节点类型注册表：与后端 NodeActionFactory 的数字编码一一对应。
@@ -39,6 +69,10 @@ const runState = ref(createRunState())
 provide(RUN_STATE_KEY, computed(() => runState.value))
 provide(RUN_ACTION_KEY, { confirm: (nodeId, content) => confirmNode(nodeId, content) })
 
+/** 拖拽命中的迭代容器：容器卡片据此高亮自己，让用户在松手前知道节点会落到哪 */
+const iterationDropTarget = ref(null)
+provide(ITERATION_DROP_TARGET_KEY, iterationDropTarget)
+
 
 
 /** 连线统一样式：新建连线与初始化连线共用，保证两种来源的线完全一致 */
@@ -52,12 +86,8 @@ const CANVAS_EDGE_STYLE = {
 const CANVAS_INPUT_HANDLE = 'in'
 const CANVAS_OUTPUT_HANDLE = 'out'
 
-/** 节点所属的迭代容器 id；顶层节点返回 null */
-const containerIdOf = (nodeId) =>
-  nodes.value.find((node) => node.id === nodeId)?.parentNode ?? null
-
 const handleConnect = (connection) => {
-  const { source, target, sourceHandle = null, targetHandle = null } = connection
+  const { source, target } = connection
 
   if (source === target) {
     ElMessage.warning('不能把节点连到它自己')
@@ -65,29 +95,92 @@ const handleConnect = (connection) => {
   }
 
   // 迭代体是容器的内部结构：子块只能和同一容器内的节点（含容器自身）连线。
-  // 跨越边界的边在折叠成 blocks 之后，其中一端已不在顶层节点里，后端建图会直接失败。
-  const sourceContainer = containerIdOf(source)
-  const targetContainer = containerIdOf(target)
-  const sameLevel = sourceContainer === targetContainer
-  const insideItself = sourceContainer === target || targetContainer === source
-  if (!sameLevel && !insideItself) {
+  // 跨越边界的边在折叠成 blocks 之后，其中一端已不在同一张图里，后端建图会直接失败。
+  // 判据收在 utils/iteration-membership 里：拖拽迁移节点后要用**同一套规则**清理跨层边，
+  // 两处各写一份必然漂移。
+  if (isCrossLevelEdge(getNodes.value, source, target)) {
     ElMessage.warning('迭代体内部的节点只能和同一迭代容器内的节点连线')
     return
   }
 
-  const duplicated = getEdges.value.some(
-    (edge) =>
-      edge.source === source &&
-      edge.target === target &&
-      (edge.sourceHandle ?? null) === sourceHandle &&
-      (edge.targetHandle ?? null) === targetHandle,
-  )
+  /**
+   * 同一对节点之间只允许一条连线：按「节点对」判重，**刻意忽略 handle**。
+   *
+   * 迭代体内部连线来自定义时两端不带 handle（`容器 → 子块` 就等于子图的 START → 子块），
+   * 而用户在同一对节点上手连时带的是内侧 handle（`iterate-in` / `in`）。只按 handle 比较会
+   * 把它们当成两条不同的边，于是画布上叠加出语义完全相同的重复连线——折叠后两条都会写进
+   * 容器的 `edges` 提交给后端（子图里会对同一对节点重复 addEdge）。
+   */
+  const duplicated = getEdges.value.some((edge) => edge.source === source && edge.target === target)
   if (duplicated) {
-    ElMessage.warning('这两个节点之间已经有连线了')
+    ElMessage.warning('这两个节点之间已经有连线了；点选画布上那条连线再按 Delete 即可删除')
     return
   }
 
-  addEdges([{ ...connection, ...CANVAS_EDGE_STYLE }])
+  /**
+   * 迭代体**内部**的新连线必须套内部边样式，关键是 `zIndex`：Vue Flow 默认把连线渲染在节点层
+   * 之下，而迭代容器本身就是一张不透明卡片，漏掉 `zIndex` 的新建内部连线会被卡片底色整段盖住——
+   * 表现为「连线已经建好了（store 里有）、画布上却看不见」，再连同一对节点又提示「已有连线」。
+   * 顶层连线沿用画布样式，两者除 `zIndex` 外完全一致（见 utils/iteration 的 ITERATION_EDGE_STYLE）。
+   */
+  const edgeStyle = iterationOwnerOf(getNodes.value, source, target)
+    ? ITERATION_EDGE_STYLE
+    : CANVAS_EDGE_STYLE
+  addEdges([{ ...connection, ...edgeStyle }])
+}
+
+/** 触发删除的按键：Windows / Linux 习惯的 Delete 与 macOS 习惯的 Backspace */
+const DELETE_KEYS = new Set(['Backspace', 'Delete'])
+
+/** 输入类元素：在这些元素里按删除键只编辑文本，不能删节点 */
+const INPUT_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
+
+const isEditingElement = (target) => {
+  if (!target || typeof target !== 'object') return false
+  if (INPUT_TAGS.has(target.tagName)) return true
+  return target.isContentEditable === true
+}
+
+/**
+ * 画布删除键（统一接管 `Backspace` / `Delete`）。
+ *
+ * 必须自己接管：Vue Flow 的默认删除只删「节点本身」，**不删挂在它下面的迭代体子块**
+ * （`removeNodes` 的 `removeChildren` 默认 `false`）。容器被删后子块会变成悬空节点，
+ * 再次运行时被当成顶层节点提交、由后端自动接 `START`/`END` 真实执行。
+ * 因此画布显式关闭默认删除键（模板里的 `:delete-key-code="null"`），由这里级联删除子块。
+ */
+const handleDeleteKey = (event) => {
+  if (!DELETE_KEYS.has(event.key)) return
+  // 抽屉与节点内的输入框（如人工确认）里按删除键属于文本编辑
+  if (isEditingElement(event.target)) return
+
+  const selectedNodes = getSelectedNodes.value
+  const selectedEdges = getSelectedEdges.value
+  if (!selectedNodes.length && !selectedEdges.length) return
+
+  event.preventDefault()
+  if (selectedEdges.length) removeEdges(selectedEdges)
+  if (selectedNodes.length) {
+    // 第三个参数：连同容器内的子块一起删（Vue Flow 会递归删除全部后代并清理它们的连线）
+    removeNodes(selectedNodes, true, true)
+    // 抽屉正在编辑的节点（或它的子块）被一并删掉时关掉抽屉，避免抽屉继续引用一个已不存在的节点
+    if (activeNodeId.value && !getNodes.value.some((node) => node.id === activeNodeId.value)) {
+      drawerVisible.value = false
+    }
+  }
+}
+
+/**
+ * 清理悬空的迭代体子块：`parentNode` 指向的容器已不存在时，把该节点一并删掉。
+ *
+ * 作为「任何删除路径产生的残留」的兜底（例如容器是被外部数据、旧版本代码或键盘以外的途径移除的），
+ * 保证提交给后端的定义里不会出现孤儿子块。
+ */
+const cleanOrphanChildren = () => {
+  const ids = new Set(getNodes.value.map((node) => node.id))
+  const orphans = getNodes.value.filter((node) => node.parentNode && !ids.has(node.parentNode))
+  if (!orphans.length) return
+  removeNodes(orphans, true, true)
 }
 
 /**
@@ -98,10 +191,291 @@ const drawerVisible = ref(false)
 const activeNodeId = ref(null)
 
 
-function onNodeClick({ event, node }) {
+function onNodeClick({ node }) {
   activeNodeId.value = node.id
   drawerVisible.value = true
 }
+
+/**
+ * 画布上已存在的节点类型集合，喂给节点库面板做「开始 / 结束」的唯一性拦截。
+ *
+ * 只读每个节点的 `type`：Vue Flow 拖动节点时改的是 `position`，不会命中这里依赖的属性，
+ * 因此拖拽不会带着面板一起重算（面板是纯展示块，没必要跟着画布每帧刷新）。
+ */
+const existingTypes = computed(() => new Set(getNodes.value.map((node) => node?.type)))
+
+/** 画布根容器：点击添加时用它量出可视区域，把新节点摆到正中 */
+const canvasRef = ref(null)
+
+/**
+ * 点击添加的默认落点：画布可视区域的正中（画布坐标，节点左上角）。
+ *
+ * 把画布 DOM 的中心点换算成画布坐标，再按节点标称尺寸折算成左上角——`position` 是左上角，
+ * 不减半个尺寸的话节点会整体偏向右下。这样新节点无论当前视口停在哪里、缩放多少，
+ * 都出现在用户正在看的那块区域中间（拖拽添加仍按指针落位，不走这里）。
+ *
+ * @param {string} type 节点类型编码
+ * @returns {{x: number, y: number}|null} 量不出画布尺寸时返回 null，由调用方回落工厂的默认落点
+ */
+const viewportCenterNodePosition = (type) => {
+  const canvas = canvasRef.value
+  if (!canvas) return null
+  const rect = canvas.getBoundingClientRect()
+  if (!rect.width || !rect.height) return null
+
+  const center = screenToFlowCoordinate({
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+  })
+  const { width, height } = nominalSizeOf(type)
+  return { x: Math.round(center.x - width / 2), y: Math.round(center.y - height / 2) }
+}
+
+/**
+ * 添加节点到画布：合成节点对象后写入 Vue Flow store。
+ *
+ * id / 名称 / 默认结构全部由 `utils/node-factory` 的纯函数决定（口径见该模块注释），
+ * 这里只负责把 store 的实时数据喂进去。类型先做一次白名单校验，避免脏类型进了画布后
+ * 渲染成「未知节点」还带着一个占用的 id。
+ *
+ * @param {string} type 节点类型编码（面板条目来自 NODE_CATALOG，正常情况下必然合法）
+ * @param {{x: number, y: number}} [position] 指定落点（拖拽添加传入指针位置）；
+ *   缺省落在画布可视区域正中，量不出画布尺寸时回落工厂推算的默认落点
+ */
+const addNodeAt = (type, position) => {
+  if (!NODE_META[type]) {
+    ElMessage.warning(`不支持的节点类型：${type}`)
+    return
+  }
+  const current = getNodes.value
+  const node = createWorkflowNode(type, {
+    id: nextNodeId(current),
+    label: uniqueLabelOf(current, metaOf(type).name),
+    position: position ?? viewportCenterNodePosition(type) ?? nextNodePosition(current),
+  })
+  addNodes([node])
+  attachIfInIteration(node)
+  ElMessage.success(`已添加「${metaOf(type).name}」节点`)
+}
+
+/**
+ * 新建节点落在迭代容器的画布区上时，直接把它挂成该容器的子块。
+ *
+ * 复用与「拖拽已有节点入容器」完全同一套迁移计划（{@link planMigration}）：
+ * 相对坐标换算、画布区夹取、`extent` / `zIndex` 的补齐都在那一处，这里不再写第二份。
+ *
+ * @param {object} node 刚写入 store 的节点
+ */
+const attachIfInIteration = (node) => {
+  if (!node?.id || !node.position) return
+  const target = containerAtPoint(getNodes.value, node.position)
+  if (!target) return
+  const plan = planMigration(getNodes.value, node.id, target)
+  if (plan) updateNode(node.id, plan)
+}
+
+/** 是否正有节点从面板被拖到画布上方：仅用于画布边缘的落点反馈 */
+const nodeDropActive = ref(false)
+
+/**
+ * 拖拽经过画布：只有携带节点库载荷时才声明「接受放置」。
+ *
+ * 必须 `preventDefault()`，否则浏览器把这里当成不可放置区域，`drop` 永远不会触发；
+ * 其它来源的拖拽（文本、链接）不拦截，保持浏览器默认行为。
+ */
+const handleNodeDragOver = (event) => {
+  if (!hasNodeDragPayload(event.dataTransfer)) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+  nodeDropActive.value = true
+}
+
+/**
+ * 拖拽离开画布：收起落点反馈。
+ *
+ * 指针在画布内的子元素之间移动时也会触发 `dragleave`，用 `contains(relatedTarget)` 过滤掉，
+ * 否则反馈会随每一次跨元素移动闪烁。
+ */
+const handleNodeDragLeave = (event) => {
+  if (event.currentTarget?.contains(event.relatedTarget)) return
+  nodeDropActive.value = false
+}
+
+/**
+ * 拖拽结束（含按 Esc 取消、以及放到画布外）：无论有没有落位都收起反馈。
+ *
+ * `dragend` 在拖拽源（面板条目，位于 `.wf-canvas` 子树内）上触发并冒泡到这里，
+ * 是唯一能覆盖「取消拖拽」这条路径的时机——只看 `dragleave` 会让虚线残留。
+ */
+const handleNodeDragEnd = () => {
+  nodeDropActive.value = false
+}
+
+/** 松手落位：把指针位置换算成画布坐标，节点就落在用户放开指针的地方 */
+const handleNodeDrop = (event) => {
+  nodeDropActive.value = false
+  if (!hasNodeDragPayload(event.dataTransfer)) return
+  event.preventDefault()
+  const type = readNodeDragPayload(event.dataTransfer)
+  if (!NODE_META[type]) {
+    ElMessage.warning(`不支持的节点类型：${type}`)
+    return
+  }
+  addNodeAt(type, screenToFlowCoordinate({ x: event.clientX, y: event.clientY }))
+}
+
+/* ===== 拖拽节点改层级：进迭代体 / 移出迭代体 ===== */
+
+/**
+ * 指针在画布坐标系下的落点。
+ *
+ * 取**指针**而不是被拖节点的中心：节点是握着头（或任意一处）拖的，用中心判定时「想移出容器」
+ * 得把节点推出去一大半才成立，体感很别扭；指针位置则与用户的意图直接对应。触屏等没有坐标的
+ * 事件退回节点中心（{@link nodeCenterOf}）。
+ */
+const dropPointOf = (node, event) => {
+  const clientX = Number(event?.clientX)
+  const clientY = Number(event?.clientY)
+  if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
+    return screenToFlowCoordinate({ x: clientX, y: clientY })
+  }
+  return nodeCenterOf(node)
+}
+
+/**
+ * 清掉迁移之后变跨层的连线。
+ *
+ * 迭代体是容器的内部结构：折叠成 `blocks` 之后，跨层的边有一端不在同一张图里，后端建图会直接失败。
+ * 删掉是**唯一**的可行解（保留会让「拖动一下节点」变成「运行时报错」），条数回给调用方提示用户。
+ *
+ * @returns {number} 被删掉的连线条数
+ */
+const removeCrossLevelEdges = () => {
+  const invalid = invalidEdgesOf(getNodes.value, getEdges.value)
+  if (invalid.length) removeEdges(invalid)
+  return invalid.length
+}
+
+/** 判定「真的在拖拽」而不是 Ctrl + 点选（Ctrl 同时是 Vue Flow 的多选键）所需的最小位移 */
+const DRAG_DISTANCE = 4
+
+/** 一次节点拖拽的起手信息：`{ nodeId, x, y, wantsOut }`（wantsOut = 起手时按住了 Ctrl / Meta） */
+const dragIntent = ref(null)
+
+/** Vue Flow 节点拖拽开始：记下起手位置与是否按住 Ctrl，供松手时判定「是否真的在拖拽」 */
+const handleNodeDragStart = ({ node, event }) => {
+  if (!node?.id) return
+  dragIntent.value = {
+    nodeId: node.id,
+    startX: Number(event?.clientX),
+    startY: Number(event?.clientY),
+    wantsOut: Boolean(event?.ctrlKey || event?.metaKey),
+  }
+}
+
+/**
+ * 拖拽进行中：实时算出「松手会落进哪个容器」，喂给容器卡片高亮。
+ *
+ * 每次指针移动都做一次命中检测（节点数很小，代价可忽略）；排除被拖节点自己与它的后代，
+ * 与松手时的口径完全一致，所以高亮的容器就是最终结果，不会出现「看着高亮、松手却没进去」。
+ */
+const handleNodeDrag = ({ node, event }) => {
+  if (!node?.id) {
+    iterationDropTarget.value = null
+    return
+  }
+  const nodes = getNodes.value
+  iterationDropTarget.value = containerAtPoint(nodes, dropPointOf(node, event), {
+    exclude: descendantIdsOf(nodes, node.id),
+  })
+}
+
+/**
+ * 拖拽结束：按落点结算节点属于哪一层。
+ *
+ * 两条路径都走这里：
+ * - **进容器**：顶层节点（或从面板拖进来的新节点）落在容器画布区上 → 转成该容器的子块；
+ * - **出容器**：子块按住 Ctrl 拖到容器画布区之外 → 变回顶层节点；落到**另一个**容器的画布区上
+ *   则直接换宿主（跨容器移动）。
+ *
+ * **为什么在松手时才结算，而不是按下时解除子块的 `extent` 约束**：Vue Flow 在拖拽开始时对
+ * `dragItems` 做 `extent` 的**快照**（`@vue-flow/core` 的 `getDragItems`），拖拽中途清除
+ * `node.extent` 不会影响夹取，而且 `IterateNode` 自己的 watcher 会把约束装回去——两个途径都
+ * 走不通。所以子块在拖拽过程中视觉上仍被夹在容器内，松手后才落到指针位置；`extent` 继续由
+ * 容器组件负责，画布页不碰它。
+ *
+ * @param {object} node 被拖拽的节点（Vue Flow 的实时节点）
+ * @param {Event} event 拖拽结束事件（取指针位置）
+ */
+const settleNodeLevel = (node, event) => {
+  if (!node?.id) return
+  const nodes = getNodes.value
+  const currentParent = node.parentNode ?? null
+  const point = dropPointOf(node, event)
+
+  // 排掉自己与自己的后代：容器拖进自己里会形成环（画布只展开一层，后代最多是当前子块）
+  const target = containerAtPoint(nodes, point, { exclude: descendantIdsOf(nodes, node.id) })
+  if (target === currentParent) return
+
+  const intent = dragIntent.value
+  const isSameDrag = intent?.nodeId === node.id
+  // 位移用**屏幕坐标**比较：起手与松手是同一套 clientX / clientY，与缩放无关
+  const moved = isSameDrag
+    ? Math.hypot(
+        Number(event?.clientX) - Number(intent.startX),
+        Number(event?.clientY) - Number(intent.startY),
+      ) > DRAG_DISTANCE
+    : false
+  const wantsOut = Boolean(isSameDrag && intent.wantsOut && moved)
+
+  // 子块拖到容器外但没按 Ctrl：保持原状（extent 本来就把它夹在容器里，这里什么都不用做）
+  if (!target && currentParent && !wantsOut) return
+
+  const plan = planMigration(nodes, node.id, target, {
+    // 脱离容器时子块被夹在容器内，它的当前坐标不是用户想要的落点——改用指针位置（节点居中）
+    detachAt: target ? undefined : centeredPositionOf(node, point),
+  })
+  if (!plan) return
+
+  /**
+   * 必须延迟到 Vue Flow 的拖拽收尾**之后**再结算。
+   *
+   * `node-drag-stop` 触发时，Vue Flow 还会把拖拽期间（被 `extent` 夹取过）的位置写回节点——
+   * 同一帧里写会被它覆盖，表现为「节点看起来移出去了，松手却又回到容器边上」。
+   * 让出这一个宏任务，等它的回写落定之后再写我们要的层级与坐标。
+   */
+  setTimeout(() => {
+    const latest = getNodes.value.find((item) => item?.id === node.id)
+    if (!latest) return
+
+    /**
+     * 脱离容器的方向必须连 `computedPosition` 一起写。
+     *
+     * Vue Flow 在 `extent` 变化时会用**旧的** `computedPosition` 重算一遍 `position`
+     * （`clampPosition2`，而位置换算的 watcher 是 `flush: "post"`、排在它后面）——
+     * 只写 `position` 的话，会被它用容器内的旧绝对坐标写回去，节点看起来又缩回容器边上。
+     * 把 `computedPosition` 一起摆到位，这次重算就是恒等运算。挂载方向不需要：
+     * 那时 `computedPosition` 本来就是绝对坐标，由它换算出的相对坐标是正确的。
+     */
+    const patch = target
+      ? plan
+      : { ...plan, computedPosition: { x: plan.position.x, y: plan.position.y, z: plan.zIndex ?? 0 } }
+
+    updateNode(latest.id, patch)
+    // 新宿主的扩容与子块排布交给 IterateNode 自己（childrenKey / 子块高度两个 watcher）
+    const removedEdges = removeCrossLevelEdges()
+    if (removedEdges) {
+      ElMessage.warning(`已删除 ${removedEdges} 条跨层连线（迭代体内外不能直接相连）`)
+    }
+  }, 0)
+}
+
+/** Vue Flow 节点拖拽结束：先按落点结算层级，再清掉拖拽高亮 */
+const handleNodeDragStop = ({ node, event }) => {
+  settleNodeLevel(node, event)
+  iterationDropTarget.value = null
+}
+
 
 
 /** 当前事件流的控制器：重新执行或离开页面时用它中断旧连接 */
@@ -124,8 +498,10 @@ const execute = async (url, options = {}) => {
   abortRun()
   const controller = new AbortController()
   runAbort.value = controller
-  // 提交执行时把整份画布节点交给归约：除了给每个节点建运行态，还用它推导迭代进度（容器 → 子块、迭代源）
-  runState.value = options.body ? beginRun(runState.value, nodes.value) : resumeRun(runState.value)
+  // 提交执行时把整份画布节点交给归约：除了给每个节点建运行态，还用它推导迭代进度（容器 → 子块、迭代源）。
+  // 取 store 的实时节点（getNodes）而不是 v-model 绑定的 ref：ref 由 Vue Flow 在下一个 tick 才回写，
+  // 刚做完删除/清理就点运行时会拿到旧数据，导致残留节点仍被当作顶层节点提交执行。
+  runState.value = options.body ? beginRun(runState.value, getNodes.value) : resumeRun(runState.value)
 
   try {
     await readWorkflowStream(url, {
@@ -155,7 +531,9 @@ const handleRun = () => {
     ElMessage.info('正在执行中，请等待本次执行结束')
     return
   }
-  const definition = buildRunDefinition(nodes.value, edges.value)
+  // 提交前清掉悬空的迭代体子块，避免它们作为顶层节点被提交（定义取自 store 的实时数据）
+  cleanOrphanChildren()
+  const definition = buildRunDefinition(getNodes.value, getEdges.value)
   if (!definition.nodes.length) {
     ElMessage.warning('画布上还没有节点，先添加节点再运行')
     return
@@ -181,6 +559,11 @@ function confirmNode(nodeId, content) {
   }
   execute(buildResumeUrl(runId, content))
 }
+
+// 删除键挂在 window 上：画布本身不保证持有焦点（点空白处后焦点会落回 body），
+// 挂在画布容器上会出现「选中节点后按删除键没反应」。输入框里的按键由 isEditingElement 过滤。
+onMounted(() => window.addEventListener('keydown', handleDeleteKey))
+onUnmounted(() => window.removeEventListener('keydown', handleDeleteKey))
 
 onUnmounted(abortRun)
 
@@ -235,7 +618,15 @@ const edges = ref(defaultCanvas.edges)
 </script>
 
 <template>
-  <div class="wf-canvas">
+  <div
+    ref="canvasRef"
+    class="wf-canvas"
+    :class="{ 'wf-canvas--dropping': nodeDropActive }"
+    @dragover="handleNodeDragOver"
+    @dragleave="handleNodeDragLeave"
+    @dragend="handleNodeDragEnd"
+    @drop="handleNodeDrop"
+  >
     <!-- elevate-nodes-on-select 关闭：迭代节点是不透明卡片，子块与内部连线靠固定层级（见 utils/iteration 的
          ITERATION_LAYER）压在卡片之上；若保留「选中即抬到 1000」的默认行为，选中迭代节点时会把这两者反压回去 -->
     <VueFlow
@@ -243,9 +634,13 @@ const edges = ref(defaultCanvas.edges)
       v-model:edges="edges"
       :node-types="nodeTypes"
       :elevate-nodes-on-select="false"
+      :delete-key-code="null"
       fit-view-on-init
       @connect="handleConnect"
       @node-click="onNodeClick"
+      @node-drag-start="handleNodeDragStart"
+      @node-drag="handleNodeDrag"
+      @node-drag-stop="handleNodeDragStop"
     >
       <Background :gap="22" :size="1.4" />
 
@@ -255,8 +650,12 @@ const edges = ref(defaultCanvas.edges)
       </template>
     </VueFlow>
 
-    <!-- 画布工具栏：目前只有「运行」（提交画布定义并消费 SSE），浮层由组件自己定位 -->
-    <ToolsWrap :running="runState.streaming" @run="handleRun" />
+    <!-- 左侧浮层：节点库面板与工具栏并排停靠在左上角。
+         容器整体 pointer-events: none，只有各自的按钮 / 输入框可交互，不能吃掉画布的拖拽与框选 -->
+    <div class="wf-left-rail">
+      <NodePanel :existing-types="existingTypes" @add-node="addNodeAt" />
+      <ToolsWrap :running="runState.streaming" @run="handleRun" />
+    </div>
 
     <!-- 节点数据抽屉：编辑当前选中节点的变量与提示词 -->
     <NodeDataDrawer v-model:visible="drawerVisible" :node-id="activeNodeId" />
@@ -265,14 +664,60 @@ const edges = ref(defaultCanvas.edges)
 
 <style scoped>
 .wf-canvas {
-  /* relative：工具栏（ToolsWrap）是浮层，靠它定位 */
+  /* relative：左侧浮层（.wf-left-rail）是绝对定位的浮层，靠它定位 */
   position: relative;
   width: 100%;
   height: 100%;
   background: var(--tb-bg-page);
 }
 
+/*
+  左侧浮层容器：节点库面板 + 工具栏横向并排停靠。
+  bottom: 16px 让容器占满可用高度，面板的 max-height: 100% 才有意义（节点多时列表内部滚动）。
+  pointer-events: none：容器自身与两块浮层之间的空隙不吃画布手势，可交互元素各自声明 auto。
+*/
+.wf-left-rail {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  pointer-events: none;
+}
+
+/* 从节点库面板拖拽经过画布时的落点反馈：内缘一圈主色虚线。
+   pointer-events: none —— 它只是提示层，不能挡住 dragover / drop 事件 */
+.wf-canvas--dropping::after {
+  position: absolute;
+  inset: 8px;
+  z-index: 9;
+  border: 2px dashed var(--tb-primary);
+  border-radius: var(--tb-radius-lg);
+  content: '';
+  pointer-events: none;
+}
+
 .wf-canvas :deep(.vue-flow__background circle) {
   fill: var(--tb-border-strong);
+}
+</style>
+
+<!--
+  连线相关样式（Vue Flow 把边渲染在画布 viewport 里，不属于本组件模板的 DOM 子树，scoped 选不中）：
+
+  悬停 / 选中时把线加粗 —— 让「点中的是哪条线」可见（行内 stroke-width 需要 !important 覆盖）。
+
+  注意**不要**给 `.vue-flow__edge-interaction`（Vue Flow 渲染的透明命中线）加 `stroke-linecap: round`：
+  它会让命中区沿路径两端各外扩半个宽度，而迭代体内部连线的两端正好是迭代节点上的两个内侧
+  handle（`iterate-in` / `iterate-out`），且连线层级高于节点卡片 —— 结果就是这两个连接点
+  再也收不到 pointerdown（拖不出任何连线）。复现脚本见 `frontend/.repro/repro-inner-handle-blocked.ps1`。
+-->
+<style>
+.vue-flow__edge:hover .vue-flow__edge-path,
+.vue-flow__edge.selected .vue-flow__edge-path {
+  stroke-width: 3 !important;
 }
 </style>

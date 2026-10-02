@@ -1,52 +1,15 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { CloseBold, Delete, FullScreen, Plus, MagicStick, RefreshRight, SwitchButton, User, VideoPlay, QuestionFilled } from '@element-plus/icons-vue'
+import { Delete, FullScreen, Plus } from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
 import { useVueFlow } from '@vue-flow/core'
-const { getNodes, getEdges, updateNode, removeNodes } = useVueFlow()
+import { injectOutputsOf, iterationOutputWarningsOf, upstreamOutputsOf } from '../utils/variable-sources'
+import { metaOf } from '../utils/node-meta'
+const { getNodes, getEdges, removeNodes } = useVueFlow()
 const props = defineProps({
   visible: { type: Boolean, default: false },
   nodeId: { type: String, default: null },
 })
-
-const NODE_META = {
-  '1': {
-    name: '开始',
-    icon: VideoPlay,
-    desc: '工作流入口：定义初始输出变量，供下游节点引用',
-    flags: { prompt: false, inputs: false, outputs: true },
-  },
-  '2': {
-    name: '结束',
-    icon: SwitchButton,
-    desc: '工作流出口：把上游变量绑定成最终结果',
-    flags: { prompt: false, inputs: true, outputs: false },
-  },
-  '3': {
-    name: '大模型',
-    icon: MagicStick,
-    desc: '按提示词调用大模型：读取输入变量，产出输出变量',
-    flags: { prompt: true, inputs: true, outputs: true },
-  },
-  '4': {
-    name: '迭代',
-    icon: RefreshRight,
-    desc: '迭代容器：对列表输入逐项执行容器内的子步骤',
-    flags: { prompt: false, inputs: true, outputs: true },
-  },
-  '5': {
-    name: '人工确认',
-    icon: User,
-    desc: '人工确认：执行到此暂停，确认后从断点继续',
-    flags: { prompt: false, inputs: true, outputs: true },
-  },
-}
-
-const UNKNOWN_META = {
-  name: '未知节点',
-  icon: QuestionFilled,
-  desc: '未识别的节点类型，暂不支持配置',
-  flags: { prompt: false, inputs: false, outputs: false },
-}
 
 const options = [
   {
@@ -131,73 +94,52 @@ const options = [
 
 const node = computed(() => getNodes.value.find((item) => item?.id === props.nodeId) ?? null)
 
-const meta = computed(() => NODE_META[node.value?.type] ?? UNKNOWN_META)
+const meta = computed(() => metaOf(node.value?.type))
 
-/**
- * 上游可达节点：从 nodeId 出发，沿连线反向遍历（边 target → source），
- * 把直接与间接的上游节点全部收集出来。
- * 用 visited 去重（起点先入集合），所以迭代节点那种「自己指自己」的环不会死循环。
- */
-const getUpstreamNodes = (nodeId) => {
-  if (!nodeId) return []
+/** 当前节点所属的迭代容器（顶层节点为 null） */
+const containerOf = computed(() => {
+  const parentId = node.value?.parentNode
+  if (!parentId) return null
+  return getNodes.value.find((item) => item?.id === parentId) ?? null
+})
 
-  const nodeMap = new Map(getNodes.value.map((item) => [item.id, item]))
-  const edges = getEdges.value ?? []
-
-  const visited = new Set([nodeId])
-  const queue = [nodeId]
-  const upstreamNodes = []
-
-  while (queue.length) {
-    const currentId = queue.shift()
-    for (const edge of edges) {
-      if (edge?.target !== currentId) continue
-
-      const upstreamId = edge.source
-      if (visited.has(upstreamId)) continue
-      visited.add(upstreamId)
-
-      const upstreamNode = nodeMap.get(upstreamId)
-      if (!upstreamNode) continue
-
-      upstreamNodes.push(upstreamNode)
-      queue.push(upstreamId)
-    }
-  }
-
-  return upstreamNodes
-}
-
-/**
- * 上游可达节点的 output 数据（扁平数组）：
- * 每项是上游节点 data.outputs 里的一条变量声明，额外补上来源与溯源信息 ——
- * `blockID` 即上游节点 id，用于回填输入变量的 `input.blockID`；
- * `nodeLabel` / `nodeType` 供选择器分组或展示「变量来自哪个节点」。
- * 没有 outputs 声明的节点（如结束节点）自然不产出任何项。
- */
-const getUpstreamOutputs = (nodeId) =>
-  getUpstreamNodes(nodeId).flatMap((upstreamNode) =>
-    (upstreamNode.data?.outputs ?? [])
-      .filter((output) => output?.name)
-      .map((output) => ({
-        ...output,
-        blockID: upstreamNode.id,
-        nodeLabel: upstreamNode.data?.label ?? '',
-        nodeType: upstreamNode.type,
-      })),
-  )
-
-/** 当前节点可选的上游变量：抽屉打开/切换节点时刷新，直接喂给变量取值选择器 */
+/** 当前节点可选的变量：抽屉打开/切换节点时刷新，直接喂给变量取值选择器 */
 const upstreamOutputs = ref([])
 
+/**
+ * 候选来源（纯函数在 `utils/variable-sources` 里，可脱离 Vue 单独验证）：
+ * - 上游变量按「同一个 parentNode」过滤，迭代体内外不能互相引用（后端一定取不到值）；
+ * - 迭代体内的子块额外带上容器「每轮注入」的变量（index / item / 迭代变量 / 当前项别名），
+ *   它们的 `blockID` 是容器 id，因此与同层上游自然分成不同的分组。
+ */
 const refreshUpstreamOutputs = () => {
-  upstreamOutputs.value = props.visible ? getUpstreamOutputs(props.nodeId) : []
-  console.log(upstreamOutputs.value)
+  const current = node.value
+  if (!props.visible || !current) {
+    upstreamOutputs.value = []
+    return
+  }
+
+  const nodes = getNodes.value
+  const inject = injectOutputsOf(nodes, containerOf.value, current.id)
+  // 注入变量排在前面：分组按出现顺序生成，容器的「每轮注入」组因此稳定排在其它分组之前
+  upstreamOutputs.value = [...inject, ...upstreamOutputsOf(nodes, getEdges.value ?? [], current.id)]
 }
 
-watch([() => props.visible, () => props.nodeId, () => getEdges.value.length], refreshUpstreamOutputs, {
-  immediate: true,
+/**
+ * 候选列表的依赖指纹：节点的变量声明与连线的两端，任何变化都要让候选刷新。
+ * 旧实现只监听边的**数量**，改输出变量名（边数量不变）时列表不会更新。
+ */
+const sourcesFingerprint = computed(() => {
+  const nodes = getNodes.value
+    .map((item) => `${item?.id}:${(item?.data?.outputs ?? [])
+      .map((output) => `${output?.name ?? output}:${output?.type ?? ''}`)
+      .join(',')}`)
+    .join('|')
+  const edges = (getEdges.value ?? []).map((edge) => `${edge?.source}>${edge?.target}`).join('|')
+  return `${props.visible}|${props.nodeId}|${nodes}|${edges}`
 })
+
+watch(sourcesFingerprint, refreshUpstreamOutputs, { immediate: true })
 
 /** 类型短码：与节点卡片上变量胶囊的读法保持同一套 */
 const SHORT_TYPES = {
@@ -409,10 +351,74 @@ const removeInputRow = (index) => {
   list.splice(index, 1)
 }
 
+/* ===== 迭代变量（仅迭代节点）：迭代体每轮都能读到的中间变量 ===== */
+
+/** 迭代变量数组：与 inputListOf 对称，落点是 `data.variableParameters` */
+const paramListOf = () => {
+  const target = node.value
+  if (!target?.data) return null
+  if (!Array.isArray(target.data.variableParameters)) target.data.variableParameters = []
+  return target.data.variableParameters
+}
+
+/** 新增迭代变量：行结构与输入行一致（变量名 + 类型 + 上游取值），取值槽等用户选完来源再补 */
+const addParamRow = () => {
+  const list = paramListOf()
+  if (!list) return
+  list.push({ name: '', type: 'string' })
+  // 新增后要保证分组可见，否则会出现「点了＋却看不到新行」
+  if (!activeGroups.value.includes('2')) activeGroups.value = [...activeGroups.value, '2']
+}
+
+const removeParamRow = (index) => {
+  const list = paramListOf()
+  if (!list) return
+  list.splice(index, 1)
+}
+
+/* ===== 迭代体的同名校验 ===== */
+
+/** 迭代体子块：画布上 `parentNode` 指向当前节点的节点 */
+const childNodes = computed(() => getNodes.value.filter((item) => item?.parentNode === props.nodeId))
+
+/**
+ * 输出变量里与迭代体子块产出**不同名**的那些。
+ * 后端 `IterateNode#aggregate` 按同名把每轮子块的产出聚合成列表，名字对不上就汇总为空列表
+ * （表现为「流程成功但没有结果」），这里只做提示、不阻断编辑。
+ */
+const outputWarnings = computed(() =>
+  node.value?.type === '4' ? iterationOutputWarningsOf(node.value, childNodes.value) : new Set(),
+)
+
+const isOutputWarned = (name) => Boolean(name) && outputWarnings.value.has(name)
+
 const emit = defineEmits(['update:visible'])
 
 const handleVisibleChange = (value) => {
   emit('update:visible', value)
+}
+
+/**
+ * 删除当前节点（含迭代容器内的子块与相关连线）。
+ *
+ * 必须显式级联：Vue Flow 的默认删除只删节点本身、不删挂在它下面的子块，
+ * 容器被删后子块会变成悬空节点，再次运行时被当作顶层节点提交执行。
+ */
+const removeCurrentNode = async () => {
+  const current = node.value
+  if (!current) return
+  try {
+    await ElMessageBox.confirm(
+      `删除节点「${current.data?.label || current.id}」？迭代容器内的子块与相关连线会一并删除。`,
+      '删除节点',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    // 用户取消：ElMessageBox 以 reject 表示「取消」，静默返回即可
+    return
+  }
+  removeNodes([current], true, true)
+  emit('update:visible', false)
 }
 
 // const activeNames = ref(['1'])
@@ -432,9 +438,21 @@ const handleVisibleChange = (value) => {
           </h3>
           <p class="nd-head__desc" :title="meta.desc">{{ meta?.desc }}</p>
         </div>
+        <!-- 删除节点：容器连同迭代体子块一并删除，二次确认避免误触 -->
+        <button
+          type="button"
+          class="nd-head__remove"
+          aria-label="删除节点"
+          title="删除节点"
+          @click.stop="removeCurrentNode"
+        >
+          <el-icon><Delete /></el-icon>
+        </button>
       </div>
     </template>
-  <div class="demo-collapse">
+  <!-- node 为 null = 当前节点已被删除（例如画布上按删除键删掉的正是抽屉在编辑的节点）：
+       整块内容不渲染，避免模板里读 `node.data` 直接抛 TypeError -->
+  <div v-if="node" class="demo-collapse">
     <el-collapse v-model="activeGroups" expand-icon-position="left" >
 
       <el-collapse-item name="3">
@@ -507,12 +525,88 @@ const handleVisibleChange = (value) => {
           </div>
         </div>
       </el-collapse-item>
+      <!-- 迭代变量：只有迭代节点有；迭代体内的子块每一轮都能读到它们（后端按 variableParameters 注入） -->
+      <el-collapse-item v-if="meta.flags.variableParams" name="2">
+        <template #title>
+          <span class="nd-group__head">
+            <span class="nd-group__name">
+              迭代变量
+              <span class="nd-panel__count">{{ node.data?.variableParameters?.length ?? 0 }}</span>
+            </span>
+            <button
+              type="button"
+              class="nd-group__add"
+              aria-label="添加迭代变量"
+              title="添加迭代变量"
+              @click.stop="addParamRow"
+            >
+              <el-icon><Plus /></el-icon>
+            </button>
+          </span>
+        </template>
+
+        <p v-if="!node.data?.variableParameters?.length" class="nd-panel__empty">
+          暂无迭代变量，点击右上角「＋」新增一项；迭代体内的子块每轮都能读到它们。
+        </p>
+        <div v-else class="nd-list">
+          <div class="nd-head-row nd-grid--value">
+            <span>变量名</span>
+            <span>变量值</span>
+            <span></span>
+          </div>
+          <div
+            v-for="(row, index) in node.data.variableParameters"
+            :key="rowKeyOf(row)"
+            class="nd-row nd-row--item"
+          >
+            <div class="nd-row__main nd-grid--value">
+              <el-input
+                size="small"
+                v-model="row.name"
+                class="nd-row__name"
+                placeholder="变量名，如 jj"
+              />
+              <!-- 变量值：左边只读类型短码，右边从同层上游节点的 output 里选 -->
+              <div class="nd-row__value">
+                <div class="nd-row__type" :title="row?.description">{{ typeCodeOf(row) }}</div>
+                <el-cascader
+                  style="width: 100%;"
+                  size="small"
+                  :model-value="sourcePathOf(row)"
+                  :options="upstreamOptions"
+                  :props="SOURCE_CASCADER_PROPS"
+                  :disabled="!upstreamOptions.length"
+                  clearable
+                  filterable
+                  :placeholder="upstreamOptions.length ? '引用上游变量' : '无上游变量'"
+                  @update:model-value="(path) => handleSourceChange(row, path)"
+                />
+              </div>
+
+              <el-button
+                class="nd-row__remove"
+                text
+                :icon="Delete"
+                aria-label="删除该变量"
+                title="删除该变量"
+                @click="removeParamRow(index)"
+              />
+            </div>
+          </div>
+        </div>
+      </el-collapse-item>
       <el-collapse-item name="4">
         <template #title>
           <span class="nd-group__head">
             <span class="nd-group__name">
               输出
               <span class="nd-panel__count">{{ node.data?.outputs?.length ?? 0 }}</span>
+              <!-- 迭代节点的输出要按同名聚合各轮子块的产出，名字对不上会静默汇总为空列表 -->
+              <span
+                v-if="outputWarnings.size"
+                class="nd-group__warn"
+                :title="`须与迭代体子块的产出同名，否则汇总为空：${[...outputWarnings].join('、')}`"
+              >{{ outputWarnings.size }} 个与子块产出不同名</span>
             </span>
             <button
               type="button"
@@ -540,6 +634,8 @@ const handleVisibleChange = (value) => {
             v-for="(row, index) in node.data.outputs"
             :key="rowKeyOf(row)"
             class="nd-row nd-row--item"
+            :class="{ 'nd-row--warn': isOutputWarned(row.name) }"
+            :title="isOutputWarned(row.name) ? '须与迭代体子块的产出同名，否则汇总为空' : ''"
           >
             <div class="nd-row__main nd-grid--plain">
               <el-input
@@ -663,6 +759,31 @@ const handleVisibleChange = (value) => {
   white-space: nowrap;
 }
 
+/* 删除节点：危险动作默认低调，悬停才转危险色，避免误点 */
+.nd-head__remove {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--tb-radius-md);
+  background: transparent;
+  font-size: 15px;
+  color: var(--tb-text-tertiary);
+  cursor: pointer;
+  transition:
+    background-color var(--tb-dur-2) var(--tb-ease-out),
+    color var(--tb-dur-2) var(--tb-ease-out);
+}
+
+.nd-head__remove:hover {
+  background: var(--tb-bg-sunken);
+  color: var(--tb-danger);
+}
+
 :deep(.el-collapse-item__header) {
   padding: 0 12px;
 }
@@ -749,6 +870,11 @@ const handleVisibleChange = (value) => {
   border-bottom-color: transparent;
 }
 
+/* 与迭代体子块产出不同名的输出行：与卡片上的告警色保持一套语义 */
+.nd-row--warn {
+  background: var(--tb-warning-soft);
+}
+
 /* 行内图标按钮：高度对齐同行的 small 输入框，图标才落在控件中线上 */
 .nd-row__expand,
 .nd-row__remove {
@@ -813,6 +939,17 @@ const handleVisibleChange = (value) => {
   font-weight: 400;
   line-height: 18px;
   color: var(--tb-text-secondary);
+}
+
+/* 迭代节点的「输出与迭代体子块产出不同名」告警：只提示，不阻断编辑 */
+.nd-group__warn {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--tb-warning-soft);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--tb-warning);
 }
 
 /* 「添加」：软底圆角方块 + 主色加号；高频入口用图标方块比「＋ 添加」省横向空间 */
