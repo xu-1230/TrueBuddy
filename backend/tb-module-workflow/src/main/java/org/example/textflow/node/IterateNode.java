@@ -17,6 +17,7 @@ import org.example.textflow.entity.WorkflowEdge;
 import org.example.textflow.entity.WorkflowNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -101,9 +102,17 @@ public class IterateNode implements NodeAction {
     /** 当前项在子图状态里的变量名集合（子块引用迭代节点 id 时用的名字，如 input） */
     private final Set<String> itemVarNames;
 
+    /** 迭代体子块里的大模型节点使用的对话模型客户端，为 null 时子块只产出模拟结果 */
+    private final ChatClient chatClient;
+
     public IterateNode(WorkflowNode definition, NodeEventListener listener) {
+        this(definition, listener, null);
+    }
+
+    public IterateNode(WorkflowNode definition, NodeEventListener listener, ChatClient chatClient) {
         this.definition = definition;
         this.listener = listener == null ? NodeEventListener.NO_OP : listener;
+        this.chatClient = chatClient;
         this.blocks = convertBlocks(definition.getBlocks());
         this.itemVarNames = collectItemVarNames(this.blocks, definition.getId());
         this.terminalBlockIds = collectTerminalBlockIds(definition.getEdges(), definition.getId(), this.blocks);
@@ -198,7 +207,7 @@ public class IterateNode implements NodeAction {
         for (WorkflowNode block : blocks) {
             // 只记子块 id：用户填写的子块定义（名称 / 输入 / 提示词等）不进日志
             log.debug("迭代节点 {} 编译子块 {}", definition.getId(), block.getId());
-            graph.addNode(block.getId(), NodeActionFactory.of(block, listener));
+            graph.addNode(block.getId(), NodeActionFactory.of(block, listener, chatClient));
             blockIds.add(block.getId());
         }
 

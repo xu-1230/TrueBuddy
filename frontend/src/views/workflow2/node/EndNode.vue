@@ -52,7 +52,7 @@ const runtime = computed(() => (runState ? nodeRuntimeOf(runState.value, props.i
 
 
       <!-- 输入变量：结束节点把上游变量绑定成最终结果；未绑定取值的用告警色提示「尚未定义」 -->
-      <VariableTags label="输入" :variables="inputs" :undefined-names="unboundInputNames" />
+      <VariableTags label="输出" :variables="inputs" :undefined-names="unboundInputNames" />
 
       <!-- 目标 Handle（左侧）：结束节点只接收上游连线 -->
       <Handle id="in" type="target" :position="Position.Left" class="node-handle node-handle-target" />

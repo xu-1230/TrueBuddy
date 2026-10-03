@@ -45,7 +45,7 @@ export const DEFAULT_FLOW_DEFINITION = {
       data: {
         label: '学生名单规划',
         system: '<role>你是一个教务作业批改辅助系统，从文件树中判断出需要批改与登记成绩的学生名单。</role>',
-        user: '## 用户描述\n{{description}}\n\n## 文件树\n{{file_tree}}\n\n请依据以上信息输出规划 JSON。',
+        user: '## 用户描述\n{{description}}\n\n## 文件树\n{{file_tree}}\n\n',
         inputs: [
           { name: 'description', input: { type: 'string', blockID: '100001', name: 'description' } },
           {

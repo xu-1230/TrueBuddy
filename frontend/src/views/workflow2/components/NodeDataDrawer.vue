@@ -92,6 +92,16 @@ const options = [
 
 
 
+/** 提示词字数上限（只做前端约束，后端不限长） */
+const PROMPT_MAX = 2000
+
+/**
+ * 提示词占位文案：文案里要出现 {{变量名}} 的写法，所以放常量而不是模板字面量
+ * —— 模板里的 `{{...}}` 会被 Vue 当成插值。
+ */
+const SYSTEM_PLACEHOLDER ='设定模型的角色与约束，例如：你是一名严谨的作业批改助手，只依据给定材料作答。'
+const USER_PLACEHOLDER = '填写任务内容，用 {{变量名}} 引用输入变量，例如：请根据 {{question}} 生成一段摘要。'
+
 const node = computed(() => getNodes.value.find((item) => item?.id === props.nodeId) ?? null)
 
 const meta = computed(() => metaOf(node.value?.type))
@@ -367,7 +377,7 @@ const addParamRow = () => {
   if (!list) return
   list.push({ name: '', type: 'string' })
   // 新增后要保证分组可见，否则会出现「点了＋却看不到新行」
-  if (!activeGroups.value.includes('2')) activeGroups.value = [...activeGroups.value, '2']
+  if (!activeGroups.value.includes('5')) activeGroups.value = [...activeGroups.value, '5']
 }
 
 const removeParamRow = (index) => {
@@ -525,8 +535,50 @@ const removeCurrentNode = async () => {
           </div>
         </div>
       </el-collapse-item>
+      <!-- 系统提示词：只有大模型节点用（后端 LlmNode 读 data.system） -->
+      <el-collapse-item v-if="meta.flags.prompt" name="1">
+        <template #title>
+          <span class="nd-group__head">
+            <span class="nd-group__name">
+              系统提示词
+            </span>
+          </span>
+        </template>
+
+        <el-input
+          v-model="node.data.system"
+          class="nd-prompt"
+          type="textarea"
+          :autosize="{ minRows: 5 }"
+          :maxlength="PROMPT_MAX"
+          resize="none"
+          show-word-limit
+          :placeholder="SYSTEM_PLACEHOLDER"
+        />
+      </el-collapse-item>
+      <!-- 用户提示词：其中的变量占位符会被后端渲染成输入变量的取值（见 LlmNode#renderPrompt） -->
+      <el-collapse-item v-if="meta.flags.prompt" name="2">
+        <template #title>
+          <span class="nd-group__head">
+            <span class="nd-group__name">
+              用户提示词
+            </span>
+          </span>
+        </template>
+
+        <el-input
+          v-model="node.data.user"
+          class="nd-prompt"
+          type="textarea"
+          :autosize="{ minRows: 5 }"
+          :maxlength="PROMPT_MAX"
+          resize="none"
+          show-word-limit
+          :placeholder="USER_PLACEHOLDER"
+        />
+      </el-collapse-item>
       <!-- 迭代变量：只有迭代节点有；迭代体内的子块每一轮都能读到它们（后端按 variableParameters 注入） -->
-      <el-collapse-item v-if="meta.flags.variableParams" name="2">
+      <el-collapse-item v-if="meta.flags.variableParams" name="5">
         <template #title>
           <span class="nd-group__head">
             <span class="nd-group__name">
@@ -912,6 +964,12 @@ const removeCurrentNode = async () => {
   font-size: 12px;
   line-height: 1.6;
   color: var(--tb-text-tertiary);
+}
+
+/* ===== 提示词文本域：autosize 自动高度（最少 5 行） ===== */
+/* 兜底隐藏内部滚动条：autosize 按 scrollHeight 撑高，配合右下角字数偶尔会多出 1px 滚动条 */
+.nd-prompt :deep(.el-textarea__inner) {
+  overflow: hidden;
 }
 
 /* ===== 分组标题：名称 + 数量胶囊 + 「＋」新增 ===== */

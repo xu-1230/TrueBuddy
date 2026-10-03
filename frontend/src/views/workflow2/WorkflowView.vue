@@ -640,10 +640,8 @@ const handleRun = () => {
     ElMessage.warning('画布上还没有节点，先添加节点再运行')
     return
   }
-  console.log("测试")
   // 校验读的是与提交同一份 store 实时数据（刚做过悬空子块清理），不会出现「校验的是旧画布」
   const errors = runValidationErrors(getNodes.value, getEdges.value)
-  console.log(errors)
   // 校验通过时页面不会有任何反馈（只有失败才弹窗），开发期留一条日志，便于确认「这次校验到底跑没跑」
   if (import.meta.env.DEV) console.debug('[workflow] 运行前校验', errors.length ? errors : '通过')
   if (errors.length) {

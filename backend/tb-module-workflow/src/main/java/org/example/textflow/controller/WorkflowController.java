@@ -28,6 +28,7 @@ import org.example.textflow.node.NodeEventListener;
 import org.example.textflow.service.WorkflowService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -56,6 +57,10 @@ public class WorkflowController {
 
     @Resource
     private WorkflowService workflowService;
+
+    /** 大模型节点使用的对话模型客户端（bean 定义见 {@code WorkflowChatClientConfiguration}，按名注入避开其它模块的同类型 bean） */
+    @Resource(name = "nodeChatClient")
+    private ChatClient nodeChatClient;
 
     private volatile WorkflowProcessRespVO processCache;
 
@@ -212,7 +217,7 @@ public class WorkflowController {
         StateGraph stateGraph = new StateGraph("text-flow", createKeyStrategyFactory());
 
         for (WorkflowNode node : process.getNodes()) {
-            stateGraph.addNode(node.getId(), NodeActionFactory.of(node, listener));
+            stateGraph.addNode(node.getId(), NodeActionFactory.of(node, listener, nodeChatClient));
         }
 
         for (WorkflowEdge edge : process.getEdges()) {
