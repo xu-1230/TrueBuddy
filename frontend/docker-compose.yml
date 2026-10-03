@@ -1,0 +1,17 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # 国内网络建议保留 npmmirror；境外可改为 https://registry.npmjs.org/
+        NPM_REGISTRY: https://registry.npmmirror.com/
+    image: truebuddy-frontend:latest
+    container_name: truebuddy-frontend
+    ports:
+      # 宿主机 8080 -> 容器 80；改前面那个数字即可换端口
+      - "8080:80"
+    extra_hosts:
+      # 让容器内 host.docker.internal 解析到宿主机，供 /api 反代使用
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

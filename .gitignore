@@ -6,7 +6,23 @@
 
 # Logs and temp files
 *.log
+*.tmp.log
 tmp/
+devserver.err
+
+# AI agent scratch output (docker/build/env probing dumps, repro scripts)
+.repro/
+.build*.txt
+.cfg.txt
+.cred.txt
+.dockercheck.txt
+.envcheck*.txt
+.images.txt
+.info.txt
+.ls.txt
+.mirrors.txt
+.ports.txt
+.pull.txt
 
 # AI assistant toolchains (local planning docs, not part of the project)
 .trae/
