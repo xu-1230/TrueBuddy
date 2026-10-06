@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { useSmoothScroll } from '../../composables/useSmoothScroll'
 import NavbarItem from '../../components/NavbarItem.vue'
+import HeroParticles from './components/HeroParticles.vue'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -20,17 +21,6 @@ const sections = [
   { id: 'start', label: '开始使用', en: 'START' },
 ]
 
-/** 章节编号（001 ~ 00N），对应参考站的 PAGE 编号 */
-const codeOf = (idx) => String(idx + 1).padStart(3, '0')
-
-/**
- * 滚动进度条走 DOM 直写，不进响应式状态。
- * 若把进度值放进 ref，ScrollTrigger 的 onUpdate 会在每一帧都触发一次组件重渲染，
- * 而本页模板有 8 个 section、上千个节点，等于滚动时每帧白跑一次 diff + patch。
- * 这里只写一个内联 transform，Vue 完全不参与。
- */
-const progressBarRef = ref(null)
-const activeIndex = ref(0)
 /** 本页创建的全部 ScrollTrigger：卸载时只回收这些，不再全局清空 */
 let triggers = []
 
@@ -46,22 +36,9 @@ onMounted(async () => {
   refresh()
 })
 
-/** 滚动进度条 + 章节入场动画 + 层叠滚动（钉住 / 覆盖 / 推出） */
+/** 章节入场动画 + 装饰层视差 */
 function setupAnimations() {
   const stages = Array.from(document.querySelectorAll('[data-section]'))
-
-  // 滚动进度条
-  // end: 'max' 即「文档最大滚动位置」，由 ScrollTrigger 内部缓存。
-  // 原先写成 () => document.body.scrollHeight - window.innerHeight：
-  // 函数式 end 会在每次刷新时重新读取布局属性，滚动中反复触发强制重排。
-  track(ScrollTrigger.create({
-    start: 0,
-    end: 'max',
-    onUpdate: (self) => {
-      const bar = progressBarRef.value
-      if (bar) bar.style.transform = `scaleX(${self.progress.toFixed(4)})`
-    },
-  }))
 
   // ① 每个章节一条与滚动进度绑定的时间线（整页连续滚动，不做整屏吸附与钉住）：
   //    区间 = 该章节「进入视口底部 → 完全离开视口顶部」，中线 = 章节居中于视口的时刻；
@@ -262,19 +239,6 @@ function setupAnimations() {
 
     track(tl.scrollTrigger)
   })
-
-  // ② 章节指示：视口中心落入哪一屏，右侧导航就高亮哪一项
-  stages.forEach((sec, i) => {
-    const stageTrigger = ScrollTrigger.create({
-      trigger: sec,
-      start: 'top center',
-      end: 'bottom center',
-      onToggle: (self) => {
-        if (self.isActive) activeIndex.value = i
-      },
-    })
-    track(stageTrigger)
-  })
 }
 
 onBeforeUnmount(() => {
@@ -284,13 +248,12 @@ onBeforeUnmount(() => {
   triggers = []
 })
 
-/** 章节导航：平滑滚动到目标章节 */
+/** 平滑滚动到目标章节（供页内 CTA 锚点使用） */
 function goTo(idx) {
   const el = document.getElementById(sections[idx].id)
   if (!el) return
   const targetTop = el.offsetTop
   if (Math.abs(window.scrollY - targetTop) < 8) return
-  activeIndex.value = idx
   scrollTo(targetTop, { duration: 1.2 })
 }
 </script>
@@ -299,55 +262,34 @@ function goTo(idx) {
   <div class="page">
     <NavbarItem />
 
-    <!-- 滚动进度条 -->
-    <div class="progress">
-      <div ref="progressBarRef" class="progress__bar"></div>
-    </div>
-
-    <!-- 侧边章节导航 -->
-    <nav class="dots">
-      <button
-        v-for="(s, i) in sections"
-        :key="s.id"
-        class="dots__item"
-        :class="{ 'is-active': activeIndex === i }"
-        :aria-label="s.label"
-        @click="goTo(i)"
-      >
-        <span class="dots__point"></span>
-        <span class="dots__label">{{ codeOf(i) }} {{ s.label }}</span>
-      </button>
-    </nav>
-
     <main>
       <!-- 01 Hero -->
       <section id="hero" data-section data-index="0" class="hero">
-        <div class="hero__bg">
-          <span data-parallax data-speed="16" class="hero__blob hero__blob--1"></span>
-          <span data-parallax data-speed="26" class="hero__blob hero__blob--2"></span>
-          <span data-parallax data-speed="8" class="hero__grid"></span>
-        </div>
         <div class="hero__inner">
-          <p data-reveal-item data-drift="58" class="hero__eyebrow">TRUEBUDDY · 智能教学平台</p>
-          <h1 class="hero__title">
-            <span class="hero__word"><span data-reveal-word>让</span></span>
-            <span class="hero__word"><span data-reveal-word>教学</span></span>
-            <span class="hero__word"><span data-reveal-word>回归</span></span>
-            <span class="hero__word hero__word--accent"><span data-reveal-word>创造</span></span>
-          </h1>
-          <p data-reveal-line class="hero__desc">
-            一体化的 AI 教学协作平台，覆盖文档生成、作业批改与知识沉淀，
-          </p>
-          <p data-reveal-line class="hero__desc hero__desc--2">
-            让教师专注于育人本身，而非重复的案头工作。
-          </p>
-          <div data-reveal-item class="hero__cta">
-            <RouterLink to="/login" class="btn btn--primary">立即体验</RouterLink>
-            <a href="#vision" class="btn btn--ghost" @click.prevent="goTo(1)">了解平台</a>
+          <!-- 左栏：逐词大标题 + 双行副文案 + CTA -->
+          <div class="hero__copy">
+            <p data-reveal-item data-drift="58" class="hero__eyebrow">TRUEBUDDY · 智能教学平台</p>
+            <h1 class="hero__title">
+              <span class="hero__word"><span data-reveal-word>让</span></span>
+              <span class="hero__word"><span data-reveal-word>教学</span></span>
+              <span class="hero__word"><span data-reveal-word>回归</span></span>
+              <span class="hero__word hero__word--accent"><span data-reveal-word>创造</span></span>
+            </h1>
+            <p data-reveal-line class="hero__desc">
+              一体化的 AI 教学协作平台，覆盖文档生成、作业批改与知识沉淀，
+            </p>
+            <p data-reveal-line class="hero__desc hero__desc--2">
+              让教师专注于育人本身，而非重复的案头工作。
+            </p>
+            <div data-reveal-item class="hero__cta">
+              <RouterLink to="/login" class="btn btn--primary">立即体验</RouterLink>
+              <a href="#vision" class="btn btn--ghost" @click.prevent="goTo(1)">了解平台</a>
+            </div>
           </div>
-          <div data-fade-out class="hero__scroll">
-            <span>SCROLL</span>
-            <span class="hero__scroll-line"></span>
+
+          <!-- 右栏：点阵粒子形变（教 ⇄ 学） -->
+          <div data-zoom class="hero__visual">
+            <HeroParticles />
           </div>
         </div>
       </section>
@@ -386,7 +328,6 @@ function goTo(idx) {
 
       <!-- 03 AI 智能助手 -->
       <section id="ai" data-section data-index="2" class="section section--dark">
-        <div data-parallax data-speed="34" class="ai__glow"></div>
         <header class="section__head section__head--center">
           <span data-reveal-item data-drift="72" class="section__index">03 / 08</span>
           <h2 class="section__title section__title--center">
@@ -478,7 +419,6 @@ function goTo(idx) {
 
       <!-- 05 作业智能批改 -->
       <section id="grading" data-section data-index="4" class="section section--dark">
-        <div data-parallax data-speed="-30" class="grading__glow"></div>
         <header class="section__head section__head--center">
           <span data-reveal-item data-drift="72" class="section__index">05 / 08</span>
           <h2 class="section__title section__title--center">
@@ -554,7 +494,6 @@ function goTo(idx) {
 
       <!-- 07 数据洞察 -->
       <section id="insight" data-section data-index="6" class="section section--dark">
-        <div data-parallax data-speed="28" class="insight__glow"></div>
         <header class="section__head section__head--center">
           <span data-reveal-item data-drift="72" class="section__index">07 / 08</span>
           <h2 class="section__title section__title--center">
@@ -591,7 +530,6 @@ function goTo(idx) {
 
       <!-- 08 开始使用 -->
       <section id="start" data-section data-index="7" class="cta">
-        <div data-parallax class="cta__glow"></div>
         <div class="cta__inner">
           <span data-reveal-item class="cta__eyebrow">08 / 08 · 立即开始</span>
           <h2 class="cta__title">
@@ -617,95 +555,33 @@ function goTo(idx) {
 
 <style scoped>
 /* ==========================================================================
-   Harbor · 靛蓝 · 数据密集（皮肤层）
-   本页只消费 src/assets/theme.css 的 --tb-* 语义变量，明暗两态由 light-dark() 派生。
-   区块角色（原「深色区 / 浅色区」两套硬编码色）收敛为三个语义角色：
-     --hv-block         基底区块（#hero 与 .section--dark）
-     --hv-alt           交替区块（.section--light），与基底形成层次
-     --hv-accent-bg     强调区块（.cta），主色软底
-   ========================================================================== */
+  Harbor · 靛蓝 · 数据密集（皮肤层）
+  本页只消费 src/assets/theme.css 的 --tb-* 语义变量，明暗两态由 light-dark() 派生。
+
+  背景版式角色：全页统一为「纸面网格」（paper-grid，Token 见 theme.css）。
+  原来「基底 / 交替 / 强调」三套区块背景已全部取消——所有章节背景透明，
+  共用 .page 上同一张纸面；区块之间靠垂直节奏与内容分层，不再靠换底色。
+  ========================================================================== */
 .page {
-  /* 区块角色：随明暗态自动换算，亮色=白底/浅灰交替，暗色=深底/浅靛交替 */
-  --hv-alt: light-dark(var(--tb-neutral-100), var(--tb-neutral-900));
+  /* 面片取值（卡片 / 芯片共用），随明暗态自动换算 */
   --hv-alt-surface: light-dark(var(--tb-neutral-0), var(--tb-neutral-800));
   --hv-block-surface: var(--tb-bg-surface);
-  --hv-accent-bg: var(--tb-primary-soft);
-  --hv-glow: color-mix(in oklab, var(--tb-brand-500) 34%, transparent);
-  --hv-grid-line: color-mix(in oklab, var(--tb-text-primary) 8%, transparent);
-  background: var(--tb-bg-page);
   color: var(--tb-text-primary);
+  /* 铺在 .page 而不是某个内容容器上：fixed 顶栏所在的那条顶部区域也落在同一张纸面上，
+     否则会出现「顶栏一条纯色 + 内容一段纸面」的色差断层 */
+  background-color: var(--tb-paper-bg);
+  background-image:
+    linear-gradient(90deg, var(--tb-paper-line) 1px, transparent 1px),
+    linear-gradient(var(--tb-paper-line) 1px, transparent 1px);
+  background-size: var(--tb-paper-size) var(--tb-paper-size);
+}
+
+/* 横向裁切交给内容区 main，而不是 .page：
+   .page 一旦 overflow 非 visible 就成为滚动容器，其内部的 position: sticky 顶栏
+   会以 .page 的滚动区为基准，页面滚动时无法吸顶；main 不是顶栏的祖先，
+   既裁掉装饰溢出，又不影响顶栏吸顶。 */
+main {
   overflow-x: hidden;
-}
-
-/* ===== 进度条 ===== */
-.progress {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  z-index: 200;
-  background: var(--tb-border);
-}
-.progress__bar {
-  height: 100%;
-  background: linear-gradient(90deg, var(--tb-brand-400), var(--tb-primary));
-  transform-origin: left;
-  transform: scaleX(0);
-}
-
-/* ===== 侧边导航点 ===== */
-.dots {
-  position: fixed;
-  right: var(--tb-size-5);
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 200;
-  display: flex;
-  flex-direction: column;
-  gap: var(--tb-size-4);
-}
-.dots__item {
-  display: flex;
-  align-items: center;
-  gap: var(--tb-size-3);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-}
-.dots__point {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--tb-border-strong);
-  transition:
-    background var(--tb-dur-3) var(--tb-motion-ease),
-    transform var(--tb-dur-3) var(--tb-motion-ease);
-}
-.dots__label {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 0.7rem;
-  letter-spacing: var(--tb-tracking-wide);
-  color: var(--tb-text-tertiary);
-  opacity: 0;
-  transform: translateX(8px);
-  transition:
-    opacity var(--tb-dur-3) var(--tb-motion-ease),
-    transform var(--tb-dur-3) var(--tb-motion-ease),
-    color var(--tb-dur-3) var(--tb-motion-ease);
-  white-space: nowrap;
-}
-.dots__item.is-active .dots__point {
-  background: var(--tb-primary);
-  transform: scale(1.4);
-}
-.dots__item.is-active .dots__label,
-.dots__item:hover .dots__label {
-  opacity: 1;
-  color: var(--tb-primary-text);
-  transform: translateX(0);
 }
 
 /* ===== 通用按钮 ===== */
@@ -761,17 +637,12 @@ function goTo(idx) {
   margin: 0 auto;
   overflow: hidden;
 }
-.section--dark {
-  background: var(--tb-bg-page);
-  color: var(--tb-text-primary);
-  max-width: none;
-}
+/* 深浅两态合一：区块背景一律透明，背景只由 .page 的纸面提供（不再交替换底色） */
+.section--dark,
 .section--light {
-  background: var(--hv-alt);
+  background: transparent;
   color: var(--tb-text-primary);
   max-width: none;
-  /* 分隔线恒为 1px 细线（09-样式规范.md §5.6 边界约定） */
-  border-block: 1px solid var(--tb-border);
 }
 .section__head {
   margin-bottom: var(--tb-size-8);
@@ -835,49 +706,34 @@ function goTo(idx) {
   align-items: center;
   padding: 0 var(--tb-size-6);
   overflow: hidden;
-  background: var(--tb-bg-page);
+  background: transparent;
 }
-.hero__bg {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-}
-.hero__blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.5;
-}
-.hero__blob--1 {
-  width: 520px;
-  height: 520px;
-  background: color-mix(in oklab, var(--tb-brand-500) 60%, transparent);
-  top: -120px;
-  right: -100px;
-}
-.hero__blob--2 {
-  width: 420px;
-  height: 420px;
-  background: color-mix(in oklab, var(--tb-brand-300) 55%, transparent);
-  bottom: -100px;
-  left: -80px;
-}
-.hero__grid {
-  position: absolute;
-  inset: 0;
-  /* 数据网格：随主题文字色取色，亮暗两态都保持可读的极淡底纹 */
-  background-image:
-    linear-gradient(var(--hv-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--hv-grid-line) 1px, transparent 1px);
-  background-size: 60px 60px;
-  mask-image: radial-gradient(circle at 50% 50%, #000 30%, transparent 75%);
-}
+/* 封面两栏：左文案 / 右粒子画布，1.15 : 0.85 分配同一条内容列
+   （左栏给足宽度，保证「让教学回归创造」四个词仍在一行内逐词揭示） */
 .hero__inner {
   position: relative;
   z-index: 1;
   max-width: 1200px;
   margin: 0 auto;
   width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  align-items: center;
+  gap: clamp(2rem, 5vw, 4.5rem);
+}
+.hero__copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+/* 粒子容器：正方形 —— 采样按画布等比归一化，非方形会把形状压扁 */
+.hero__visual {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 1 / 1;
+  margin-left: auto;
+  overflow: hidden;
 }
 .hero__eyebrow {
   font-size: 0.85rem;
@@ -925,32 +781,7 @@ function goTo(idx) {
   gap: var(--tb-size-4);
   flex-wrap: wrap;
 }
-.hero__scroll {
-  position: absolute;
-  bottom: -2rem;
-  left: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--tb-size-3);
-  font-size: 0.7rem;
-  letter-spacing: 0.25em;
-  color: var(--tb-text-tertiary);
-}
-.hero__scroll-line {
-  width: 1px;
-  height: 60px;
-  background: linear-gradient(to bottom, var(--tb-border-strong), transparent);
-  position: relative;
-  overflow: hidden;
-}
-.hero__scroll-line::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--tb-primary);
-  transform: translateY(-100%);
-  animation: scrollLine 2.2s ease-in-out infinite;
-}
+
 @keyframes scrollLine {
   0% { transform: translateY(-100%); }
   50% { transform: translateY(0); }
@@ -999,16 +830,6 @@ function goTo(idx) {
 }
 
 /* ===== 03 AI ===== */
-.ai__glow {
-  position: absolute;
-  width: 600px;
-  height: 600px;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--hv-glow), transparent 70%);
-  top: 10%;
-  right: -150px;
-  filter: blur(40px);
-}
 .ai__grid {
   display: grid;
   grid-template-columns: 1.1fr 1fr;
@@ -1148,20 +969,6 @@ function goTo(idx) {
 }
 
 /* ===== 05 Grading ===== */
-.grading__glow {
-  position: absolute;
-  width: 500px;
-  height: 500px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    color-mix(in oklab, var(--tb-brand-400) 30%, transparent),
-    transparent 70%
-  );
-  bottom: -100px;
-  left: -100px;
-  filter: blur(50px);
-}
 .grading__board {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1283,20 +1090,6 @@ function goTo(idx) {
 }
 
 /* ===== 07 Insight ===== */
-.insight__glow {
-  position: absolute;
-  width: 500px;
-  height: 500px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    color-mix(in oklab, var(--tb-brand-600) 32%, transparent),
-    transparent 70%
-  );
-  top: 10%;
-  right: -100px;
-  filter: blur(50px);
-}
 .insight__chart {
   max-width: 900px;
   margin: 0 auto var(--tb-size-7);
@@ -1360,34 +1153,8 @@ function goTo(idx) {
   text-align: center;
   padding: var(--tb-size-9) var(--tb-size-6);
   overflow: hidden;
-  /* 强调区块：主色软底，收束全页 */
-  background: var(--hv-accent-bg);
-}
-.cta__glow {
-  position: absolute;
-  width: 700px;
-  height: 700px;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--hv-glow), transparent 65%);
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  filter: blur(60px);
-}
-
-/* ===== 视差装饰层：统一提升为独立合成层 =====
-   这些光斑全部由 GSAP 做 yPercent 视差（滚动时每帧位移），
-   自身又是 400~700px 画布 + blur(40~80px) 的大面积模糊。
-   不提升图层时，每帧位移会带着模糊一起重新栅格化，直接吃掉帧预算；
-   统一声明 will-change: transform 后，滚动退化为纯 GPU 位移、模糊只算一次，
-   pointer-events: none 让它们彻底退出命中测试。 */
-.hero__blob,
-.ai__glow,
-.grading__glow,
-.insight__glow,
-.cta__glow {
-  will-change: transform;
-  pointer-events: none;
+  /* 背景与其它章节同为纸面（透明） */
+  background: transparent;
 }
 .cta__inner {
   position: relative;
@@ -1443,14 +1210,24 @@ function goTo(idx) {
 }
 
 /* ===== 响应式 ===== */
+/* 窄屏：封面改单栏，粒子画布居中并收窄 */
+@media (max-width: 980px) {
+  .hero__inner {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+  .hero__visual {
+    max-width: min(84vw, 420px);
+    margin-inline: auto;
+  }
+}
+
 @media (max-width: 768px) {
   .section { padding: var(--tb-size-9) 1.25rem; }
   .ai__grid,
   .docs__layout,
   .kb__layout { grid-template-columns: 1fr; gap: 2.5rem; }
   .grading__board { grid-template-columns: 1fr; }
-  .dots { display: none; }
-  .hero__scroll { display: none; }
 }
 
 /* ===== 无障碍：尊重「减少动效」偏好 =====
@@ -1458,13 +1235,6 @@ function goTo(idx) {
    滚动编排动效由 GSAP 承担，见 composables/useSmoothScroll.js 与 09-样式规范.md §6.2 */
 @media (prefers-reduced-motion: reduce) {
   .kb__ring { animation: none; }
-  .hero__scroll-line::after {
-    animation: none;
-    transform: translateY(0);
-    opacity: 0.6;
-  }
-  .dots__point,
-  .dots__label,
   .btn,
   .vision__card,
   .docs__paper { transition: none; }

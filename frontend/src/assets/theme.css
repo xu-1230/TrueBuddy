@@ -189,6 +189,13 @@ html[data-theme="harbor"],
     color-mix(in oklab, var(--tb-neutral-900) 46%, transparent),
     color-mix(in oklab, #000000 62%, transparent)
   );
+
+  /* 纸面网格（paper-grid）：全页统一的「背景版式角色」
+     亮色为暖调纸面 + 细网格，暗色反相为暖调深纸 + 极淡网格；
+     网格尺寸也作为刻度一并给出，组件只引用变量。 */
+  --tb-paper-bg: light-dark(#f7f4ef, #141210);
+  --tb-paper-line: light-dark(#e7e5e4b3, color-mix(in oklab, #e7e5e4 8%, transparent));
+  --tb-paper-size: 32px;
 }
 
 /* ==========================================================================
@@ -304,6 +311,8 @@ body {
     --tb-primary-soft: var(--tb-brand-100);
     --tb-primary-border: var(--tb-brand-300);
     --tb-overlay: color-mix(in oklab, var(--tb-neutral-900) 46%, transparent);
+    --tb-paper-bg: #f7f4ef;
+    --tb-paper-line: #e7e5e4b3;
   }
 
   /* Element Plus 色阶同样降级为亮色取值（须与主映射同为 :root:root 才能生效） */
