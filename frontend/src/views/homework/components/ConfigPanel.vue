@@ -109,6 +109,7 @@
               class="workflow-select"
               popper-class="hw-kb-select-popper"
               :disabled="grading"
+              :loading="workflowsLoading"
             >
               <el-option-group label="批改工作流">
                 <el-option
@@ -237,8 +238,10 @@ const concurrency = defineModel('concurrency', { default: 3 })
 const folder = defineModel('folder', { default: null })
 
 const props = defineProps({
-  /** 批改工作流列表（批改工作流 + 用户自定义工作流） */
+  /** 批改工作流列表（批改工作流 + 用户自定义工作流），来自后端 GET /workflow/list */
   workflows: { type: Array, default: () => [] },
+  /** 工作流列表是否加载中 */
+  workflowsLoading: { type: Boolean, default: false },
   /** 下拉选项：内置默认知识库 + 接口返回的知识库 */
   knowledgeBases: { type: Array, default: () => [] },
   kbLoading: { type: Boolean, default: false },
@@ -254,9 +257,9 @@ const emit = defineEmits(['grade', 'create-workflow', 'edit-workflow'])
 const builtinWorkflows = computed(() => props.workflows.filter((item) => item.builtin))
 const customWorkflows = computed(() => props.workflows.filter((item) => !item.builtin))
 
-/** 步骤数只统计顶层节点，迭代容器内部的迭代体不单独计数 */
+/** 步骤数：后端已按顶层节点统计好（迭代体子块不计入），前端直接用 */
 function stepCount(workflow) {
-  return (workflow?.nodes ?? []).filter((node) => !node.parentNode).length
+  return Number(workflow?.stepCount) || 0
 }
 
 const advancedOpen = ref(true)

@@ -4,14 +4,34 @@
  * 执行与人工确认恢复都以 `text/event-stream` 返回，axios 无法流式读取，
  * 因此这里只负责接口地址与请求体构造，真正的读流在 `@/utils/workflow-sse`。
  */
+import service from './index'
 import { collapseIterations } from '@/views/workflow2/utils/iteration'
 
-/** 工作流接口地址（后端 context-path 为 /api，开发环境由 Vite 代理到 8086） */
+/**
+ * SSE 接口地址（由 `@/utils/workflow-sse` 用原生 `fetch` 读取）。
+ *
+ * 这里**带** context-path 前缀 `/api`：`fetch` 不经过 axios 实例，不会自动补 baseURL。
+ */
 export const WORKFLOW_API = {
   /** 执行：请求体为画布定义，响应 text/event-stream */
   run: '/api/workflow/run',
   /** 人工确认后继续：query 参数 run_id / content，响应 text/event-stream */
   resume: '/api/workflow/resume',
+}
+
+/**
+ * 工作流定义的 REST 接口路径（走 axios 实例）。
+ *
+ * 这里**不带** `/api` 前缀：axios 实例的 `baseURL` 已经是 `/api`，
+ * 若重复拼接会请求到 `/api/api/workflow/*`。
+ */
+export const WORKFLOW_REST_API = {
+  /** 保存定义：id 空=新建、非空=更新；返回 String 类型的雪花 id */
+  save: '/workflow/save',
+  /** 定义详情（query 参数 `workflow_id`），含 schemaJson */
+  detail: '/workflow/detail',
+  /** 定义列表（不含 schemaJson，按更新时间倒序） */
+  list: '/workflow/list',
 }
 
 /** 节点上允许提交给后端的字段（Vue Flow 注入的运行时字段一律剔除） */
@@ -81,4 +101,47 @@ const toBackendNode = (node) => {
 export function buildResumeUrl(runId, content) {
   const query = new URLSearchParams({ run_id: runId ?? '', content: content ?? '' })
   return `${WORKFLOW_API.resume}?${query.toString()}`
+}
+
+/**
+ * 画布 → 后端定义 JSON 字符串（保存用）。
+ *
+ * 与「运行」共用同一份折叠口径（{@link buildRunDefinition}），因此库里存的定义与
+ * 运行时提交的定义天然同构——打开时再反向展开成画布即可。
+ *
+ * @param {Array} nodes 画布节点
+ * @param {Array} edges 画布连线
+ * @returns {string} 可直接作为 `schemaJson` 提交的 JSON 字符串
+ */
+export function buildWorkflowSchema(nodes = [], edges = []) {
+  return JSON.stringify(buildRunDefinition(nodes, edges))
+}
+
+/**
+ * 保存工作流定义：`id` 为空表示新建，非空表示更新该记录。
+ *
+ * @param {{ id?: string, name: string, description?: string, schemaJson: string }} payload
+ * @returns {Promise<string>} 工作流 id（雪花 ID 字符串）
+ */
+export function saveWorkflow(payload) {
+  return service.post(WORKFLOW_REST_API.save, payload)
+}
+
+/**
+ * 工作流详情（含画布定义 JSON 字符串）。
+ *
+ * @param {string} workflowId 工作流 id（雪花 ID 字符串）
+ * @returns {Promise<object>} 详情：{ id, name, description, status, builtin, stepCount, schemaJson, updateTime }
+ */
+export function getWorkflowDetail(workflowId) {
+  return service.get(WORKFLOW_REST_API.detail, { params: { workflow_id: workflowId } })
+}
+
+/**
+ * 工作流列表（不含画布定义，按更新时间倒序）。
+ *
+ * @returns {Promise<Array>} 列表项：{ id, name, description, status, builtin, stepCount, updateTime }
+ */
+export function listWorkflows() {
+  return service.get(WORKFLOW_REST_API.list)
 }

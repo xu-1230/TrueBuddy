@@ -8,16 +8,18 @@
  *
  * 容器 pointer-events: none、只有按钮自己可交互，这样工具栏不会吃掉画布的拖拽 / 框选手势。
  */
-import { VideoPlay } from '@element-plus/icons-vue'
+import { DocumentAdd, VideoPlay } from '@element-plus/icons-vue'
 
 defineOptions({ name: 'ToolsWrap' })
 
 defineProps({
   /** 是否正在执行：执行中禁用按钮并改文案，避免重复提交 */
   running: { type: Boolean, default: false },
+  /** 是否正在保存：保存中禁用按钮并改文案 */
+  saving: { type: Boolean, default: false },
 })
 
-defineEmits(['run'])
+defineEmits(['run', 'save'])
 </script>
 
 <template>
@@ -31,6 +33,18 @@ defineEmits(['run'])
     >
       <el-icon><VideoPlay /></el-icon>
       <span class="tools-wrap__btn-text">{{ running ? '执行中' : '运行' }}</span>
+    </button>
+
+    <!-- 保存：把当前画布定义落库；执行中不允许保存，避免存到运行中的中间态 -->
+    <button
+      class="tools-wrap__btn tools-wrap__btn--save"
+      type="button"
+      :disabled="saving || running"
+      :aria-label="saving ? '保存中' : '保存'"
+      @click="$emit('save')"
+    >
+      <el-icon><DocumentAdd /></el-icon>
+      <span class="tools-wrap__btn-text">{{ saving ? '保存中' : '保存' }}</span>
     </button>
   </div>
 </template>

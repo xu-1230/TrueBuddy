@@ -12,6 +12,7 @@
         v-model:folder="folder"
         :knowledge-bases="kbOptions"
         :workflows="workflows"
+        :workflows-loading="workflowsLoading"
         :kb-loading="kbLoading"
         :grading="grading"
         :can-grade="canGrade"
@@ -196,32 +197,61 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Check, Clock, Download, Refresh } from '@element-plus/icons-vue'
 import { getSpaceList } from '@/api/knowledgebase'
 import { submitGrading, uploadHomeworkFiles } from '@/api/homework'
-import { defaultWorkflowId, loadWorkflows } from '@/views/homework/utils/workflows'
+import { listWorkflows } from '@/api/workflow'
 import ConfigPanel from './components/ConfigPanel.vue'
 import HistoryDrawer from './components/HistoryDrawer.vue'
 import ScoreCard from './components/ScoreCard.vue'
 
 const route = useRoute()
+const router = useRouter()
 
-/* ---------- 批改工作流（内置模板 + 自定义，存本地） ---------- */
-const workflows = ref(loadWorkflows())
+/* ---------- 批改工作流：列表来自后端（内置模板 + 用户自定义都由后端返回） ---------- */
+const workflows = ref([])
+const workflowsLoading = ref(false)
 
-const selectedWorkflow = computed(
-  () => workflows.value.find((item) => item.id === config.workflow) ?? workflows.value[0] ?? null,
-)
+/** 默认选中项：内置模板（后端 builtin 标记）优先，否则取列表第一条 */
+function preferredWorkflowId() {
+  const list = workflows.value
+  return (list.find((item) => item.builtin) ?? list[0])?.id ?? ''
+}
+
+/** 拉取工作流列表；从画布页返回会重新挂载本页，因此能拿到刚保存的定义 */
+async function loadWorkflowOptions() {
+  workflowsLoading.value = true
+  try {
+    workflows.value = await listWorkflows()
+    // 优先级：地址栏带过来的 workflow > 当前选中（仍存在时） > 默认项（内置模板）
+    const requested = String(route.query.workflow ?? '').trim()
+    const exists = (id) => id && workflows.value.some((item) => item.id === id)
+    config.workflow = [requested, config.workflow, preferredWorkflowId()].find(exists) ?? ''
+  } catch (error) {
+    ElMessage.error(error?.message || '工作流列表加载失败')
+  } finally {
+    workflowsLoading.value = false
+  }
+}
 
 function workflowName(id) {
   return workflows.value.find((item) => item.id === id)?.name ?? '标准批改作业'
 }
 
-/** 工作流编排页已移除，待重新实现后恢复跳转到独立编辑器 */
-function openWorkflowEditor() {
-  ElMessage.info('工作流编排功能正在重新开发中')
+/**
+ * 打开画布页：不传 id 表示新建，传 id 表示查看 / 编辑该工作流。
+ * 画布页按 `workflow_id` query 载入定义，保存后会把 id 写回地址栏。
+ *
+ * @param {string} [workflowId] 工作流 id（雪花 ID 字符串）
+ */
+function openWorkflowEditor(workflowId) {
+  const target = { path: '/index/workflow' }
+  if (workflowId) {
+    target.query = { workflow_id: String(workflowId) }
+  }
+  router.push(target)
 }
 
 /** 内置默认知识库：始终置于列表首位，且作为默认选中项 */
@@ -237,7 +267,7 @@ const config = reactive({
   spaceIds: [DEFAULT_KB.id],
   description: '',
   exportFormat: 'xlsx',
-  workflow: defaultWorkflowId(),
+  workflow: '',
   recognizeImage: false,
   concurrency: 3,
 })
@@ -695,20 +725,17 @@ function handleOpenHistoryRecord(record) {
   }
 }
 
-/** 历史记录中的工作流文案 → 工作流 id（找不到时回落到默认模板） */
+/** 历史记录中的工作流文案 → 工作流 id（找不到时回落到默认项） */
 function resolveWorkflowKey(label) {
   const matched = workflows.value.find((item) => item.name === label)
-  return matched ? matched.id : defaultWorkflowId()
+  return matched ? matched.id : preferredWorkflowId()
 }
 
 onMounted(() => {
   loadKnowledgeBases()
   refreshHistory()
-  // 从工作流编排页返回时，自动选中刚保存/复制的工作流
-  const selected = route.query.workflow
-  if (typeof selected === 'string' && workflows.value.some((item) => item.id === selected)) {
-    config.workflow = selected
-  }
+  // 工作流列表从后端拉取（选中项由 loadWorkflowOptions 决定）
+  loadWorkflowOptions()
 })
 </script>
 

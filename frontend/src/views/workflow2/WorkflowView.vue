@@ -1,6 +1,7 @@
 <script setup>
 import { computed, h, markRaw, onMounted, onUnmounted, provide, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import '@vue-flow/core/dist/style.css'
@@ -33,7 +34,14 @@ import {
   nodeCenterOf,
   planMigration,
 } from './utils/iteration-membership'
-import { buildResumeUrl, buildRunDefinition, WORKFLOW_API } from '@/api/workflow'
+import {
+  buildResumeUrl,
+  buildRunDefinition,
+  buildWorkflowSchema,
+  getWorkflowDetail,
+  saveWorkflow,
+  WORKFLOW_API,
+} from '@/api/workflow'
 import { readWorkflowStream } from '@/utils/workflow-sse'
 import {
   ITERATE_NODE_TYPE,
@@ -57,6 +65,7 @@ const {
   removeNodes,
   screenToFlowCoordinate,
   setEdges,
+  setNodes,
   updateNode,
 } = useVueFlow()
 
@@ -672,7 +681,11 @@ function confirmNode(nodeId, content) {
 
 // 删除键挂在 window 上：画布本身不保证持有焦点（点空白处后焦点会落回 body），
 // 挂在画布容器上会出现「选中节点后按删除键没反应」。输入框里的按键由 isEditingElement 过滤。
-onMounted(() => window.addEventListener('keydown', handleDeleteKey))
+onMounted(() => {
+  window.addEventListener('keydown', handleDeleteKey)
+  // 带 workflow_id 进入时载入已保存的定义；无该参数则保留 default-flow 的默认画布
+  loadWorkflowFromRoute()
+})
 onUnmounted(() => window.removeEventListener('keydown', handleDeleteKey))
 
 onUnmounted(abortRun)
@@ -725,6 +738,134 @@ const nodes = ref(defaultCanvas.nodes)
 // 否则 vue-flow 会按「候选列表第一个」兜底，把主链路连到内侧的「迭代开始 / 迭代结束」上
 const edges = ref(defaultCanvas.edges)
 
+/* ===== 工作流定义持久化：按 workflow_id 载入、保存回库 ===== */
+
+const route = useRoute()
+const router = useRouter()
+
+/** 当前正在编辑的工作流 id（空 = 尚未保存过，保存时走新建） */
+const currentWorkflowId = ref(String(route.query.workflow_id ?? '').trim())
+
+/** 当前工作流的名称 / 说明：保存对话框回填与顶部标识共用 */
+const currentWorkflowName = ref('')
+const currentWorkflowDescription = ref('')
+
+/** 保存对话框状态 */
+const saveDialogVisible = ref(false)
+const saving = ref(false)
+const saveForm = ref({ name: '', description: '' })
+
+/** 名称 / 说明长度上限（与后端 workflow 表的 varchar(100) / varchar(500) 对齐） */
+const WORKFLOW_NAME_MAX = 100
+const WORKFLOW_DESC_MAX = 500
+
+/** 解析画布定义 JSON；内容损坏时返回 null，由调用方决定如何提示 */
+function parseSchemaJson(schemaJson) {
+  try {
+    return JSON.parse(schemaJson ?? '')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 用后端详情覆盖画布：`schemaJson` 解析出的定义经 `toCanvasFlow` 展开（迭代体还原成
+ * 「容器 + 子块 + 内部边」），随后回填名称与说明。
+ *
+ * 解析失败或结构为空时**不改动画布**——宁可停在原画布，也不要清掉用户正在编辑的内容。
+ */
+function applyWorkflowDetail(detail) {
+  const definition = parseSchemaJson(detail?.schemaJson)
+  if (!definition?.nodes?.length) {
+    ElMessage.error('该工作流的画布定义无法解析，已保留当前画布')
+    return
+  }
+  const canvas = toCanvasFlow(definition)
+  setNodes(canvas.nodes)
+  setEdges(canvas.edges)
+  currentWorkflowId.value = String(detail.id ?? '')
+  currentWorkflowName.value = detail.name ?? ''
+  currentWorkflowDescription.value = detail.description ?? ''
+}
+
+/** 按路由 `workflow_id` 载入定义；没有该参数时保持默认画布 */
+async function loadWorkflowFromRoute() {
+  const workflowId = String(route.query.workflow_id ?? '').trim()
+  if (!workflowId) return
+  try {
+    applyWorkflowDetail(await getWorkflowDetail(workflowId))
+  } catch (error) {
+    ElMessage.error(error?.message || '工作流载入失败')
+  }
+}
+
+/**
+ * 工具栏「保存」：先过一遍与运行同一套的运行前校验（避免把跑不起来的画布存进库），
+ * 通过后打开对话框填写名称 / 说明；已有名称时回填，便于「打开后另存」。
+ */
+function handleSave() {
+  if (runState.value.streaming) {
+    ElMessage.info('正在执行中，请等待本次执行结束')
+    return
+  }
+  // 与运行同一口径：先清掉悬空的迭代体子块，避免它们作为顶层节点被存进定义
+  cleanOrphanChildren()
+  const definition = buildRunDefinition(getNodes.value, getEdges.value)
+  if (!definition.nodes.length) {
+    ElMessage.warning('画布上还没有节点，先添加节点再保存')
+    return
+  }
+  const errors = runValidationErrors(getNodes.value, getEdges.value)
+  if (errors.length) {
+    showRunValidationErrors(errors)
+    return
+  }
+  saveForm.value = { name: currentWorkflowName.value, description: currentWorkflowDescription.value }
+  saveDialogVisible.value = true
+}
+
+/**
+ * 对话框「保存」：提交画布定义（与运行共用同一份折叠口径）。
+ *
+ * 新建成功后把返回的雪花 id 写回地址栏——刷新或分享该链接即可直接打开这份定义。
+ * id 全程按字符串处理：19 位雪花 ID 超出 JS 安全整数范围，转成数值会丢精度。
+ */
+async function submitSave() {
+  const name = saveForm.value.name.trim()
+  if (!name) {
+    ElMessage.warning('请填写工作流名称')
+    return
+  }
+  if (name.length > WORKFLOW_NAME_MAX) {
+    ElMessage.warning(`工作流名称不能超过 ${WORKFLOW_NAME_MAX} 个字符`)
+    return
+  }
+  const description = saveForm.value.description.trim()
+  if (description.length > WORKFLOW_DESC_MAX) {
+    ElMessage.warning(`工作流说明不能超过 ${WORKFLOW_DESC_MAX} 个字符`)
+    return
+  }
+  saving.value = true
+  try {
+    const id = await saveWorkflow({
+      id: currentWorkflowId.value,
+      name,
+      description,
+      schemaJson: buildWorkflowSchema(getNodes.value, getEdges.value),
+    })
+    currentWorkflowId.value = String(id ?? '')
+    currentWorkflowName.value = name
+    currentWorkflowDescription.value = description
+    saveDialogVisible.value = false
+    router.replace({ query: { ...route.query, workflow_id: currentWorkflowId.value } })
+    ElMessage.success('工作流已保存')
+  } catch (error) {
+    ElMessage.error(error?.message || '工作流保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -765,11 +906,57 @@ const edges = ref(defaultCanvas.edges)
          容器整体 pointer-events: none，只有各自的按钮 / 输入框可交互，不能吃掉画布的拖拽与框选 -->
     <div class="wf-left-rail">
       <NodePanel :existing-types="existingTypes" @add-node="addNodeAt" />
-      <ToolsWrap :running="runState.streaming" @run="handleRun" />
+      <ToolsWrap
+        :running="runState.streaming"
+        :saving="saving"
+        @run="handleRun"
+        @save="handleSave"
+      />
+    </div>
+
+    <!-- 当前工作流标识：已打开 / 已保存过才显示，便于确认正在编辑哪一份定义 -->
+    <div
+      v-if="currentWorkflowName"
+      class="wf-workflow-badge"
+      :title="currentWorkflowDescription || currentWorkflowName"
+    >
+      {{ currentWorkflowName }}
     </div>
 
     <!-- 节点数据抽屉：编辑当前选中节点的变量与提示词 -->
     <NodeDataDrawer v-model:visible="drawerVisible" :node-id="activeNodeId" />
+
+    <!-- 保存工作流：名称必填、说明可选；打开已有工作流时回填原值 -->
+    <el-dialog
+      v-model="saveDialogVisible"
+      title="保存工作流"
+      width="420px"
+      :close-on-click-modal="false"
+    >
+      <div class="wf-save-form">
+        <span class="wf-save-form__label">工作流名称</span>
+        <el-input
+          v-model="saveForm.name"
+          :maxlength="WORKFLOW_NAME_MAX"
+          show-word-limit
+          placeholder="如：标准批改作业"
+        />
+        <span class="wf-save-form__label">说明（可选）</span>
+        <el-input
+          v-model="saveForm.description"
+          type="textarea"
+          :rows="3"
+          resize="none"
+          :maxlength="WORKFLOW_DESC_MAX"
+          show-word-limit
+          placeholder="这份工作流做什么、适用于什么场景"
+        />
+      </div>
+      <template #footer>
+        <el-button :disabled="saving" @click="saveDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submitSave">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -780,6 +967,47 @@ const edges = ref(defaultCanvas.edges)
   width: 100%;
   height: 100%;
   background: var(--tb-bg-page);
+}
+
+/*
+  当前工作流标识：画布顶部居中，与左侧的节点库 / 工具栏浮层错开。
+  pointer-events: none：它只是提示，不能挡住画布的框选与拖拽。
+*/
+.wf-workflow-badge {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  max-width: 40%;
+  padding: 4px 12px;
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-bg-surface);
+  box-shadow: var(--tb-shadow-2);
+  font-size: var(--tb-text-sm);
+  color: var(--tb-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 保存对话框表单：标签在上、控件在下 */
+.wf-save-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wf-save-form__label {
+  margin-top: 6px;
+  font-size: var(--tb-text-sm);
+  color: var(--tb-text-secondary);
+}
+
+.wf-save-form__label:first-child {
+  margin-top: 0;
 }
 
 /*
