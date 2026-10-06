@@ -98,18 +98,17 @@
 | 22 | `KbDocumentController` | POST | `/knowledge-base/document/abandon` | 放弃未向量化的文档（`documentId`） | `CommonResult<Boolean>` |
 | 23 | `KbDocumentChunkController` | GET | `/knowledge-base/chunk/list` | 文档分片列表（`documentId`） | `CommonResult<List<ChunkRespVO>>` |
 | 24 | `WorkflowController` | POST | `/workflow/run` | 提交执行：请求体为画布定义（`{nodes, edges}`，可省略，省略时回落 classpath `text.json`）；人工确认由 `POST /workflow/resume` 单独承接（详见 [12-工作流规范.md](./12-工作流规范.md) §2.1） | `SseEmitter`（`text/event-stream`） |
-| 25 | `WorkflowController` | GET | `/workflow/get_process` | 查询执行状态与结果（`workflow_id`；SSE 的**轮询兜底**，建议每 2s，`exeHistoryStatus` 1=执行中 / 2=成功 / 3=失败 / 4=等待用户输入） | `CommonResult<WorkflowProcessRespVO>` |
-| 26 | `WorkflowController` | POST | `/workflow/save` | 保存工作流定义（`id` 空 = 新建，非空 = 更新；画布 JSON 整存，**不做版本管理**；返回 String 类型的雪花 id） | `CommonResult<String>` |
-| 27 | `WorkflowController` | GET | `/workflow/detail` | 工作流详情（含 `schema_json` 画布字符串） | `CommonResult<WorkflowDetailRespVO>` |
-| 28 | `WorkflowController` | GET | `/workflow/list` | 工作流列表（不含画布结构，按更新时间倒序） | `CommonResult<List<WorkflowVO>>` |
+| 25 | `WorkflowController` | GET | `/workflow/get_process` | 查询执行状态与结果（`workflow_id`；SSE 的**轮询兜底**）——**当前未实现**（规划项，见下方说明） | `CommonResult<WorkflowProcessRespVO>` |
+| 26 | `WorkflowController` | POST | `/workflow/save` | **已实现**：保存工作流定义（`id` 空 = 新建，非空 = 更新；画布 JSON 整存，**不做版本管理**；返回 String 类型的雪花 id） | `CommonResult<String>` |
+| 27 | `WorkflowController` | GET | `/workflow/detail` | **已实现**：工作流详情（query 参数 `workflow_id`；含 `schemaJson` 画布字符串与 `builtin` / `stepCount`） | `CommonResult<WorkflowDetailRespVO>` |
+| 28 | `WorkflowController` | GET | `/workflow/list` | **已实现**：工作流列表（不含 `schemaJson`，按更新时间倒序；含 `builtin` / `stepCount`） | `CommonResult<List<WorkflowVO>>` |
 
-> 接口 24~28 为**自定义工作流模块**：工作流定义已持久化到 `workflow` 表（接口 26~28，脚本 `sql/workflow.sql`），大模型与知识库检索仍为**模拟实现**，执行会话存内存（不落库、进程重启即失效）。执行走「**SSE 实时推送 + 轮询兜底**」：`POST /workflow/run` 同步校验画布后落会话并交由后台守护线程执行整个图，同时以 `text/event-stream` 推事件（`created` / `message` / `completed` / `error` / `done`）；`GET /workflow/get_process` 作轮询兜底，返回节点级执行状态（`nodeResults`）与终态业务结果（`result`）。
+> 接口 24~28 属**自定义工作流模块**，分两块：
 >
-> **人工确认**：执行到「人工确认」节点时图中断，会话置「等待用户输入」（`exeHistoryStatus = 4`，**非终态**）并推 `message`（`type = requires_action`，含 `plan` / `defaultPlan`），**SSE 连接保持打开**；调用方再调一次 `POST /workflow/run`（带 `executeId` + `confirmedPlan`）提交清单，后续事件继续推回原连接。校验失败同样在流内以 `error` + `done` 回传（HTTP 仍 200）。
+> - **定义持久化（接口 26~28，已实现）**：工作流定义落在 `workflow` 表（脚本 `sql/workflow.sql`，表结构见 [12-工作流规范.md](./12-工作流规范.md) §6）。`POST /workflow/save` 新建 / 更新定义（`id` 空 = 新建、非空 = 更新；`id` 全程为**字符串形式**的雪花 id，避免前端 JS 丢精度）；`GET /workflow/detail` 返回含 `schemaJson` 的详情；`GET /workflow/list` 返回不含画布的列表。详情与列表都带 `builtin`（是否内置模板）与 `stepCount`（顶层节点数），供批改页工作流下拉分组与「N 个步骤」展示。内置模板「标准批改作业」由启动初始化器在表为空时写入（固定 id，幂等）。
+> - **执行链路（接口 24~25）**：`POST /workflow/run` 请求体提交画布定义（省略时回落 classpath `text.json`），以 `text/event-stream` 推 `run` / `node` / `interrupt` 三种事件（详见 [12](./12-工作流规范.md) §2.2）；人工确认由 `POST /workflow/resume?run_id=&content=` 承接。中断点、当次画布定义与 checkpoint 均**存内存**（进程重启即失效）；大模型节点为**模拟实现**。`GET /workflow/get_process` **尚未实现**，当前没有轮询兜底。
 >
-> 白名单放行 `/workflow/**`；前端 `frontend/src/api/workflow.js` 全部接口**已接线**，SSE 读取封装在 `frontend/src/utils/workflow-sse.js`（`fetch` + `ReadableStream`，因 `EventSource` 只支持 GET），事件→状态拼装在 `frontend/src/utils/workflow-run-state.js`，轮询兜底在 `frontend/src/utils/workflow-poll.js`（固定 2s、仅终态 2/3 自停、可 `stop()`）。
->
-> `get_process` 的 `data` 口径对齐 Coze 的执行状态接口（`executeId` / `workFlowId` / `exeHistoryStatus` / `executeStatus` / `workflowExeCost` / `nodeResults` / `tokenAndCost` / `projectId`），外层仍是项目 `CommonResult`；`tokenAndCost` 与 `nodeEvents` 为占位，`nodeResults` 不做循环内部子节点的子项拆解。等待用户输入时额外返回 `pendingConfirm`（待确认清单）。
+> 白名单放行 `/workflow/**`；前端接口层 `frontend/src/api/workflow.js`：SSE 地址常量 `WORKFLOW_API`（`run` / `resume`，**带** `/api` 前缀，供 `fetch` 使用）与 REST 路径常量 `WORKFLOW_REST_API`（`save` / `detail` / `list`，走 axios 实例，**不带**前缀以免与 `baseURL` 重复拼接），以及 `buildRunDefinition` / `buildWorkflowSchema` / `buildResumeUrl` / `saveWorkflow` / `getWorkflowDetail` / `listWorkflows`。SSE 读取封装在 `frontend/src/utils/workflow-sse.js`（`fetch` + `ReadableStream`，因 `EventSource` 只支持 GET）。消费方：画布页 `views/workflow2/WorkflowView.vue`（保存对话框 / 按 `workflow_id` 打开 / 试运行 / 节点下方人工确认卡片）与批改页 `views/homework/HomeworkGradingView.vue`（工作流下拉）。
 
 ### 2.6 待整改（后端）
 
@@ -183,7 +182,7 @@ service.interceptors.response.use(
 | `file.js` | `uploadFile` | 接口 8 |
 | `knowledgebase.js` | `getSpaceList`、`createSpace`、`updateSpace`、`deleteSpace`、`getDocumentList`、`createDocument`、`deleteDocument`、`getChunkList`、`uploadDocument`、`vectorizeDocument` | 接口 12~21 |
 | `homework.js` | `gradeHomework`、`getGradingHistory`、`getGradingDetail`、`exportGradingResult` | **后端暂无对应接口（待联调）** |
-| `workflow.js` | `runWorkflowStream`、`resumeWorkflow`、`getProcess`、`getWorkflowDetail`、`saveWorkflow`、`listWorkflows`（常量 `WORKFLOW_API`，状态码常量 `WORKFLOW_EXE_STATUS` / `WORKFLOW_NODE_STATUS` / `WORKFLOW_STREAM_EVENT` / `WORKFLOW_MESSAGE_TYPE`） | 接口 24~28 **已全部接线**：`views/workflow/WorkflowView.vue`（画布编辑 + 保存 / 打开 + 试运行 + 节点下方人工确认卡片）与 `views/homework/HomeworkWorkflowView.vue`（SSE 实测页，画布取自本地 mock）；SSE 读取封装见 `src/utils/workflow-sse.js`，事件→状态拼装见 `src/utils/workflow-run-state.js`，断线兜底轮询见 `src/utils/workflow-poll.js` |
+| `workflow.js` | `buildRunDefinition`、`buildWorkflowSchema`、`buildResumeUrl`、`saveWorkflow`、`getWorkflowDetail`、`listWorkflows`；常量 `WORKFLOW_API`（SSE 地址，含 `/api` 前缀）与 `WORKFLOW_REST_API`（REST 路径，无前缀） | 接口 24、26~28：`views/workflow2/WorkflowView.vue`（画布编辑 + 保存对话框 + 按 `workflow_id` 打开 + 试运行 + 节点下方人工确认卡片）、`views/homework/HomeworkGradingView.vue`（工作流下拉走 `listWorkflows`）；SSE 读取封装见 `src/utils/workflow-sse.js`。`GET /workflow/get_process` 未实现，故无轮询兜底 |
 
 ### 3.4 调用约定
 
