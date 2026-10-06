@@ -16,6 +16,7 @@ import com.alibaba.cloud.ai.graph.state.strategy.AppendStrategy;
 import jakarta.annotation.Resource;
 import org.example.backend.framework.common.exception.ServiceException;
 import org.example.backend.framework.common.exception.enums.GlobalErrorCodeConstants;
+import org.example.backend.framework.common.pojo.CommonResult;
 import org.example.textflow.entity.NodeData;
 import org.example.textflow.entity.NodeField;
 import org.example.textflow.entity.NodeFieldRef;
@@ -23,6 +24,9 @@ import org.example.textflow.entity.WorkflowEdge;
 import org.example.textflow.entity.WorkflowNode;
 import org.example.textflow.entity.WorkflowProcessLoader;
 import org.example.textflow.entity.WorkflowProcessRespVO;
+import org.example.textflow.model.vo.WorkflowDetailRespVO;
+import org.example.textflow.model.vo.WorkflowSaveReqVO;
+import org.example.textflow.model.vo.WorkflowVO;
 import org.example.textflow.node.NodeActionFactory;
 import org.example.textflow.node.NodeEventListener;
 import org.example.textflow.service.WorkflowService;
@@ -42,6 +46,8 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+
+import static org.example.backend.framework.common.pojo.CommonResult.success;
 
 @RestController
 @RequestMapping("/workflow")
@@ -200,6 +206,35 @@ public class WorkflowController {
         compiledGraph.invoke(Map.of())
                 // 只记状态键：终态里是各节点的产出（用户数据），不整体打进日志
                 .ifPresent(state -> log.info("/workflow/text 执行结束，终态状态键: {}", state.data().keySet()));
+    }
+
+    /**
+     * 保存工作流定义：{@code id} 为空表示新建（生成雪花 ID），非空表示更新该记录。
+     * <p>画布定义整体存入 {@code schema_json}，不做版本管理，保存即覆盖；
+     * 校验（名称必填、画布 JSON 结构与连线 id）在 Service 内完成，失败返回 {@code code = 400}。
+     *
+     * @param reqVO 保存入参（名称、说明、画布定义 JSON）
+     * @return 工作流 id（雪花 ID 字符串，避免前端 JS 丢精度）
+     */
+    @PostMapping("/save")
+    public CommonResult<String> save(@RequestBody WorkflowSaveReqVO reqVO) {
+        return success(workflowService.saveWorkflow(reqVO));
+    }
+
+    /**
+     * 工作流详情（含画布定义 JSON）。
+     *
+     * @param workflowId 工作流 id（雪花 ID 字符串）
+     */
+    @GetMapping("/detail")
+    public CommonResult<WorkflowDetailRespVO> detail(@RequestParam("workflow_id") String workflowId) {
+        return success(workflowService.getWorkflowDetail(workflowId));
+    }
+
+    /** 工作流列表（不含画布定义，按更新时间倒序） */
+    @GetMapping("/list")
+    public CommonResult<List<WorkflowVO>> list() {
+        return success(workflowService.listWorkflows());
     }
 
     /** 创建图：按 process 定义装配节点、边、入口出口并编译（不转发节点内部事件） */
