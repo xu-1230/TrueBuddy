@@ -20,11 +20,14 @@
           <span class="section-head__hint">用于批改时的评分依据检索</span>
         </div>
         <el-select
-          v-model="spaceId"
+          v-model="spaceIds"
           class="kb-select"
           popper-class="hw-kb-select-popper"
-          placeholder="请选择知识库"
+          placeholder="请选择知识库（可多选）"
           :loading="kbLoading"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
           clearable
           no-data-text="暂无更多知识库"
         >
@@ -40,7 +43,7 @@
             <span class="kb-option">
               <span
                 class="kb-option__tile"
-                :class="{ 'kb-option__tile--active': spaceId === kb.id }"
+                :class="{ 'kb-option__tile--active': spaceIds.includes(kb.id) }"
               >
                 <el-icon><Collection /></el-icon>
               </span>
@@ -50,7 +53,7 @@
               </span>
               <span v-if="kb.isDefault" class="kb-option__tag">默认</span>
               <span v-else class="kb-option__count">{{ kb.documentCount ?? 0 }} 篇</span>
-              <el-icon v-if="spaceId === kb.id" class="kb-option__check"><Check /></el-icon>
+              <el-icon v-if="spaceIds.includes(kb.id)" class="kb-option__check"><Check /></el-icon>
             </span>
           </el-option>
           <template #footer>
@@ -225,7 +228,7 @@ const EXPORT_OPTIONS = [
   { label: 'CSV', value: 'csv' },
 ]
 
-const spaceId = defineModel('spaceId', { default: 'default' })
+const spaceIds = defineModel('spaceIds', { default: () => [] })
 const description = defineModel('description', { default: '' })
 const exportFormat = defineModel('exportFormat', { default: 'xlsx' })
 const workflow = defineModel('workflow', { default: 'standard' })

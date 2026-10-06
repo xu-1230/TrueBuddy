@@ -34,6 +34,8 @@
         <module>tb-module-doctemplate</module>
         <!-- 自定义工作流模块（画布 schema → spring-ai-alibaba-graph 可执行图） -->
         <module>tb-module-workflow</module>
+        <!-- 作业批改模块（作业文件夹上传 → 文件清单） -->
+        <module>tb-module-homework</module>
 
         <!-- 启动模块 -->
         <module>tb-server</module>

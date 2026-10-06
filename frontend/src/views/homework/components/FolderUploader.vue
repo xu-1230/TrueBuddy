@@ -101,7 +101,7 @@ import { Close, Document, FolderAdd, FolderOpened } from '@element-plus/icons-vu
 import { formatFileSize } from '@/views/homework/utils/format'
 import { extractZip } from '@/views/homework/utils/zip'
 
-/** 与后端 FileServiceImpl.ALLOWED_EXTENSIONS 保持一致 */
+/** 与后端 tb-module-homework 的 ALLOWED_EXTENSIONS 保持一致 */
 const ALLOWED_EXTENSIONS = new Set([
   'pdf', 'doc', 'docx', 'md', 'markdown', 'txt',
   'ppt', 'pptx', 'xls', 'xlsx',
@@ -192,7 +192,8 @@ async function handleDrop(event) {
 async function readEntry(entry) {
   if (entry.isFile) {
     try {
-      return [await new Promise((resolve, reject) => entry.file(resolve, reject))]
+      const file = await new Promise((resolve, reject) => entry.file(resolve, reject))
+      return [withRelativePath(file, entry.fullPath)]
     } catch {
       return []
     }
@@ -212,27 +213,31 @@ async function readEntry(entry) {
   return files
 }
 
+/**
+ * 拖拽导入的 File 不带 webkitRelativePath，这里用目录项的 fullPath 补写：
+ * 去掉前导 `/` 后形如「电子技术基础-第3次作业/20230101-张三/第三章习题.docx」，
+ * 与「点击选择文件夹」得到的相对路径保持同一口径（上传时直接复用）。
+ */
+function withRelativePath(file, fullPath) {
+  if (!fullPath || file.webkitRelativePath) return file
+  const relative = String(fullPath).replace(/\\/g, '/').replace(/^\/+/, '')
+  if (!relative) return file
+  // webkitRelativePath 为只读原型属性，这里在实例上覆写
+  Object.defineProperty(file, 'webkitRelativePath', { value: relative })
+  return file
+}
+
 /* ---------- 归一化 ---------- */
 
 async function applyFiles(rawFiles) {
   if (!rawFiles.length) return
   const skipped = []
   const warnings = []
-  const accepted = []
   const zipFiles = rawFiles.filter((file) => ZIP_EXTENSIONS.has(getExt(file.name)))
-
-  for (const file of rawFiles) {
-    if (zipFiles.includes(file) || IGNORED_NAME_PATTERN.test(file.name)) continue
-    if (!ALLOWED_EXTENSIONS.has(getExt(file.name))) {
-      skipped.push(file.name)
-      continue
-    }
-    if (file.size > MAX_FILE_SIZE) {
-      skipped.push(`${file.name}（超过 50MB）`)
-      continue
-    }
-    accepted.push(file)
-  }
+  // 待过滤文件：先收直接导入的（排除压缩包与系统文件），再把解压结果并入同一批次
+  const candidates = rawFiles.filter(
+    (file) => !zipFiles.includes(file) && !IGNORED_NAME_PATTERN.test(file.name),
+  )
 
   // 压缩包本地解压后并入同一批次（包内层级保留在 webkitRelativePath 中）
   if (zipFiles.length) {
@@ -240,7 +245,7 @@ async function applyFiles(rawFiles) {
     try {
       for (const zipFile of zipFiles) {
         const result = await extractZip(zipFile)
-        accepted.push(...result.files)
+        candidates.push(...result.files)
         skipped.push(...result.skipped)
         warnings.push(...result.warnings)
       }
@@ -248,6 +253,22 @@ async function applyFiles(rawFiles) {
       extracting.value = false
     }
   }
+
+  // 统一过滤：扩展名白名单 + 单文件上限。
+  // 解压出来的文件同样要走这一关，否则包内文件会绕过白名单混进批次。
+  // 注意：0 字节文件照常接收（空占位文件也属于作业文件夹的一部分）。
+  const accepted = []
+  candidates.forEach((file) => {
+    if (!ALLOWED_EXTENSIONS.has(getExt(file.name))) {
+      skipped.push(file.name)
+      return
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      skipped.push(`${file.name}（超过 50MB）`)
+      return
+    }
+    accepted.push(file)
+  })
 
   if (skipped.length) {
     ElMessage.warning(`已跳过 ${skipped.length} 个文件：${skipped.slice(0, 3).join('、')}`)

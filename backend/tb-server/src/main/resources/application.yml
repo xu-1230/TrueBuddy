@@ -16,9 +16,10 @@ spring:
       request-timeout: -1ms
   servlet:
     multipart:
-      # 知识库文档上传上限
+      # 单文件上限（知识库文档 / 作业文件共用）
       max-file-size: 50MB
-      max-request-size: 50MB
+      # 整包上限：作业文件夹一次可提交最多 50 份作业，按单文件 50MB 预留到 1024MB
+      max-request-size: 1024MB
   datasource:
     url: jdbc:postgresql://127.0.0.1:5432/tb
     # 数据库账号密码：通过环境变量注入，缺失时回退为默认值（真实凭据禁止硬编码）
@@ -105,6 +106,8 @@ tb:
       - /doc-template/**
       # 自定义工作流：/run、/resume 为 SSE 流，需免登录（画布定义经请求体提交）
       - /workflow/**
+      # 作业批改：文件夹批量上传，便于未登录态联调
+      - /homework/**
   # 知识库文档解析：阿里云文档智能（文档解析大模型版）
   # AK/SK 为必填项，一律通过环境变量注入（项目根目录 .env，模板见 .env.example），缺失时启动即失败
   docmind:

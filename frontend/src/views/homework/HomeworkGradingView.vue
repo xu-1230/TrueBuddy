@@ -3,7 +3,7 @@
     <div class="studio-body">
       <!-- ============ 左侧配置面板 ============ -->
       <ConfigPanel
-        v-model:space-id="config.spaceId"
+        v-model:space-ids="config.spaceIds"
         v-model:description="config.description"
         v-model:export-format="config.exportFormat"
         v-model:workflow="config.workflow"
@@ -20,16 +20,13 @@
         @edit-workflow="openWorkflowEditor"
       />
 
-      <!-- ============ 右侧工作区：成绩单卡堆 ============ -->
+      <!-- ============ 右侧工作区：作业文件卡堆 ============ -->
       <section class="stage">
-        <!-- 卡头：批改进度 + 全局操作（不随卡片旋转）
+        <!-- 卡头：上传进度 + 全局操作（不随卡片旋转）
              规格对齐 views/doctemplate 的展示框卡头：左侧状态徽标 + 上下文，右侧图标 + 文案的操作键 -->
         <header class="stage__toolbar">
           <div class="stage__status">
             <span class="stage__badge">{{ displayBadge }}</span>
-            <span class="demo-chip" title="当前为前端演示数据，接入后端后即为真实批改结果">
-              演示数据
-            </span>
             <p class="stage__meta" :title="headerMeta">{{ headerMeta }}</p>
           </div>
           <div class="stage__actions">
@@ -55,8 +52,8 @@
             <button
               type="button"
               class="ghost-chip ghost-chip--danger"
-              aria-label="再次批改（会清空当前结果）"
-              title="再次批改（会清空当前结果）"
+              aria-label="再次上传（会清空当前结果）"
+              title="再次上传（会清空当前结果）"
               :disabled="!canGrade"
               @click="handleGrade"
             >
@@ -65,12 +62,12 @@
             </button>
           </div>
 
-          <!-- 批改进度：贴在卡头底缘的一条细线（上传阶段按上传进度，批改阶段按完成份数） -->
+          <!-- 上传进度：贴在卡头底缘的一条细线 -->
           <span
             v-if="grading"
             class="stage__progress"
             role="progressbar"
-            aria-label="批改进度"
+            aria-label="上传进度"
             aria-valuemin="0"
             aria-valuemax="100"
             :aria-valuenow="runningPercent"
@@ -82,7 +79,7 @@
         <!-- 卡堆画布：对应 .display-box__canvas，卡头之下就是一块贴着面板内沿的场地 -->
         <div class="stage__canvas">
           <!-- 卡片堆栈容器：w-full / h-full / relative / overflow-visible / z-0
-               每张卡一份成绩单，绝对定位居中，深度几何由 stackStyle() 下发 -->
+               每张卡一份作业文件，绝对定位居中，深度几何由 stackStyle() 下发 -->
           <div v-if="records.length" class="card-stack">
             <div
               v-for="card in deck"
@@ -107,15 +104,15 @@
             </div>
           </div>
 
-          <!-- 无结果：批改中 / 未开始 -->
+          <!-- 无结果：上传中 / 未开始 -->
           <div v-else class="stage__blank">
             <template v-if="grading">
               <span class="stage__blank-spinner"></span>
               <p class="stage__blank-title">
-                {{ uploading ? `正在上传作业文件 ${uploadPercent}%` : '正在批改作业…' }}
+                {{ uploading ? `正在上传作业文件 ${uploadPercent}%` : '正在上传作业文件…' }}
               </p>
               <p class="stage__blank-desc">
-                {{ stageLabel || `共 ${fileCount} 份作业，正在逐份解析与评分，请勿关闭页面` }}
+                {{ stageLabel || `共 ${fileCount} 份作业，正在逐份存储并保留目录结构，请勿关闭页面` }}
               </p>
             </template>
             <template v-else>
@@ -130,9 +127,9 @@
                   <span class="stage__ghost-score">--</span>
                 </span>
               </div>
-              <p class="stage__blank-title">成绩单将在这里堆成一叠</p>
+              <p class="stage__blank-title">作业清单将在这里堆成一叠</p>
               <p class="stage__blank-desc">
-                每张卡就是一份成绩单：左边是作业原文，右边是评分与 AI 评语；
+                每张卡就是一份作业文件：左边是它在文件夹中的相对路径，右边是文件信息与评语位；
                 点卡片上的箭头、右侧光点，或在卡片间点击露出的边角，即可逐份翻阅。
               </p>
 
@@ -164,7 +161,7 @@
             </template>
           </div>
 
-          <!-- 右侧发光节点轨道：一个节点 = 一份成绩单，点亮的是堆顶那一份 -->
+          <!-- 右侧发光节点轨道：一个节点 = 一份作业文件，点亮的是堆顶那一份 -->
           <ul class="stage__spine" :style="{ '--spine-height': `${records.length * 34}px` }">
             <li v-for="(record, index) in records" :key="record.id">
               <button
@@ -174,8 +171,8 @@
                   'stage__spine-node--lit': index === activeIndex,
                   'stage__spine-node--passed': index < activeIndex,
                 }"
-                :title="record.studentName || record.fileName"
-                :aria-label="`第 ${index + 1} 份成绩单`"
+                :title="record.fileName"
+                :aria-label="`第 ${index + 1} 份作业`"
                 :aria-current="index === activeIndex"
                 @click="goTo(index)"
               ></button>
@@ -203,15 +200,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Check, Clock, Download, Refresh } from '@element-plus/icons-vue'
 import { getSpaceList } from '@/api/knowledgebase'
-import {
-  DEMO_KB_LIST,
-  buildHistoryItem,
-  gradeByFiles,
-  loadHistory,
-  nextTaskId,
-  pushHistory,
-} from '@/views/homework/mock/grading'
-import { exportScores } from '@/views/homework/utils/export'
+import { submitGrading, uploadHomeworkFiles } from '@/api/homework'
 import { defaultWorkflowId, loadWorkflows } from '@/views/homework/utils/workflows'
 import ConfigPanel from './components/ConfigPanel.vue'
 import HistoryDrawer from './components/HistoryDrawer.vue'
@@ -234,6 +223,7 @@ function workflowName(id) {
 function openWorkflowEditor() {
   ElMessage.info('工作流编排功能正在重新开发中')
 }
+
 /** 内置默认知识库：始终置于列表首位，且作为默认选中项 */
 const DEFAULT_KB = {
   id: 'default',
@@ -244,7 +234,7 @@ const DEFAULT_KB = {
 
 /* ---------- 配置 ---------- */
 const config = reactive({
-  spaceId: DEFAULT_KB.id,
+  spaceIds: [DEFAULT_KB.id],
   description: '',
   exportFormat: 'xlsx',
   workflow: defaultWorkflowId(),
@@ -257,19 +247,22 @@ const knowledgeBases = ref([])
 const kbLoading = ref(false)
 const kbOptions = computed(() => [DEFAULT_KB, ...knowledgeBases.value])
 
-const selectedKbName = computed(
-  () => kbOptions.value.find((kb) => kb.id === config.spaceId)?.name ?? DEFAULT_KB.name,
-)
+/** 已选知识库名称（多选，用「、」连接）；未选择时回落到内置默认知识库 */
+const selectedKbNames = computed(() => {
+  const names = config.spaceIds
+    .map((id) => kbOptions.value.find((kb) => kb.id === id)?.name)
+    .filter(Boolean)
+  return names.length ? names.join('、') : DEFAULT_KB.name
+})
 
 async function loadKnowledgeBases() {
   kbLoading.value = true
   try {
     const list = await getSpaceList()
-    // 知识库接口无数据时回落到演示数据，保证下拉始终可预览
-    knowledgeBases.value = list?.length ? list : DEMO_KB_LIST
+    knowledgeBases.value = list ?? []
   } catch {
-    // 后端不可用时不阻断页面，直接使用演示知识库
-    knowledgeBases.value = DEMO_KB_LIST
+    // 后端不可用时不阻断页面，下拉仅保留内置默认知识库
+    knowledgeBases.value = []
   } finally {
     kbLoading.value = false
   }
@@ -278,40 +271,41 @@ async function loadKnowledgeBases() {
 /* ---------- 作业文件夹 ---------- */
 const folder = ref(null)
 
-/* ---------- 批改 ---------- */
+/* ---------- 上传 ---------- */
 const grading = ref(false)
-/** 批改阶段：''（空闲）/ upload（上传中）/ grading（批改中） */
+/** 上传阶段：''（空闲）/ upload（上传中）/ grading（上传完成、结果整理中） */
 const gradingPhase = ref('')
 const uploadPercent = ref(0)
+/** 右侧卡堆数据源：一份作业文件 = 一张卡 */
 const records = ref([])
-/** 当前批改阶段（由所选工作流的节点驱动，用于右侧展示进度） */
+/** 当前阶段（预留，工作流阶段回显用） */
 const currentStage = ref(null)
 /** 当前结果对应的任务信息：{ taskId, description, workflow, exportFormat } */
 const taskMeta = ref(null)
 
-/** 已选作业份数（卡头副行、空态清单、批改按钮共用） */
+/** 已选作业份数（卡头副行、空态清单、开始批改按钮共用） */
 const fileCount = computed(() => folder.value?.files?.length ?? 0)
 
 /** 是否已填写批改要求（空态清单的第二项） */
 const descriptionFilled = computed(() => Boolean(config.description.trim()))
 
 const canGrade = computed(
-  () => fileCount.value > 0 && descriptionFilled.value && !grading.value,
+  () => fileCount.value > 0 && !grading.value,
 )
 
 const canExport = computed(() => records.value.length > 0 && !grading.value)
 
-/** 上传阶段（批改第一批作业前的上传窗口） */
+/** 上传阶段 */
 const uploading = computed(() => gradingPhase.value === 'upload')
 
-/** 批改中进度百分比（上传阶段按上传进度，批改阶段按完成份数） */
+/** 上传进度百分比 */
 const runningPercent = computed(() => {
   if (uploading.value) return uploadPercent.value
   if (!fileCount.value) return 0
   return Math.round((records.value.length / fileCount.value) * 100)
 })
 
-/** 当前工作流阶段的文案（迭代步骤回显迭代计数，LLM 步骤回显模型与上下文） */
+/** 当前工作流阶段的文案（预留） */
 const stageLabel = computed(() => {
   const stage = currentStage.value
   if (!stage) return ''
@@ -328,33 +322,54 @@ const stageLabel = computed(() => {
 /** 卡头徽标：只交代当前这件事的状态 */
 const displayBadge = computed(() => {
   if (grading.value) {
-    return gradingPhase.value === 'upload'
-      ? `正在上传 ${fileCount.value} 份`
-      : `正在批改 ${records.value.length}/${fileCount.value} 份`
+    return `正在上传 ${records.value.length}/${fileCount.value} 份`
   }
   if (records.value.length) {
     return activeHistoryId.value
       ? `历史记录 · 已载入 ${records.value.length} 份`
-      : `已批改 ${records.value.length} 份`
+      : `已上传 ${records.value.length} 份`
   }
-  return '待批改'
+  return '待上传'
 })
 
-/** 卡头上下文：空闲时交代「批哪个文件夹、用什么批、批多少」，批改中换成当前阶段 */
+/** 卡头上下文：空闲时交代「传哪个文件夹、传多少」，上传中换成进度 */
 const headerMeta = computed(() => {
   if (grading.value) {
     return uploading.value
       ? `正在上传作业文件 ${uploadPercent.value}%`
-      : stageLabel.value || '正在逐份解析与评分…'
+      : stageLabel.value || '正在逐份存储作业文件…'
   }
-  if (!folder.value) return '选择作业文件夹并填写批改要求后即可开始'
+  if (!folder.value) return '选择作业文件夹后点击「开始批改」即可上传'
   return [
     folder.value.name,
     activeWorkflowLabel.value,
-    selectedKbName.value,
+    selectedKbNames.value,
     `${fileCount.value} 份作业`,
   ].join(' · ')
 })
+
+/**
+ * 把后端返回的一份作业文件映射为卡片数据结构。
+ * 评分与评语待批改接口接入，这里保留占位，UI 与批改结果卡完全一致。
+ */
+function toRecord(item) {
+  return {
+    id: item.id ?? item.path,
+    fileName: item.name,
+    studentName: '',
+    score: null,
+    grade: '待批改',
+    comment: '本次仅完成作业文件上传，评分与评语待批改接口接入。',
+    originalText: `【相对路径】${item.path}\n\n（作业原文的解析结果待批改接口接入后展示）`,
+    model: '',
+    kbName: '',
+    fileId: item.fileId,
+    fileUrl: item.url,
+    size: item.size,
+    status: 0,
+    errorMsg: '',
+  }
+}
 
 async function handleGrade() {
   if (grading.value) return
@@ -362,13 +377,11 @@ async function handleGrade() {
     ElMessage.warning('请先选择作业文件夹')
     return
   }
-  if (!descriptionFilled.value) {
-    ElMessage.warning('请填写批改要求（AI 描述说明）')
-    return
-  }
 
-  const description = config.description.trim()
-  const taskId = nextTaskId()
+  const files = folder.value.files
+  // 相对路径口径：点击选择文件夹用 webkitRelativePath，拖拽导入已在 FolderUploader 中补写
+  const paths = files.map((file) => file.webkitRelativePath || file.name)
+
   grading.value = true
   gradingPhase.value = 'upload'
   uploadPercent.value = 0
@@ -378,58 +391,44 @@ async function handleGrade() {
   activeHistoryId.value = null
 
   try {
-    const list = await gradeByFiles(folder.value.files, {
-      description,
-      kbName: selectedKbName.value,
-      workflow: selectedWorkflow.value,
-      workflowId: config.workflow,
-      workflowLabel: workflowName(config.workflow),
-      exportFormat: config.exportFormat,
-    }, {
-      onUploadProgress: (percent) => {
-        uploadPercent.value = percent
-        if (percent >= 100) gradingPhase.value = 'grading'
-      },
-      onStage: (stage) => {
-        currentStage.value = stage
-      },
-      onRecord: (record) => {
-        records.value = [...records.value, record]
-      },
+    const data = await uploadHomeworkFiles(files, paths, folder.value.name, (event) => {
+      if (event?.total) {
+        uploadPercent.value = Math.round((event.loaded / event.total) * 100)
+      }
     })
 
     taskMeta.value = {
-      taskId,
-      description,
+      taskId: data.taskId,
+      description: config.description.trim(),
       workflow: config.workflow,
       exportFormat: config.exportFormat,
     }
 
-    if (!list.length) {
-      ElMessage.error('未生成批改结果，请重试')
+    records.value = (data.files ?? []).map(toRecord)
+    if (!records.value.length) {
+      ElMessage.error('未返回作业文件清单，请重试')
       return
     }
-    const failed = list.filter((item) => item.status !== 1).length
-    if (failed) {
-      ElMessage.warning(`已完成批改，其中 ${failed} 份未能批改`)
-    } else {
-      ElMessage.success(`已完成批改：共 ${list.length} 份作业`)
-    }
+    ElMessage.success(`上传完成：共 ${data.fileCount} 份作业`)
 
-    // 写入演示历史记录（接入后端后由后端落库）
-    pushHistory({
-      ...buildHistoryItem(taskId, {
-        description,
-        kbName: selectedKbName.value,
-        workflowId: config.workflow,
-        workflowLabel: workflowName(config.workflow),
+    // 第二步：把批改配置交给后端（当前后端只接收并记录，真实批改待接入）。
+    // 独立容错：这一步失败不应影响第一步已经展示出来的文件清单。
+    try {
+      await submitGrading({
+        taskId: data.taskId,
+        spaceIds: [...config.spaceIds],
+        // 文件清单（含相对路径、fileId 与 MinIO 预签名 URL），直接透传第一步的返回
+        files: data.files ?? [],
+        description: config.description.trim(),
         exportFormat: config.exportFormat,
-      }, list),
-      records: list,
-    })
-    refreshHistory()
+        workflowId: config.workflow,
+      })
+      ElMessage.success('批改请求已提交')
+    } catch (gradeError) {
+      ElMessage.error(gradeError?.message || '批改请求提交失败，请重试')
+    }
   } catch (e) {
-    ElMessage.error(e?.message || '批改失败，请重试')
+    ElMessage.error(e?.message || '上传失败，请重试')
   } finally {
     grading.value = false
     gradingPhase.value = ''
@@ -438,21 +437,16 @@ async function handleGrade() {
   }
 }
 
-/* ---------- 导出 ---------- */
+/* ---------- 导出（待接入后端） ---------- */
 function handleExport() {
   if (!records.value.length) {
-    ElMessage.warning('暂无可导出的批改结果')
+    ElMessage.warning('暂无可导出的作业结果')
     return
   }
-  const format = taskMeta.value?.exportFormat || config.exportFormat
-  const name = exportScores(format, {
-    taskId: taskMeta.value?.taskId,
-    records: records.value,
-  })
-  ElMessage.success(`成绩汇总表已生成（${format === 'csv' ? 'CSV' : 'Excel'}）：${name}`)
+  ElMessage.info('成绩表导出待批改接口接入后开放')
 }
 
-/* ---------- 成绩单卡堆（取代原 ResultGrid，一卡一份成绩单） ----------
+/* ---------- 作业文件卡堆（一卡一份作业文件） ----------
    对齐参考站点 chat 的 card-container：容器 relative + overflow-visible，
    每张卡绝对定位居中，用「深度几何」决定它在卡堆里的位置。 */
 /** 最深可见层：更深的卡片淡出（参考实现的「远端态」） */
@@ -466,9 +460,9 @@ const STACK_RENDER = STACK_MAX_DEPTH + 2
 const CARD_ENTER_MS = 520
 const CARD_LEAVE_MS = 350
 
-/** 当前最前的成绩单在 records 中的下标（0 = 堆顶） */
+/** 当前最前的作业文件在 records 中的下标（0 = 堆顶） */
 const activeIndex = ref(0)
-/** 已翻过的成绩单：{ id, key, fromDepth }，留到「向上飞出」动画结束再移除 */
+/** 已翻过的作业文件：{ id, key, fromDepth }，留到「向上飞出」动画结束再移除 */
 const leavingCards = ref([])
 /** 刚进入卡堆的卡片 key 集合：用于触发淡入动画 */
 const enteringKeys = ref(new Set())
@@ -483,7 +477,7 @@ onBeforeUnmount(() => {
   stackTimers.forEach((timer) => window.clearTimeout(timer))
 })
 
-/** 结果集变化：批改中是逐份追加，只把越界的下标收回，不打断正在翻阅的成绩单 */
+/** 结果集变化：上传后一次写入，只把越界的下标收回 */
 watch(
   () => records.value.length,
   (length) => {
@@ -498,7 +492,7 @@ watch(
 
 /**
  * 卡堆：一叠纸，不是环形。堆顶（activeIndex）之后依次往下叠 STACK_RENDER 份，
- * 翻过的成绩单从堆顶抽走（向上飞出），不再回绕。
+ * 翻过的作业文件从堆顶抽走（向上飞出），不再回绕。
  */
 const deck = computed(() => {
   const list = records.value
@@ -514,7 +508,7 @@ const deck = computed(() => {
 
     const record = list[position]
     const key = `record-${record.id}`
-    // 正在飞出的成绩单单独成条，避免同一 key 出现两次
+    // 正在飞出的作业文件单独成条，避免同一 key 出现两次
     if (flying.has(key)) continue
 
     cardsInStack.push({
@@ -526,7 +520,7 @@ const deck = computed(() => {
     })
   }
 
-  // 已翻过的成绩单：沿用离开时的深度（不改几何，交给飞出动画），压在堆顶之上
+  // 已翻过的作业文件：沿用离开时的深度（不改几何，交给飞出动画），压在堆顶之上
   const flyingCards = leavingCards.value
     .map((item) => {
       const record = list.find((entry) => entry.id === item.id)
@@ -560,7 +554,7 @@ function step(offset) {
   goTo(activeIndex.value + offset)
 }
 
-/** 点击后方卡片露出的边角：把它翻到堆顶，挡在它前面的成绩单依次抽走 */
+/** 点击后方卡片露出的边角：把它翻到堆顶，挡在它前面的作业文件依次抽走 */
 function focusDepth(depth) {
   if (depth > 0) goTo(activeIndex.value + depth)
 }
@@ -574,7 +568,7 @@ function goTo(index) {
   if (target === activeIndex.value) return
 
   if (target > activeIndex.value) {
-    // 往后翻：被越过的成绩单从堆顶抽走，向上飞出后移除
+    // 往后翻：被越过的作业文件从堆顶抽走，向上飞出后移除
     const passed = []
     for (let position = activeIndex.value; position < target; position += 1) {
       const record = records.value[position]
@@ -604,7 +598,7 @@ function goTo(index) {
   activeIndex.value = target
 }
 
-/** 已翻过的成绩单压在堆顶之上飞出，避免被后面的卡片盖住 */
+/** 已翻过的作业文件压在堆顶之上飞出，避免被后面的卡片盖住 */
 function cardStyle(card) {
   const style = stackStyle(card.depth)
   return card.leaving ? { ...style, zIndex: 30 } : style
@@ -640,7 +634,7 @@ function stackStyle(depth) {
   }
 }
 
-/** 重新批改 / 载入历史记录：回到第一份成绩单 */
+/** 重新上传 / 载入历史记录：回到第一份 */
 function resetCardDeck() {
   activeIndex.value = 0
   leavingCards.value = []
@@ -654,7 +648,7 @@ const activeWorkflowLabel = computed(
   () => workflowName(taskMeta.value?.workflow || config.workflow),
 )
 
-/* ---------- 历史记录（演示模式：本地存储） ---------- */
+/* ---------- 历史记录（待接入后端，当前仅保留抽屉 UI） ---------- */
 const historyOpen = ref(false)
 const historyRecords = ref([])
 const historyLoading = ref(false)
@@ -664,9 +658,7 @@ const historyDetailLoadingId = ref(null)
 async function refreshHistory() {
   historyLoading.value = true
   try {
-    historyRecords.value = loadHistory()
-  } catch {
-    ElMessage.error('加载批改历史记录失败')
+    historyRecords.value = []
   } finally {
     historyLoading.value = false
   }
@@ -741,7 +733,7 @@ onMounted(() => {
   gap: 0.9rem;
 }
 
-/* ================= 右侧工作区：成绩单卡堆面板 =================
+/* ================= 右侧工作区：作业文件卡堆面板 =================
    面板分层对齐 views/doctemplate 的展示框：
    .stage = .display-box（面色 + 描边 + 圆角）、
    .stage__toolbar = .display-box__toolbar（贴齐上沿的标题栏）、
@@ -838,7 +830,7 @@ onMounted(() => {
   }
 }
 
-/* 发光节点轨道：一个节点 = 一份成绩单，纵向均分整条脊（份数多时自动收紧间距） */
+/* 发光节点轨道：一个节点 = 一份作业文件，纵向均分整条脊（份数多时自动收紧间距） */
 .stage__spine {
   position: absolute;
   top: 50%;
@@ -939,9 +931,9 @@ onMounted(() => {
   }
 }
 
-/* ---------- 卡头：批改进度 + 全局操作（不随卡片旋转，故放在卡片之外） ----------
-   两行结构：主行是身份与状态（状态灯 + 标题 + 演示标记），副行交代批改上下文；
-   批改中的进度线贴在底缘（.stage__progress），与分隔线重合，不额外占高度。 */
+/* ---------- 卡头：上传进度 + 全局操作（不随卡片旋转，故放在卡片之外） ----------
+   两行结构：主行是身份与状态（状态灯 + 标题 + 演示标记），副行交代上传上下文；
+   上传中的进度线贴在底缘（.stage__progress），与分隔线重合，不额外占高度。 */
 .stage__toolbar {
   position: relative;
   flex: 0 0 auto;
@@ -974,7 +966,7 @@ onMounted(() => {
   border: var(--tb-border-width) solid var(--tb-primary-border);
 }
 
-/* 上下文：一行说清「批哪个文件夹、用什么批、批多少」（批改中替换为当前阶段） */
+/* 上下文：一行说清「传哪个文件夹、传多少」（上传中替换为进度） */
 .stage__meta {
   min-width: 0;
   margin: 0;
@@ -985,7 +977,7 @@ onMounted(() => {
   text-overflow: ellipsis;
 }
 
-/* 批改进度：与卡头底缘的分隔线重合，读作「这条线正在被填满」 */
+/* 上传进度：与卡头底缘的分隔线重合，读作「这条线正在被填满」 */
 .stage__progress {
   position: absolute;
   left: 0;
@@ -1001,18 +993,6 @@ onMounted(() => {
   height: 100%;
   background: var(--tb-primary);
   transition: width 0.3s ease;
-}
-
-.demo-chip {
-  flex: 0 0 auto;
-  padding: 3px 8px;
-  border-radius: var(--tb-radius-xs);
-  font-size: 0.66rem;
-  font-weight: 600;
-  color: var(--tb-text-tertiary);
-  background: var(--tb-bg-raised);
-  border: var(--tb-border-width) solid var(--tb-border);
-  cursor: help;
 }
 
 /* 操作区不参与收缩：空间不足时交由左侧可省略的上下文让位 */
@@ -1060,17 +1040,14 @@ onMounted(() => {
   outline-offset: 2px;
 }
 
-/* 破坏性操作（再次批改会清空当前结果）：常态与其它键一致，悬停才转警示色 */
+/* 破坏性操作（再次上传会清空当前结果）：常态与其它键一致，悬停才转警示色 */
 .ghost-chip--danger:hover:not(:disabled) {
   color: var(--tb-danger);
   border-color: var(--tb-danger);
   background: var(--tb-danger-soft);
 }
 
-/* ---------- 批改进度条 ---------- */
-/* 进度条已并入卡头底缘（.stage__progress），此处不再单独占位 */
-
-/* ---------- 无结果：批改中 / 未开始 ---------- */
+/* ---------- 无结果：上传中 / 未开始 ---------- */
 .stage__blank {
   flex: 1;
   min-height: 0;
@@ -1085,7 +1062,7 @@ onMounted(() => {
   overflow-y: auto;
 }
 
-/* ---------- 空卡堆剪影：把后续会出现的成绩单先画出来 ---------- */
+/* ---------- 空卡堆剪影：把后续会出现的卡片先画出来 ---------- */
 .stage__ghost {
   position: relative;
   flex: 0 0 auto;
@@ -1182,7 +1159,7 @@ onMounted(() => {
   color: var(--tb-text-tertiary);
 }
 
-/* ---------- 就绪清单：复述开始批改的两个前置条件 ---------- */
+/* ---------- 就绪清单：复述开始上传的两个前置条件 ---------- */
 .stage__steps {
   display: flex;
   flex-direction: column;

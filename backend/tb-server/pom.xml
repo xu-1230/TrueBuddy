@@ -56,6 +56,12 @@
             <artifactId>tb-module-workflow</artifactId>
             <version>${revision}</version>
         </dependency>
+        <!-- 作业批改模块：作业文件夹上传与文件清单 -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-homework</artifactId>
+            <version>${revision}</version>
+        </dependency>
 
         <!-- 测试 -->
         <dependency>

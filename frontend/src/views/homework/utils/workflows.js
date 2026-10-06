@@ -3,7 +3,7 @@
  *
  * 工作流 = 一张节点图，节点即批改步骤，
  * 系统内置「标准批改作业」等模板，用户可在此基础上新建自己的工作流。
- * 演示模式下自定义工作流存放在 localStorage，刷新不丢。
+ * 自定义工作流存放在 localStorage，刷新不丢。
  */
 
 import { markRaw } from 'vue'
@@ -17,7 +17,7 @@ const BUILTIN_PREFIX = 'builtin-'
 
 /**
  * 可用节点类型（节点面板使用）
- * duration 为演示模式下的单步耗时（毫秒）
+ * duration 为单步耗时（毫秒）
  */
 export const NODE_KINDS = [
   {
@@ -119,7 +119,7 @@ export const LLM_DEFAULTS = {
   prompt: '',
 }
 
-/** 模型 value → 展示名（节点卡片与批改回显使用） */
+/** 模型 value → 展示名（节点卡片使用） */
 export function modelLabel(value) {
   return LLM_MODEL_OPTIONS.find((item) => item.value === value)?.label ?? value ?? '未选择模型'
 }
@@ -272,35 +272,7 @@ export function duplicateWorkflow(id, name) {
   })
 }
 
-/**
- * 从节点链路推导批改特征，供演示模式的批改执行使用
- * - LLM 节点决定使用的模型与是否启用知识库上下文
- * @returns {{ kinds: string[], hasLlm: boolean, model: string, kbEnabled: boolean, kbId: string, prompt: string }}
- */
-export function traitsOf(workflow) {
-  const nodes = (workflow?.nodes ?? []).filter((node) => !node.parentNode)
-  const kinds = nodes.map((node) => node.data?.kind)
-  const llmNode = withLlmDefaults(nodes.find((node) => node.data?.kind === 'llm'))
-  const iterationNode = withIterationDefaults(nodes.find((node) => node.data?.kind === 'iteration'))
-
-  return {
-    kinds,
-    hasLlm: kinds.includes('llm'),
-    hasIteration: kinds.includes('iteration'),
-    model: llmNode?.data?.model ?? '',
-    kbEnabled: llmNode?.data?.kbEnabled === true,
-    kbId: llmNode?.data?.kbId ?? '',
-    prompt: llmNode?.data?.prompt ?? '',
-    parallel: iterationNode?.data?.parallel === true,
-    concurrency: iterationNode?.data?.concurrency ?? ITERATION_DEFAULTS.concurrency,
-  }
-}
-
-/**
- * 按批改顺序返回节点：沿连线从起始节点依次向下游遍历（节点位置不影响顺序），
- * 未连线的孤立节点按横坐标追加在末尾。
- * 迭代容器内部的子节点属于「迭代体」，不参与主链路遍历。
- */
+/** 按批改顺序返回节点：沿连线从起始节点依次向下游遍历（节点位置不影响顺序） */
 export function orderedNodes(workflow) {
   const nodes = (workflow?.nodes ?? []).filter((node) => !node.parentNode)
   const edges = workflow?.edges ?? []
