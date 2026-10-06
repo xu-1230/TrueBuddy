@@ -12,6 +12,7 @@ devserver.err
 
 # AI agent scratch output (docker/build/env probing dumps, repro scripts)
 .repro/
+.playwright-cli/
 .build*.txt
 .cfg.txt
 .cred.txt
