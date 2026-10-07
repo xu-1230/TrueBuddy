@@ -1,6 +1,7 @@
 package org.example.backend.module.infra.service;
 
 import io.minio.BucketExistsArgs;
+import io.minio.GetObjectArgs;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
@@ -114,6 +115,28 @@ public class MinioFileStorageService {
         } catch (Exception e) {
             log.error("上传字节流到 MinIO 失败: {}", e.getMessage());
             throw new ServiceException(500, "文件存储失败");
+        }
+    }
+
+    /**
+     * 读取对象的全部字节（用于后端解析已存储的文件内容，如作业批改取文本）。
+     *
+     * <p>不依赖预签名 URL：URL 会过期、且在内网/容器环境下对调用方不可达。
+     *
+     * @param bucket     存储桶，为空时回退配置的默认桶
+     * @param objectName 对象键（infra_file.path）
+     * @return 对象字节
+     */
+    public byte[] getObject(String bucket, String objectName) {
+        String targetBucket = (bucket == null || bucket.isBlank()) ? this.bucket : bucket;
+        try (InputStream inputStream = minioClient.getObject(
+                GetObjectArgs.builder().bucket(targetBucket).object(objectName).build())) {
+            byte[] content = inputStream.readAllBytes();
+            log.info("已读取 MinIO 对象: bucket={}, object={}, size={}", targetBucket, objectName, content.length);
+            return content;
+        } catch (Exception e) {
+            log.error("读取 MinIO 对象失败: bucket={}, object={}, error={}", targetBucket, objectName, e.getMessage());
+            throw new ServiceException(500, "读取文件存储失败：" + e.getMessage());
         }
     }
 

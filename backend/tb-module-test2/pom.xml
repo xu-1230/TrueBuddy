@@ -32,11 +32,19 @@
             <artifactId>spring-ai-markdown-document-reader</artifactId>
             <version>2.0.0-M3</version>
         </dependency>
-        <!-- Apache POI for PPTX parsing -->
+        <!-- Apache POI for PPTX parsing
+             版本与 Tika 3.2.3（经 spring-ai-tika-document-reader 传递）对齐：
+             显式钉住旧版本会让 Tika 的 Office 解析器在运行时 NoSuchMethodError -->
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
-            <version>5.2.5</version>
+            <version>5.4.1</version>
+        </dependency>
+        <!-- Tika 文档读取器：把 pdf/doc/docx/ppt/pptx/xls/xlsx/txt/md/html 统一提取为纯文本 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-tika-document-reader</artifactId>
+            <version>2.0.0-M3</version>
         </dependency>
         <dependency>
             <groupId>org.example</groupId>
@@ -47,6 +55,12 @@
         <dependency>
             <groupId>org.example</groupId>
             <artifactId>tb-module-knowledgebase</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 作业模块：复用 HomeworkGradeReqVO / HomeworkFileItemVO（同时传递获得 infra 的 MinIO 读写与 MyBatis Mapper） -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-homework</artifactId>
             <version>${revision}</version>
         </dependency>
     </dependencies>

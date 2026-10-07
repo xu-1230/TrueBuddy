@@ -85,6 +85,10 @@ logging:
     org.example.backend: debug
 
 tb:
+  # 测试模块2（文档解析验证）：作业文件文本读取
+  test2:
+    # 单文件提取文本的字符上限（超出截断，避免响应体过大）
+    max-text-chars: 20000
   # 文档模板生成（模板复刻）
   doctemplate:
     # 生成文档临时目录（docx-mcp 进程需能读写该路径）
@@ -103,6 +107,8 @@ tb:
     permit-all-urls:
       - /system/auth/login
       - /test2/read-pptx
+      # 作业文件文本读取（测试接口，免登录便于联调）
+      - /test2/file-text
       - /doc-template/**
       # 自定义工作流：/run、/resume 为 SSE 流，需免登录（画布定义经请求体提交）
       - /workflow/**
