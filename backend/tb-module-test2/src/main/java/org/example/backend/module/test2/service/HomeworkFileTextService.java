@@ -22,7 +22,7 @@ public interface HomeworkFileTextService {
     HomeworkFileTextRespVO readAll(HomeworkGradeReqVO reqVO);
 
     /**
-     * 读取单个文件的文本（原子方法，后续 MCP 工具直接复用）。
+     * 读取单个文件的文本（原子方法，AI 工具与批量接口共用）。
      *
      * <p>任何失败都不抛异常，而是写入返回对象的 {@code error}。
      *
@@ -31,5 +31,12 @@ public interface HomeworkFileTextService {
      * @return 单条结果
      */
     FileTextItemVO readOne(Long taskId, HomeworkFileItemVO item);
+
+    /**
+     * 读取单个文件的文本，并指定本次的截断上限。
+     *
+     * @param maxTextChars 字符上限；null / 非正数表示沿用配置值 {@code tb.test2.max-text-chars}
+     */
+    FileTextItemVO readOne(Long taskId, HomeworkFileItemVO item, Integer maxTextChars);
 
 }

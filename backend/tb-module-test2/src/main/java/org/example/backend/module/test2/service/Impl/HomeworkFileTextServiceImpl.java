@@ -82,6 +82,13 @@ public class HomeworkFileTextServiceImpl implements HomeworkFileTextService {
 
     @Override
     public FileTextItemVO readOne(Long taskId, HomeworkFileItemVO item) {
+        return readOne(taskId, item, null);
+    }
+
+    @Override
+    public FileTextItemVO readOne(Long taskId, HomeworkFileItemVO item, Integer maxTextChars) {
+        // null / 非正数表示沿用配置值（tb.test2.max-text-chars）
+        int limit = maxTextChars != null && maxTextChars > 0 ? maxTextChars : this.maxTextChars;
         FileTextItemVO result = new FileTextItemVO();
         if (item == null) {
             result.setError("文件明细为空");
@@ -138,11 +145,11 @@ public class HomeworkFileTextServiceImpl implements HomeworkFileTextService {
             String fileName = fileNameOf(item, infraFile);
             String text = extractText(bytes, fileName);
 
-            // 5. 截断
+            // 5. 截断（limit 为 0 时不截断）
             int originLength = text.length();
-            boolean truncated = maxTextChars > 0 && originLength > maxTextChars;
+            boolean truncated = limit > 0 && originLength > limit;
             if (truncated) {
-                text = text.substring(0, maxTextChars);
+                text = text.substring(0, limit);
             }
             result.setText(text);
             result.setTextLength(originLength);
