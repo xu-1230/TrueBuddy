@@ -1,6 +1,5 @@
 package org.example.backend.module.test2.tool;
 
-import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.backend.module.homework.model.vo.HomeworkFileItemVO;
 import org.example.backend.module.test2.model.vo.FileTextItemVO;
@@ -26,8 +25,11 @@ public class HomeworkFileTools {
     /** 读取失败时返回文本的前缀，提示模型这段不是作业内容 */
     private static final String FAILURE_PREFIX = "读取失败：";
 
-    @Resource
-    private HomeworkFileTextService homeworkFileTextService;
+    private final HomeworkFileTextService homeworkFileTextService;
+
+    public HomeworkFileTools(HomeworkFileTextService homeworkFileTextService) {
+        this.homeworkFileTextService = homeworkFileTextService;
+    }
 
     /**
      * 读取一份作业文件的纯文本。
