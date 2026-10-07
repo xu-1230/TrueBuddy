@@ -18,6 +18,7 @@ import org.example.textflow.entity.WorkflowNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.tool.ToolCallback;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -105,14 +106,23 @@ public class IterateNode implements NodeAction {
     /** 迭代体子块里的大模型节点使用的对话模型客户端，为 null 时子块只产出模拟结果 */
     private final ChatClient chatClient;
 
+    /** 迭代体子块里的大模型节点可自主调用的工具（如逐份批改时按 fileId 读作业文本） */
+    private final List<ToolCallback> toolCallbacks;
+
     public IterateNode(WorkflowNode definition, NodeEventListener listener) {
-        this(definition, listener, null);
+        this(definition, listener, null, List.of());
     }
 
     public IterateNode(WorkflowNode definition, NodeEventListener listener, ChatClient chatClient) {
+        this(definition, listener, chatClient, List.of());
+    }
+
+    public IterateNode(WorkflowNode definition, NodeEventListener listener, ChatClient chatClient,
+                       List<ToolCallback> toolCallbacks) {
         this.definition = definition;
         this.listener = listener == null ? NodeEventListener.NO_OP : listener;
         this.chatClient = chatClient;
+        this.toolCallbacks = toolCallbacks == null ? List.of() : List.copyOf(toolCallbacks);
         this.blocks = convertBlocks(definition.getBlocks());
         this.itemVarNames = collectItemVarNames(this.blocks, definition.getId());
         this.terminalBlockIds = collectTerminalBlockIds(definition.getEdges(), definition.getId(), this.blocks);
@@ -207,7 +217,7 @@ public class IterateNode implements NodeAction {
         for (WorkflowNode block : blocks) {
             // 只记子块 id：用户填写的子块定义（名称 / 输入 / 提示词等）不进日志
             log.debug("迭代节点 {} 编译子块 {}", definition.getId(), block.getId());
-            graph.addNode(block.getId(), NodeActionFactory.of(block, listener, chatClient));
+            graph.addNode(block.getId(), NodeActionFactory.of(block, listener, chatClient, toolCallbacks));
             blockIds.add(block.getId());
         }
 

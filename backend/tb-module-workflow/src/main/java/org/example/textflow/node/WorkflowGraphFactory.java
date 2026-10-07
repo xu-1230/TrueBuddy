@@ -15,8 +15,10 @@ import org.example.textflow.entity.WorkflowNode;
 import org.example.textflow.entity.WorkflowProcessRespVO;
 import org.example.textflow.model.ChatProtocol;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.tool.ToolCallback;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -41,10 +43,22 @@ public final class WorkflowGraphFactory {
      */
     public static CompiledGraph createGraph(WorkflowProcessRespVO process, NodeEventListener listener,
                                            ChatClient chatClient, MemorySaver saver) throws GraphStateException {
+        return createGraph(process, listener, chatClient, saver, List.of());
+    }
+
+    /**
+     * 同 {@link #createGraph(WorkflowProcessRespVO, NodeEventListener, ChatClient, MemorySaver)}，
+     * 并给大模型节点（含迭代体里的大模型节点）挂上可自主调用的工具。
+     *
+     * @param toolCallbacks 工具回调；为空时节点不具备工具能力
+     */
+    public static CompiledGraph createGraph(WorkflowProcessRespVO process, NodeEventListener listener,
+                                           ChatClient chatClient, MemorySaver saver,
+                                           List<ToolCallback> toolCallbacks) throws GraphStateException {
         StateGraph stateGraph = new StateGraph("text-flow", keyStrategyFactory());
 
         for (WorkflowNode node : process.getNodes()) {
-            stateGraph.addNode(node.getId(), NodeActionFactory.of(node, listener, chatClient));
+            stateGraph.addNode(node.getId(), NodeActionFactory.of(node, listener, chatClient, toolCallbacks));
         }
         for (WorkflowEdge edge : process.getEdges()) {
             stateGraph.addEdge(edge.getSource(), edge.getTarget());

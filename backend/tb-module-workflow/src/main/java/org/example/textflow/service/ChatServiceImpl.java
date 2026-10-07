@@ -26,6 +26,7 @@ import org.example.textflow.repository.WorkflowConversationRepository;
 import org.example.textflow.repository.WorkflowDefinitionRepository;
 import org.example.textflow.repository.WorkflowRunRepository;
 import org.example.textflow.sse.ChatSsePublisher;
+import org.example.textflow.tool.WorkflowToolCallbacks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -85,16 +86,21 @@ public class ChatServiceImpl implements ChatService {
     private final WorkflowRunRepository runRepository;
     private final ChatClient nodeChatClient;
 
+    /** 大模型节点可自主调用的工具（当前为作业文件读取），装配图时传给节点 */
+    private final WorkflowToolCallbacks workflowToolCallbacks;
+
     public ChatServiceImpl(WorkflowService workflowService,
                           WorkflowDefinitionRepository workflowRepository,
                           WorkflowConversationRepository conversationRepository,
                           WorkflowRunRepository runRepository,
-                          @Qualifier("nodeChatClient") ChatClient nodeChatClient) {
+                          @Qualifier("nodeChatClient") ChatClient nodeChatClient,
+                          WorkflowToolCallbacks workflowToolCallbacks) {
         this.workflowService = workflowService;
         this.workflowRepository = workflowRepository;
         this.conversationRepository = conversationRepository;
         this.runRepository = runRepository;
         this.nodeChatClient = nodeChatClient;
+        this.workflowToolCallbacks = workflowToolCallbacks;
     }
 
     @Override
@@ -152,7 +158,8 @@ public class ChatServiceImpl implements ChatService {
         final Map<String, Object> submitted = humanFeedback;
         try {
             CompiledGraph graph = WorkflowGraphFactory.createGraph(
-                    process, output -> push(publisher, executeId, output), nodeChatClient, checkpointSaver);
+                    process, output -> push(publisher, executeId, output), nodeChatClient, checkpointSaver,
+                    workflowToolCallbacks.callbacks());
 
             RunnableConfig.Builder configBuilder = RunnableConfig.builder().threadId(executeId);
             Map<String, Object> input = Map.of();

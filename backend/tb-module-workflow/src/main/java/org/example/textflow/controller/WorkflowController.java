@@ -11,6 +11,7 @@ import org.example.textflow.model.vo.WorkflowVO;
 import org.example.textflow.node.NodeEventListener;
 import org.example.textflow.node.WorkflowGraphFactory;
 import org.example.textflow.service.WorkflowService;
+import org.example.textflow.tool.WorkflowToolCallbacks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -52,6 +53,10 @@ public class WorkflowController {
     @Resource(name = "nodeChatClient")
     private ChatClient nodeChatClient;
 
+    /** 大模型节点可自主调用的工具（当前为作业文件读取），装配图时传给节点 */
+    @Resource
+    private WorkflowToolCallbacks workflowToolCallbacks;
+
     /** 联调执行同样需要检查点存储（编译期要求），与 /chat 的执行各自独立 */
     private final MemorySaver checkpointSaver = new MemorySaver();
 
@@ -62,7 +67,8 @@ public class WorkflowController {
     @GetMapping("/text")
     public void text() throws GraphStateException {
         CompiledGraph compiledGraph = WorkflowGraphFactory.createGraph(
-                workflowService.getProcess(DEFAULT_WORKFLOW_ID), NodeEventListener.NO_OP, nodeChatClient, checkpointSaver);
+                workflowService.getProcess(DEFAULT_WORKFLOW_ID), NodeEventListener.NO_OP, nodeChatClient, checkpointSaver,
+                workflowToolCallbacks.callbacks());
         compiledGraph.invoke(Map.of())
                 // 只记状态键：终态里是各节点的产出（用户数据），不整体打进日志
                 .ifPresent(state -> log.info("/workflow/text 执行结束，终态状态键: {}", state.data().keySet()));

@@ -14,6 +14,7 @@ import org.example.textflow.entity.WorkflowNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.tool.ToolCallback;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -52,9 +53,21 @@ public class LlmNode implements NodeAction {
     /** 对话模型客户端；为 null（无 Spring 容器的单测场景）时无法执行节点，调用时抛业务异常 */
     private final ChatClient nodeChatClient;
 
+    /**
+     * 随每次调用一起提交给模型的工具（如作业文件读取）。
+     * <p>工具入参（如 fileId）需要模型自己提供，因此提示词里必须能拿到文件清单；
+     * 工具的执行与结果回填由 Spring AI 的 ToolCallingManager 完成，模型可多轮调用后再产出最终 JSON。
+     */
+    private final List<ToolCallback> toolCallbacks;
+
     public LlmNode(WorkflowNode definition, ChatClient nodeChatClient) {
+        this(definition, nodeChatClient, List.of());
+    }
+
+    public LlmNode(WorkflowNode definition, ChatClient nodeChatClient, List<ToolCallback> toolCallbacks) {
         this.definition = definition;
         this.nodeChatClient = nodeChatClient;
+        this.toolCallbacks = toolCallbacks == null ? List.of() : List.copyOf(toolCallbacks);
     }
 
     @Override
@@ -97,11 +110,13 @@ public class LlmNode implements NodeAction {
         }
         String content;
         try {
-            content = nodeChatClient.prompt()
+            ChatClient.ChatClientRequestSpec request = nodeChatClient.prompt()
                     .system(systemPrompt)
-                    .user(userPrompt)
-                    .call()
-                    .content();
+                    .user(userPrompt);
+            if (!toolCallbacks.isEmpty()) {
+                request = request.toolCallbacks(toolCallbacks);
+            }
+            content = request.call().content();
         } catch (ServiceException e) {
             throw e;
         } catch (Exception e) {
