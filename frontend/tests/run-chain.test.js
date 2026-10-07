@@ -1,14 +1,16 @@
 /**
- * 「点击运行 → 运行前校验 → 拦截 or 执行」**全链路**用例（Node 内置 node:test，零新依赖）。
+ * 「点击运行 → 运行前校验 → 拦截 or 建会话并提交执行」**全链路**用例（Node 内置 node:test，零新依赖）。
  *
  * 为什么是「抽取真实函数体 + 替身环境」：本项目测试零依赖（没有 jsdom / @vue/test-utils），
  * 无法在 node:test 里挂载 SFC。所以这里直接读 `WorkflowView.vue` 的源码，把 `handleRun` 与
  * `showRunValidationErrors` 的**真实实现**取出来执行，只把「环境」换成替身：
  *
- * - **真实**：`buildRunDefinition`（真正提交给后端的定义，内含 `collapseIterations` 折叠）、
- *   `runValidationErrors`（校验）、Vue 的 `h` / 服务端渲染（校验失败的弹窗内容）；
+ * - **真实**：`buildRunDefinition`（运行前校验读的那份定义，内含 `collapseIterations` 折叠）、
+ *   `buildChatBody`（提交给 `/chat` 的请求体）、`runValidationErrors`（校验）、Vue 的 `h` /
+ *   服务端渲染（校验失败的弹窗内容）；
  * - **替身**：`useVueFlow` 的 `getNodes` / `getEdges`（外面包一层 `.value`）、`ElMessage`、
- *   `ElMessageBox`、`execute`（SSE 提交入口）、`cleanOrphanChildren`（真实现会删节点，这里只记调用）。
+ *   `ElMessageBox`、`createConversation`（建会话）、`execute`（SSE 提交入口）、
+ *   `cleanOrphanChildren`（真实现会删节点，这里只记调用）。
  *
  * 抽取 / 求值失败会直接抛错，所以源码一旦改名或改结构，这些用例会先红，不会悄悄退化成空测试。
  *
@@ -26,7 +28,7 @@ import { runValidationErrors } from '../src/views/workflow2/utils/run-validation
 
 // `src/api/workflow.js` 内部用 `@/` 别名，先挂解析钩子再动态 import（见 support/alias-hooks.mjs）
 register(new URL('./support/alias-hooks.mjs', import.meta.url))
-const { buildRunDefinition } = await import('../src/api/workflow.js')
+const { buildChatBody, buildRunDefinition } = await import('../src/api/workflow.js')
 
 const VIEW_PATH = new URL('../src/views/workflow2/WorkflowView.vue', import.meta.url)
 const TOOLS_PATH = new URL('../src/views/workflow2/components/ToolsWrap.vue', import.meta.url)
@@ -54,6 +56,9 @@ const canvasOfDefaultFlow = () => {
   })))
   return { nodes, edges }
 }
+
+/** 默认流程对应的工作流 id（执行按 workflow_id 读库，用例给一个固定值即可） */
+const WORKFLOW_ID = '1000000000000000001'
 
 /** 模拟真实删除：`handleDeleteKey` → `removeNodes([node], true, true)`（连带删掉它的连线） */
 const deleteNode = ({ nodes, edges }, id) => ({
@@ -101,17 +106,28 @@ const evaluateFunction = (source, declaration, deps) => {
   return factory(...Object.values(deps))
 }
 
-/** 把 `handleRun` 装到一个可观测的替身环境里 */
+/**
+ * 把 `handleRun` 装到一个可观测的替身环境里。
+ *
+ * `handleRun` 现在是 **async**（执行前要先建会话），因此调用方必须 `await`。
+ *
+ * @param {{nodes: Array, edges: Array}} store 画布 store 替身
+ * @param {object} [options] 选项
+ * @param {boolean} [options.streaming] 是否正在执行中
+ * @param {string} [options.workflowId] 当前工作流 id；传 `''` 模拟「未保存的画布」
+ */
 const loadHandleRun = (store, options = {}) => {
-  const calls = { execute: [], popup: [], info: [], warning: [], debug: [], cleanOrphan: 0 }
+  const calls = { execute: [], popup: [], info: [], warning: [], error: [], debug: [], conversation: [], cleanOrphan: 0 }
   // 浏览器里的 console 方法齐全，替身必须同款：源码里任何一处 console.log / warn / error 都不该把
   // 链路用例打成 `console.log is not a function`（`debug` 单独收进 calls.debug，供断言取用）
   const consoleCalls = { log: [], info: [], warn: [], error: [] }
-  const handleRun = evaluateFunction(readFileSync(VIEW_PATH, 'utf8'), 'const handleRun = () => {', {
+  const handleRun = evaluateFunction(readFileSync(VIEW_PATH, 'utf8'), 'const handleRun = async () => {', {
     runState: { value: { streaming: Boolean(options.streaming) } },
+    currentWorkflowId: { value: options.workflowId === undefined ? WORKFLOW_ID : options.workflowId },
     ElMessage: {
       info: (message) => calls.info.push(message),
       warning: (message) => calls.warning.push(message),
+      error: (message) => calls.error.push(message),
     },
     cleanOrphanChildren: () => { calls.cleanOrphan += 1 },
     buildRunDefinition,
@@ -119,8 +135,12 @@ const loadHandleRun = (store, options = {}) => {
     getEdges: { value: store.edges },
     runValidationErrors,
     showRunValidationErrors: (errors) => calls.popup.push(errors),
-    execute: (url, payload) => calls.execute.push({ url, body: payload?.body }),
-    WORKFLOW_API: { run: '/api/workflow/run' },
+    createConversation: async (workflowId) => {
+      calls.conversation.push(workflowId)
+      return { conversationId: 'conversation-1' }
+    },
+    buildChatBody,
+    execute: (payload) => calls.execute.push(payload),
     console: {
       debug: (...args) => calls.debug.push(args),
       log: (...args) => consoleCalls.log.push(args),
@@ -136,45 +156,62 @@ const loadHandleRun = (store, options = {}) => {
 
 /* ===== 链路：默认（合法）画布 ===== */
 
-test('链路：合法画布点运行 → 校验通过（不弹窗）→ 提交执行', () => {
+test('链路：合法画布点运行 → 校验通过（不弹窗）→ 建会话并提交执行', async () => {
   const store = canvasOfDefaultFlow()
   const { handleRun, calls } = loadHandleRun(store)
 
-  handleRun()
+  await handleRun()
 
   assert.deepEqual(calls.popup, [], '校验通过时不该弹窗')
   assert.equal(calls.cleanOrphan, 1, '提交前会先做一次悬空子块清理')
+  assert.deepEqual(calls.conversation, [WORKFLOW_ID], '执行前先按 workflow_id 建会话')
   assert.equal(calls.execute.length, 1, '校验通过后要提交执行')
-  assert.equal(calls.execute[0].url, '/api/workflow/run')
+  assert.equal(calls.execute[0].body.conversationId, 'conversation-1', '提交的是刚建出来的会话')
+  assert.equal(calls.execute[0].body.workflowId, WORKFLOW_ID)
+  assert.equal(calls.execute[0].body.message, undefined, '首轮不带 message（业务输入由开始节点提供模拟数据）')
   assert.deepEqual(calls.debug, [['[workflow] 运行前校验', '通过']], '开发期能看到校验跑过且通过')
 
-  // 提交的是 buildRunDefinition 的真实产物：顶层节点（开始 / 大模型 / 容器 / 结束）+ 容器内折叠的子块
-  const [first] = calls.execute[0].body.nodes
-  assert.equal(calls.execute[0].body.nodes.length, 4)
-  assert.equal(first.id, '100001')
-  const container = calls.execute[0].body.nodes.find((node) => node.id === '132996')
+  // 折叠口径仍然成立（保存与运行前校验都走 buildRunDefinition）：顶层节点（开始 / 大模型 / 容器 / 结束）
+  // + 容器内折叠的子块。`/chat` 只提交 workflow_id，故这里直接验证折叠产物本身。
+  const definition = buildRunDefinition(store.nodes, store.edges)
+  assert.equal(definition.nodes.length, 4)
+  assert.equal(definition.nodes[0].id, '100001')
+  const container = definition.nodes.find((node) => node.id === '132996')
   assert.equal(container.blocks.length, 1, '迭代体子块被折叠进容器的 blocks')
   assert.equal(container.edges.length, 2, '迭代体内部连线被折叠进容器的 edges')
 })
 
+/* ===== 链路：未保存的画布（执行按 workflow_id 读库，没有 id 就不能跑） ===== */
+
+test('链路：未保存的画布点运行 → 提示先保存，不建会话、不清理、不执行', async () => {
+  const { handleRun, calls } = loadHandleRun(canvasOfDefaultFlow(), { workflowId: '' })
+
+  await handleRun()
+
+  assert.deepEqual(calls.warning, ['请先保存工作流再运行（执行按 workflow_id 读取已落库的定义）'])
+  assert.equal(calls.cleanOrphan, 0, '拦在最前面，连悬空子块清理都不做')
+  assert.equal(calls.conversation.length + calls.execute.length, 0)
+})
+
 /* ===== 链路：缺开始 / 缺结束（用户手删之后的真实 store 状态） ===== */
 
-test('链路：删掉「结束」节点后点运行 → 弹窗列出原因，且**不提交执行**', () => {
+test('链路：删掉「结束」节点后点运行 → 弹窗列出原因，且**不提交执行**', async () => {
   const store = deleteNode(canvasOfDefaultFlow(), '900001')
   const { handleRun, calls } = loadHandleRun(store)
 
-  handleRun()
+  await handleRun()
 
   assert.deepEqual(calls.popup, [['工作流缺少顶层的「结束」节点']], '校验失败要弹窗，并给出缺失的节点')
   assert.equal(calls.execute.length, 0, '校验失败必须拦住本次运行')
+  assert.equal(calls.conversation.length, 0, '校验没过就不该建会话')
   assert.deepEqual(calls.debug[0], ['[workflow] 运行前校验', ['工作流缺少顶层的「结束」节点']])
 })
 
-test('链路：删掉「开始」节点后点运行 → 同样被拦住', () => {
+test('链路：删掉「开始」节点后点运行 → 同样被拦住', async () => {
   const store = deleteNode(canvasOfDefaultFlow(), '100001')
   const { handleRun, calls } = loadHandleRun(store)
 
-  handleRun()
+  await handleRun()
 
   // 期望值取真实校验器的输出：删掉「开始」后，原本引用它的变量会**连带**报出「变量引用有问题」，
   // 这条链路要保证的是「弹窗 = 校验器结果」，各条错误本身的内容由 tests/run-validation.test.js 负责
@@ -186,13 +223,13 @@ test('链路：删掉「开始」节点后点运行 → 同样被拦住', () => 
 
 /* ===== 链路：断链（顶层有节点没有连入的连线） ===== */
 
-test('链路：删掉「迭代 → 结束」的连线后点运行 → 报断链并拦住（用户实际遇到的场景）', () => {
+test('链路：删掉「迭代 → 结束」的连线后点运行 → 报断链并拦住（用户实际遇到的场景）', async () => {
   const store = canvasOfDefaultFlow()
   // 画布上「结束」没有连入的连线：后端会给它自动接 START 变成并行起点，运行后才表现为「失败 / 本次无产出变量」
   store.edges = store.edges.filter((edge) => edge.id !== 'e-132996-900001')
   const { handleRun, calls } = loadHandleRun(store)
 
-  handleRun()
+  await handleRun()
 
   // 期望值取真实校验器的输出：这条线一断，「结束」声明的取值（引用迭代容器的 result）也同时失去来源
   const expected = runValidationErrors(store.nodes, store.edges)
@@ -208,7 +245,7 @@ test('链路：删掉「迭代 → 结束」的连线后点运行 → 报断链�
 
 /* ===== 链路：变量没绑定取值（抽屉里只声明了名字、没选来源） ===== */
 
-test('链路：输入变量没选取值来源后点运行 → 报未绑定并拦住', () => {
+test('链路：输入变量没选取值来源后点运行 → 报未绑定并拦住', async () => {
   const store = canvasOfDefaultFlow()
   // 把「学生名单规划」的输入改成「只声明、没选来源」：后端遇到 input 为空会跳过该变量，
   // 提示词占位符替换成空串，运行照样「成功」——必须在运行前拦住。
@@ -218,7 +255,7 @@ test('链路：输入变量没选取值来源后点运行 → 报未绑定并拦
   ))
   const { handleRun, calls } = loadHandleRun(store)
 
-  handleRun()
+  await handleRun()
 
   assert.deepEqual(calls.popup, [[
     '变量还没有绑定取值：节点「学生名单规划」的输入变量「description」',
@@ -228,12 +265,12 @@ test('链路：输入变量没选取值来源后点运行 → 报未绑定并拦
 
 /* ===== 链路：画布上连出回边（环） ===== */
 
-test('链路：顶层连出回边后点运行 → 报循环连接并拦住', () => {
+test('链路：顶层连出回边后点运行 → 报循环连接并拦住', async () => {
   const store = canvasOfDefaultFlow()
   store.edges = [...store.edges, { id: 'e-back', source: '100002', target: '100001' }]
   const { handleRun, calls } = loadHandleRun(store)
 
-  handleRun()
+  await handleRun()
 
   assert.deepEqual(calls.popup, [['工作流存在循环连接：节点首尾相连形成回路']])
   assert.equal(calls.execute.length, 0)
@@ -241,24 +278,49 @@ test('链路：顶层连出回边后点运行 → 报循环连接并拦住', () 
 
 /* ===== 链路：其它分支 ===== */
 
-test('链路：空画布点运行 → 先提示「还没有节点」，不弹校验窗也不执行', () => {
+test('链路：空画布点运行 → 先提示「还没有节点」，不弹校验窗也不执行', async () => {
   const { handleRun, calls } = loadHandleRun({ nodes: [], edges: [] })
 
-  handleRun()
+  await handleRun()
 
   assert.deepEqual(calls.warning, ['画布上还没有节点，先添加节点再运行'])
   assert.deepEqual(calls.popup, [], '空画布走的是更早的分支，不进校验')
   assert.equal(calls.execute.length, 0)
 })
 
-test('链路：正在执行中点运行 → 只提示，不清理、不校验、不执行', () => {
+test('链路：正在执行中点运行 → 只提示，不清理、不校验、不执行', async () => {
   const { handleRun, calls } = loadHandleRun(canvasOfDefaultFlow(), { streaming: true })
 
-  handleRun()
+  await handleRun()
 
   assert.deepEqual(calls.info, ['正在执行中，请等待本次执行结束'])
   assert.equal(calls.cleanOrphan, 0)
   assert.equal(calls.popup.length + calls.execute.length, 0)
+})
+
+test('链路：建会话失败 → 提示原因，不提交执行', async () => {
+  const store = canvasOfDefaultFlow()
+  const calls = { execute: [], error: [] }
+  const handleRun = evaluateFunction(readFileSync(VIEW_PATH, 'utf8'), 'const handleRun = async () => {', {
+    runState: { value: { streaming: false } },
+    currentWorkflowId: { value: WORKFLOW_ID },
+    ElMessage: { info: () => {}, warning: () => {}, error: (message) => calls.error.push(message) },
+    cleanOrphanChildren: () => {},
+    buildRunDefinition,
+    getNodes: { value: store.nodes },
+    getEdges: { value: store.edges },
+    runValidationErrors,
+    showRunValidationErrors: () => {},
+    createConversation: async () => { throw new Error('工作流不存在: 1') },
+    buildChatBody,
+    execute: (payload) => calls.execute.push(payload),
+    console,
+  })
+
+  await handleRun()
+
+  assert.deepEqual(calls.error, ['工作流不存在: 1'], '建会话失败要把后端原因展示出来')
+  assert.equal(calls.execute.length, 0, '没有会话就不该提交执行')
 })
 
 /* ===== 校验失败弹窗的**内容**（VNode → HTML，确认错误真的会显示出来） ===== */
@@ -300,7 +362,12 @@ test('链路：运行按钮只有一条路径（ToolsWrap 点击 → run 事件 
 
   assert.match(tools, /@click="\$emit\('run'\)"/, '按钮点击必须派发 run')
   assert.match(tools, /:disabled="running"/, '执行中禁用按钮')
-  assert.match(view, /<ToolsWrap :running="runState\.streaming" @run="handleRun" \/>/, '画布页必须把 run 接到 handleRun')
+  // 模板里属性是跨行写的，断言不能要求单行形态
+  assert.match(
+    view,
+    /<ToolsWrap[\s\S]{0,240}?:running="runState\.streaming"[\s\S]{0,120}?@run="handleRun"/,
+    '画布页必须把 run 接到 handleRun',
+  )
   assert.equal(
     (view.match(/@run="/g) ?? []).length,
     1,

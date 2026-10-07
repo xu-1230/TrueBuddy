@@ -1,0 +1,169 @@
+{
+    "events": [
+      {
+        "event": "conversation.chat.created",
+        "timestamp": "20:49:57.918",
+        "data": {
+          "execute_id": "7693164794321600554",
+          "created_at": 1791204596,
+          "id": "7693165105051287594",
+          "conversation_id": "7693163655063928859",
+          "section_id": "7693163655063928859",
+          "last_error": {
+            "code": 0,
+            "msg": ""
+          },
+          "status": "created",
+          "usage": {
+            "output_count": 0,
+            "input_count": 0,
+            "token_count": 0
+          }
+        }
+      },
+      {
+        "event": "conversation.chat.in_progress",
+        "timestamp": "20:49:57.918",
+        "data": {
+          "status": "in_progress",
+          "usage": {
+            "input_count": 0,
+            "token_count": 0,
+            "output_count": 0
+          },
+          "inserted_additional_messages": [
+            {
+              "id": "7693165105051271210"
+            }
+          ],
+          "id": "7693165105051287594",
+          "conversation_id": "7693163655063928859",
+          "section_id": "7693163655063928859",
+          "last_error": {
+            "code": 0,
+            "msg": ""
+          },
+          "execute_id": "7693164794321600554",
+          "created_at": 1791204596
+        }
+      },
+      {
+        "event": "conversation.message.delta",
+        "timestamp": "20:49:58.379",
+        "data": {
+          "id": "7693165105051336746",
+          "type": "answer",
+          "content": "ok",
+          "chat_id": "7693165105051287594",
+          "created_at": 1791204597,
+          "conversation_id": "7693163655063928859",
+          "role": "assistant",
+          "content_type": "text",
+          "section_id": "7693163655063928859"
+        }
+      },
+      {
+        "event": "conversation.message.completed",
+        "timestamp": "20:49:58.379",
+        "data": {
+          "type": "answer",
+          "content_type": "text",
+          "chat_id": "7693165105051287594",
+          "id": "7693165105051336746",
+          "conversation_id": "7693163655063928859",
+          "content": "ok",
+          "section_id": "7693163655063928859",
+          "created_at": 1791204597,
+          "role": "assistant"
+        }
+      },
+      {
+        "event": "conversation.message.delta",
+        "timestamp": "20:49:58.488",
+        "data": {
+          "chat_id": "7693165105051287594",
+          "created_at": 1791204597,
+          "id": "7693165105051369514",
+          "role": "assistant",
+          "type": "answer",
+          "section_id": "7693163655063928859",
+          "conversation_id": "7693163655063928859",
+          "content": "ok",
+          "content_type": "text"
+        }
+      },
+      {
+        "event": "conversation.message.completed",
+        "timestamp": "20:49:58.488",
+        "data": {
+          "created_at": 1791204597,
+          "id": "7693165105051369514",
+          "conversation_id": "7693163655063928859",
+          "role": "assistant",
+          "content_type": "text",
+          "section_id": "7693163655063928859",
+          "type": "answer",
+          "content": "ok",
+          "chat_id": "7693165105051287594"
+        }
+      },
+      {
+        "event": "conversation.message.completed",
+        "timestamp": "20:49:58.506",
+        "data": {
+          "updated_at": 1791204597,
+          "conversation_id": "7693163655063928859",
+          "role": "assistant",
+          "type": "verbose",
+          "section_id": "7693163655063928859",
+          "created_at": 1791204597,
+          "id": "7693165105051402282",
+          "content": {
+            "msg_type": "generate_answer_finish",
+            "data": {
+              "finish_reason": 0,
+              "FinData": ""
+            },
+            "from_module": null,
+            "from_unit": null
+          },
+          "content_type": "text",
+          "chat_id": "7693165105051287594"
+        }
+      },
+      {
+        "event": "conversation.chat.completed",
+        "timestamp": "20:49:58.526",
+        "data": {
+          "id": "7693165105051287594",
+          "conversation_id": "7693163655063928859",
+          "section_id": "7693163655063928859",
+          "last_error": {
+            "code": 0,
+            "msg": ""
+          },
+          "inserted_additional_messages": [
+            {
+              "id": "7693165105051271210"
+            }
+          ],
+          "created_at": 1791204596,
+          "completed_at": 1791204597,
+          "status": "completed",
+          "usage": {
+            "token_count": 0,
+            "output_count": 0,
+            "input_count": 0
+          },
+          "execute_id": "7693164665002934322"
+        }
+      },
+      {
+        "event": "done",
+        "timestamp": "20:49:58.526",
+        "data": {
+          "debug_url": "https://www.coze.cn/work_flow?execute_id=7693164665002934322&space_id=7572177324725207050&workflow_id=7693164215431200783&execute_mode=2"
+        }
+      }
+    ]
+  }

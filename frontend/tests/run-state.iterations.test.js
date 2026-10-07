@@ -5,6 +5,10 @@
  * `state[迭代节点id].index`（后端 `IterateNodeTest.forwardedEventsCarryRoundIndex` 断言了这一点）。
  * 前端必须按这个下标取「已完成轮次」，否则含 N 个子块时会把轮次算成 N 倍。
  *
+ * 事件形态：`/chat` 把节点产出放在 `conversation.message.completed` 的 verbose 帧里
+ * （`content_type=verbose` + `content.msg_type=node_finished` + `content.data.{node,state}`），
+ * 见 `utils/run-state.js` 的 `applyRunEvent`。
+ *
  * 运行：cd frontend && npm test
  */
 import test from 'node:test'
@@ -36,17 +40,27 @@ const canvasNodes = () => [
   { id: SOURCE_ID, type: '3' },
 ]
 
+/**
+ * 节点产出帧：`conversation.message.completed` + `content_type=verbose` + `msg_type=node_finished`。
+ *
+ * 载荷形态与旧的 `node` 事件同形（`data.node` / `data.state[node]`），只是外面套了一层消息帧，
+ * 所以下面这些用例的期望值一个都没变——变的是喂进去的事件长什么样。
+ */
+const nodeFinished = (state, nodeId, payloadState) => applyRunEvent(state, 'conversation.message.completed', {
+  content_type: 'verbose',
+  content: { msg_type: 'node_finished', data: { node: nodeId, state: payloadState } },
+})
+
 /** 迭代源产出到达 → 总轮数 = 迭代源数组长度 */
-const withTotal = (state, length) => applyRunEvent(state, 'node', {
-  node: SOURCE_ID,
-  state: { [SOURCE_ID]: { description: Array.from({ length }, (_, i) => `第 ${i + 1} 项`) } },
+const withTotal = (state, length) => nodeFinished(state, SOURCE_ID, {
+  [SOURCE_ID]: { description: Array.from({ length }, (_, i) => `第 ${i + 1} 项`) },
 })
 
 /** 一轮里两个子块的事件（各自带本轮轮次下标 startIndex） */
 const feedRound = (state, roundIndex) => {
   const payloadState = { [CONTAINER_ID]: { index: roundIndex, item: `第 ${roundIndex + 1} 项` } }
   return [CHILD_A, CHILD_B].reduce(
-    (acc, nodeId) => applyRunEvent(acc, 'node', { node: nodeId, state: { ...payloadState, [nodeId]: { result: '模拟文本1' } } }),
+    (acc, nodeId) => nodeFinished(acc, nodeId, { ...payloadState, [nodeId]: { result: '模拟文本1' } }),
     state,
   )
 }
@@ -70,9 +84,9 @@ test('兜底：事件里没有轮次下标时退回按子块事件累加', () =>
   let state = beginRun(createRunState(), canvasNodes())
   state = withTotal(state, 2)
 
-  // 老后端（不带 state[容器id].index）的事件
+  // 事件里不带 state[容器id].index 的情况
   for (const nodeId of [CHILD_A, CHILD_B]) {
-    state = applyRunEvent(state, 'node', { node: nodeId, state: { [nodeId]: { result: '模拟文本1' } } })
+    state = nodeFinished(state, nodeId, { [nodeId]: { result: '模拟文本1' } })
   }
 
   assert.equal(iterationProgressOf(state, CONTAINER_ID).done, 2)
@@ -80,10 +94,7 @@ test('兜底：事件里没有轮次下标时退回按子块事件累加', () =>
 
 test('标量迭代源按单项列表计 1 轮（与后端 toList 同口径）', () => {
   let state = beginRun(createRunState(), canvasNodes())
-  state = applyRunEvent(state, 'node', {
-    node: SOURCE_ID,
-    state: { [SOURCE_ID]: { description: '只有一项' } },
-  })
+  state = nodeFinished(state, SOURCE_ID, { [SOURCE_ID]: { description: '只有一项' } })
 
   assert.equal(iterationProgressOf(state, CONTAINER_ID).total, 1, '标量会被后端当成单项列表跑一轮')
 })
@@ -92,10 +103,10 @@ test('兜底累加不会让已完成轮数超过总轮数', () => {
   let state = beginRun(createRunState(), canvasNodes())
   state = withTotal(state, 2)
 
-  // 老后端：事件不带轮次下标，且每轮的每个子块都各推一次
+  // 事件不带轮次下标，且每轮的每个子块都各推一次
   for (let round = 0; round < 5; round += 1) {
     for (const nodeId of [CHILD_A, CHILD_B]) {
-      state = applyRunEvent(state, 'node', { node: nodeId, state: { [nodeId]: { result: '模拟文本1' } } })
+      state = nodeFinished(state, nodeId, { [nodeId]: { result: '模拟文本1' } })
     }
   }
 

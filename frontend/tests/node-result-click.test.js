@@ -60,12 +60,12 @@ test('人工确认节点的等待确认区终止 click 冒泡 + 禁止拖节点'
   assert.match(
     HUMAN,
     /class="node-confirm nodrag" @click\.stop/,
-    '等待确认区必须同时带 nodrag 与 @click.stop（点输入框 / 「确认继续」不该开抽屉）',
+    '等待确认区必须同时带 nodrag 与 @click.stop（点「填写」不该开抽屉）',
   )
   assert.match(
     HUMAN,
-    /class="node-confirm__btn nodrag"[\s\S]{0,80}@click="confirm"/,
-    '「确认继续」按钮自己的 handler 保留',
+    /class="node-confirm__btn nodrag"[\s\S]{0,80}@click="openCard"/,
+    '「填写」按钮自己的 handler 保留（填写与提交都在画布页的弹窗里完成）',
   )
 })
 

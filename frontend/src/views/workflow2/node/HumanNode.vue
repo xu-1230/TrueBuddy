@@ -2,11 +2,11 @@
 /**
  * 人工确认节点卡片（type = 5）。
  *
- * 与其它卡片一样只做展示：变量声明走 VariableTags，运行态由画布页 provide；
- * 差别是执行到这里后端会中断，因此等待确认时卡片下方多一个输入框与「确认继续」按钮，
- * 确认动作交回画布页发起 `/workflow/resume`。
+ * 与其它卡片一样只做展示：变量声明走 VariableTags，运行态由画布页 provide。
+ * 执行到这里后端会**中断**并下发一张表单卡片，填写与提交都在画布页弹出的弹窗里完成
+ * （见 `components/HumanCardDialog.vue`）；卡片上只留一个「填写」入口，弹窗关掉后还能再打开。
  */
-import { computed, inject, ref } from 'vue'
+import { computed, inject } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { User } from '@element-plus/icons-vue'
 import VariableTags from '../components/VariableTags.vue'
@@ -38,11 +38,9 @@ const runActions = inject(RUN_ACTION_KEY, null)
 const runtime = computed(() => (runState ? nodeRuntimeOf(runState.value, props.id) : null))
 const waiting = computed(() => runtime.value?.status === RUN_STATUS.waiting)
 
-/** 待确认内容：确认后写入后端的 confirmedPlan */
-const content = ref('')
-
-const confirm = () => {
-  runActions?.confirm?.(props.id, content.value)
+/** 重新打开表单弹窗（中断时由画布页自动弹出，这里只是「关掉后还能再开」的入口） */
+const openCard = () => {
+  runActions?.openCard?.(props.id)
 }
 </script>
 
@@ -78,16 +76,10 @@ const confirm = () => {
     <template v-if="runtime">
       <NodeResultPanel :runtime="runtime" :node-id="id" />
 
-      <!-- 等待确认区不属于节点本体：终止 click 冒泡，避免点输入框 / 「确认继续」时打开节点抽屉 -->
+      <!-- 等待确认区不属于节点本体：终止 click 冒泡，避免点按钮时打开节点抽屉 -->
       <div v-if="waiting" class="node-confirm nodrag" @click.stop>
-        <input
-          v-model="content"
-          class="node-confirm__input nodrag"
-          type="text"
-          placeholder="填写确认内容，例如：确认按名单批改"
-          @keyup.enter="confirm"
-        />
-        <button class="node-confirm__btn nodrag" type="button" @click="confirm">确认继续</button>
+        <span class="node-confirm__hint">{{ runtime.waitLabel || '等待人工确认' }}</span>
+        <button class="node-confirm__btn nodrag" type="button" @click="openCard">填写</button>
       </div>
     </template>
   </div>
@@ -173,26 +165,14 @@ const confirm = () => {
   box-shadow: var(--tb-shadow-1);
 }
 
-.node-confirm__input {
+.node-confirm__hint {
   min-width: 0;
   flex-grow: 1;
-  padding: 4px 8px;
-  border: var(--tb-border-width) solid var(--tb-border);
-  border-radius: var(--tb-radius-sm);
-  background: var(--tb-bg-sunken);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 13px;
-  color: var(--tb-text-primary);
-  outline: none;
-  transition: border-color var(--tb-dur-2) var(--tb-ease-out);
-}
-
-.node-confirm__input:focus {
-  border-color: var(--tb-primary);
-  background: var(--tb-bg-surface);
-}
-
-.node-confirm__input::placeholder {
-  color: var(--tb-text-tertiary);
+  color: var(--tb-text-secondary);
 }
 
 .node-confirm__btn {

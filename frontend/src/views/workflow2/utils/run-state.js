@@ -1,9 +1,32 @@
 /**
- * 画布运行态：把后端 SSE 事件归约为「每个节点的状态 + 本次产出」。
+ * 画布运行态：把后端 `/chat` 的 SSE 事件归约为「每个节点的状态 + 本次产出 + 待确认卡片」。
  *
  * 全部是纯函数（入参不变、返回新对象），画布页只负责喂事件、节点卡片只负责渲染，
  * 这样状态流转可以脱离 Vue 单独验证，也不依赖 Vue Flow 内部的节点更新 API。
+ *
+ * 事件协议（对齐 Coze 的 `conversation.*` 命名，见后端 `ChatProtocol`）：
+ * - `conversation.chat.created`      → 拿到 conversation_id / execute_id / chat_id
+ * - `conversation.chat.in_progress`  → 开始执行
+ * - `conversation.message.completed` → 节点产出（content_type=verbose）或表单卡片（content_type=card）
+ * - `conversation.chat.requires_action` / `.completed` / `.failed` → 终态
+ * - `done`                           → 流关闭（**与成败无关**，不参与状态归约）
  */
+
+/** 后端事件名（与 ChatProtocol 一一对应） */
+export const RUN_EVENT = {
+  created: 'conversation.chat.created',
+  inProgress: 'conversation.chat.in_progress',
+  messageCompleted: 'conversation.message.completed',
+  requiresAction: 'conversation.chat.requires_action',
+  completed: 'conversation.chat.completed',
+  failed: 'conversation.chat.failed',
+  done: 'done',
+}
+
+/** 消息维度：节点产出走 verbose 帧，表单卡片走 card 帧 */
+const CONTENT_TYPE_VERBOSE = 'verbose'
+const CONTENT_TYPE_CARD = 'card'
+const MSG_TYPE_NODE_FINISHED = 'node_finished'
 
 /** 节点执行状态 */
 export const RUN_STATUS = {
@@ -11,9 +34,9 @@ export const RUN_STATUS = {
   idle: 'idle',
   /** 执行中 */
   running: 'running',
-  /** 完成：已收到该节点的 node 事件 */
+  /** 完成：已收到该节点的产出帧 */
   done: 'done',
-  /** 等待确认：人工确认节点中断 */
+  /** 等待确认：人工确认节点中断，等待用户在弹窗里填写并提交 */
   waiting: 'waiting',
   /** 失败：流异常结束时仍未完成 */
   failed: 'failed',
@@ -28,8 +51,8 @@ const STATUS_TEXT = {
   failed: '失败',
 }
 
-/** 单节点运行态的初始值 */
-const IDLE_RUNTIME = { status: RUN_STATUS.idle, result: null, waitLabel: '' }
+/** 单节点运行态的初始值；card 只在人工确认节点上出现 */
+const IDLE_RUNTIME = { status: RUN_STATUS.idle, result: null, waitLabel: '', card: null }
 
 /** 状态中文文案 */
 export const statusTextOf = (status) => STATUS_TEXT[status] ?? STATUS_TEXT.idle
@@ -104,7 +127,7 @@ const roundOfEvent = (eventState, containerId) => {
   return Number.isInteger(index) && index >= 0 ? index + 1 : 0
 }
 
-/** node 事件 → 迭代进度：按事件里的权威轮次取已完成轮次，迭代源的产出到达时补总轮数 */
+/** 节点产出帧 → 迭代进度：按事件里的权威轮次取已完成轮次，迭代源的产出到达时补总轮数 */
 const withIterationProgress = (state, nodeId, eventState) => {
   const plan = state.iterations
   if (!plan || !Object.keys(plan).length) return state
@@ -133,8 +156,23 @@ const withIterationProgress = (state, nodeId, eventState) => {
   return changed ? { ...state, iterations } : state
 }
 
-/** 一次运行的空状态 */
-export const createRunState = () => ({ runId: null, streaming: false, nodes: {}, iterations: {} })
+/**
+ * 一次运行的空状态。
+ *
+ * `conversationId` / `executeId` / `chatId` 由后端第一帧下发：会话编号跨轮不变、执行编号跨轮复用
+ * （同一行 workflow_run）、轮次编号每轮新生成；`failed` 记录本轮是否以失败终态收尾，
+ * 供 {@link finishRun} 在流正常关闭时区分「跑完了」与「失败了」。
+ */
+export const createRunState = () => ({
+  conversationId: null,
+  executeId: null,
+  chatId: null,
+  status: null,
+  failed: false,
+  streaming: false,
+  nodes: {},
+  iterations: {},
+})
 
 /**
  * 提交执行：把画布上的全部节点标记为「执行中」，清空上一次的产出，并按画布结构建立迭代进度。
@@ -143,7 +181,11 @@ export const createRunState = () => ({ runId: null, streaming: false, nodes: {},
  * @param {Array<object|string>} nodes 画布节点（传裸 id 数组时也能工作，只是拿不到迭代进度）
  */
 export const beginRun = (state, nodes = []) => ({
-  runId: null,
+  conversationId: state.conversationId,
+  executeId: null,
+  chatId: null,
+  status: null,
+  failed: false,
   streaming: true,
   nodes: Object.fromEntries(nodes.map((node) => [idOf(node), { ...IDLE_RUNTIME, status: RUN_STATUS.running }])),
   iterations: iterationPlanOf(nodes),
@@ -155,61 +197,128 @@ const withNode = (state, nodeId, patch) => ({
   nodes: { ...state.nodes, [nodeId]: { ...(state.nodes[nodeId] ?? IDLE_RUNTIME), ...patch } },
 })
 
+/** 从节点产出帧里取出 `{ node, state }`：载荷在同形约束下改挂到了 `content.data` 上 */
+const nodePayloadOf = (payload) => {
+  const data = payload?.content?.data
+  if (!data?.node) return null
+  return { node: data.node, state: data.state ?? {} }
+}
+
 /**
  * 归约一个 SSE 事件。
  *
  * @param {object} state 当前运行态
- * @param {string} event 事件名：run / node / interrupt
+ * @param {string} event 事件名，见 {@link RUN_EVENT}
  * @param {object} payload 事件载荷
  */
 export const applyRunEvent = (state, event, payload) => {
-  if (event === 'run') {
-    return { ...state, runId: payload?.runId ?? state.runId, streaming: true }
+  if (event === RUN_EVENT.created) {
+    return {
+      ...state,
+      conversationId: payload?.conversation_id ?? state.conversationId,
+      executeId: payload?.execute_id ?? state.executeId,
+      chatId: payload?.chat_id ?? state.chatId,
+      status: payload?.status ?? state.status,
+      streaming: true,
+    }
   }
-  if (event === 'node') {
-    const nodeId = payload?.node
-    if (!nodeId) return state
-    // 节点产出：state[节点id]；迭代体子块的事件同样按各自的 id 落表（画布上没有对应卡片时不展示）
-    const next = withNode(state, nodeId, {
-      status: RUN_STATUS.done,
-      result: payload?.state?.[nodeId] ?? null,
-      waitLabel: '',
-    })
-    // 迭代体子块事件按事件里携带的轮次下标累计迭代进度（见 roundOfEvent）
-    return withIterationProgress(next, nodeId, payload?.state)
+  if (event === RUN_EVENT.inProgress) {
+    return { ...state, status: payload?.status ?? state.status, streaming: true }
   }
-  if (event === 'interrupt') {
-    const nodeId = payload?.nodeId
-    if (!nodeId) return state
-    return withNode(state, nodeId, { status: RUN_STATUS.waiting, waitLabel: payload?.label ?? '' })
+  if (event === RUN_EVENT.messageCompleted) {
+    const contentType = payload?.content_type
+    if (contentType === CONTENT_TYPE_CARD) {
+      // 人工确认中断：记下弹窗数据，状态置 waiting（弹窗由画布页按 status=waiting 打开）
+      const nodeId = payload?.content?.node_id
+      if (!nodeId) return state
+      return withNode(state, nodeId, {
+        status: RUN_STATUS.waiting,
+        waitLabel: payload?.content?.title ?? '',
+        card: payload.content,
+      })
+    }
+    if (contentType === CONTENT_TYPE_VERBOSE && payload?.content?.msg_type === MSG_TYPE_NODE_FINISHED) {
+      const data = nodePayloadOf(payload)
+      if (!data) return state
+      // 节点产出：state[节点id]；迭代体子块的事件同样按各自的 id 落表（画布上没有对应卡片时不展示）
+      const next = withNode(state, data.node, {
+        status: RUN_STATUS.done,
+        result: data.state?.[data.node] ?? null,
+        waitLabel: '',
+        card: null,
+      })
+      // 迭代体子块事件按事件里携带的轮次下标累计迭代进度（见 roundOfEvent）
+      return withIterationProgress(next, data.node, data.state)
+    }
+    return state
+  }
+  if (event === RUN_EVENT.requiresAction) {
+    return { ...state, status: payload?.status ?? 'requires_action' }
+  }
+  if (event === RUN_EVENT.completed) {
+    return { ...state, status: payload?.status ?? 'completed' }
+  }
+  if (event === RUN_EVENT.failed) {
+    return { ...state, status: payload?.status ?? 'failed', failed: true }
   }
   return state
 }
 
 /**
- * 收尾：流正常结束时，仍处于「执行中」的节点回落为「待运行」（本次没走到）；异常结束时标记失败。
+ * 收尾：流关闭时，仍处于「执行中」的节点回落为「待运行」（本次没走到）；失败时标记失败。
  *
  * @param {object} state 当前运行态
- * @param {boolean} failed 是否为异常结束
+ * @param {boolean} [failed] 是否失败；省略时取本轮的终态帧结论（chat.failed → true）
  */
-export const finishRun = (state, failed = false) => ({
+export const finishRun = (state, failed) => {
+  const isFailed = typeof failed === 'boolean' ? failed : state.failed === true
+  return {
+    ...state,
+    streaming: false,
+    failed: isFailed,
+    nodes: Object.fromEntries(
+      Object.entries(state.nodes).map(([id, runtime]) => [
+        id,
+        runtime.status === RUN_STATUS.running
+          ? { ...runtime, status: isFailed ? RUN_STATUS.failed : RUN_STATUS.idle }
+          : runtime,
+      ]),
+    ),
+  }
+}
+
+/**
+ * 人工确认后继续：保留已有产出，仅把流重新标记为进行中。
+ *
+ * 上一轮的卡片已被这次提交**消费掉**，因此要清掉卡片并把该节点从「等待确认」拉回「执行中」：
+ * 否则弹窗关闭后卡片仍挂在运行态里，节点上的「填写」按钮还能再打开一张已经作废的表单。
+ */
+export const resumeRun = (state) => ({
   ...state,
-  streaming: false,
+  streaming: true,
+  failed: false,
   nodes: Object.fromEntries(
-    Object.entries(state.nodes).map(([id, runtime]) => [
-      id,
-      runtime.status === RUN_STATUS.running
-        ? { ...runtime, status: failed ? RUN_STATUS.failed : RUN_STATUS.idle }
-        : runtime,
-    ]),
+    Object.entries(state.nodes ?? {}).map(([id, runtime]) => (
+      runtime.card
+        ? [id, { ...runtime, status: RUN_STATUS.running, waitLabel: '', card: null }]
+        : [id, runtime]
+    )),
   ),
 })
 
-/** 人工确认后继续：保留已有产出，仅把流重新标记为进行中 */
-export const resumeRun = (state) => ({ ...state, streaming: true })
-
 /** 读取某节点的运行态；从未参与运行（含未登记）时返回 null，卡片据此决定是否渲染结果面板 */
 export const nodeRuntimeOf = (state, nodeId) => state?.nodes?.[nodeId] ?? null
+
+/**
+ * 当前待用户填写的表单卡片（可能同时只有一个：同一会话不允许并发执行）。
+ *
+ * @returns {object|null} 卡片载荷 `{node_id, card_type, title, data, fields}`；没有等待确认时返回 null
+ */
+export const pendingCardOf = (state) => {
+  const entries = Object.entries(state?.nodes ?? {})
+  const hit = entries.find(([, runtime]) => runtime.status === RUN_STATUS.waiting && runtime.card)
+  return hit ? hit[1].card : null
+}
 
 /**
  * 读取某个迭代容器的进度：`{ done, total }`；未登记（非迭代节点或未运行）时返回 null。

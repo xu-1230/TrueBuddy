@@ -5,10 +5,10 @@
  * 因此消费端必须允许缺省，缺省时退化为「不渲染结果面板」。
  */
 
-/** 运行态（只读 ref：`{ runId, streaming, nodes }`） */
+/** 运行态（只读 ref：`{ conversationId, executeId, chatId, status, failed, streaming, nodes, iterations }`） */
 export const RUN_STATE_KEY = Symbol('workflowRunState')
 
-/** 运行动作（`{ confirm: (nodeId, content) => void }`） */
+/** 运行动作（`{ openCard: () => void }`）：人工确认节点卡片用它重新打开填写弹窗 */
 export const RUN_ACTION_KEY = Symbol('workflowRunActions')
 
 /**

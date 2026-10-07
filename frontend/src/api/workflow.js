@@ -8,15 +8,20 @@ import service from './index'
 import { collapseIterations } from '@/views/workflow2/utils/iteration'
 
 /**
- * SSE 接口地址（由 `@/utils/workflow-sse` 用原生 `fetch` 读取）。
+ * `/chat` 的接口地址。
  *
- * 这里**带** context-path 前缀 `/api`：`fetch` 不经过 axios 实例，不会自动补 baseURL。
+ * 执行入口已**合并成一个 `/chat`**：首轮与中断续跑共用，由服务端按「该会话最新一条执行实例的状态」
+ * 分流，客户端不传状态。执行接口由 `@/utils/workflow-sse` 用原生 `fetch` 读取（故**带** `/api`
+ * 前缀：`fetch` 不经过 axios 实例、不会自动补 baseURL）；另外两个接口走 axios（故**不带**前缀，
+ * axios 实例的 baseURL 已经是 `/api`）。
  */
-export const WORKFLOW_API = {
-  /** 执行：请求体为画布定义，响应 text/event-stream */
-  run: '/api/workflow/run',
-  /** 人工确认后继续：query 参数 run_id / content，响应 text/event-stream */
-  resume: '/api/workflow/resume',
+export const CHAT_API = {
+  /** 执行一轮交互：请求体 {conversationId, workflowId?, message?}，响应 text/event-stream */
+  chat: '/api/chat',
+  /** 新建会话（绑定已落库的工作流） */
+  conversation: '/chat/conversation',
+  /** 会话列表（按最近活跃倒序） */
+  conversationList: '/chat/conversation/list',
 }
 
 /**
@@ -93,14 +98,32 @@ const toBackendNode = (node) => {
 }
 
 /**
- * 人工确认恢复的地址：`run_id` / `content` 走 query 参数（后端为 `@RequestParam`）。
+ * 首轮执行的请求体：会话编号 + 该会话绑定的工作流 id。
  *
- * @param {string} runId 执行标识，取自 `run` 事件
- * @param {string} content 人工确认内容
+ * 首轮**不带 `message`**：业务输入由后端开始节点提供模拟数据（`file_tree` / `description` / `know`），
+ * 画布页当前不采集用户输入。
+ *
+ * @param {string} conversationId 会话编号（由 {@link createConversation} 下发）
+ * @param {string} workflowId 工作流 id（后端会与会话绑定比对，防止前端串会话）
+ * @returns {{ conversationId: string, workflowId: string }} 可直接作为 `POST /api/chat` 的请求体
  */
-export function buildResumeUrl(runId, content) {
-  const query = new URLSearchParams({ run_id: runId ?? '', content: content ?? '' })
-  return `${WORKFLOW_API.resume}?${query.toString()}`
+export function buildChatBody(conversationId, workflowId) {
+  return { conversationId, workflowId }
+}
+
+/**
+ * 中断续跑的请求体：把表单卡片的填写值**结构化**回传。
+ *
+ * `values` 的 key 对应中断节点 `outputs` 声明的变量名（如 `files`），后端按
+ * `state[节点id][变量名]` 的口径回写状态，供下游节点引用。
+ *
+ * @param {string} conversationId 会话编号
+ * @param {string} nodeId 中断节点 id（与卡片帧的 `node_id` 对齐）
+ * @param {object} values 字段名 → 取值
+ * @returns {object} 可直接作为 `POST /api/chat` 的请求体
+ */
+export function buildCardSubmitBody(conversationId, nodeId, values) {
+  return { conversationId, message: { type: 'card_submit', nodeId, values } }
 }
 
 /**
@@ -144,4 +167,26 @@ export function getWorkflowDetail(workflowId) {
  */
 export function listWorkflows() {
   return service.get(WORKFLOW_REST_API.list)
+}
+
+/**
+ * 新建会话：会话在建的那一刻就绑定一个**已落库**的工作流。
+ *
+ * `/chat` 只接受 `workflow_id`、不接受内联画布定义，所以「未保存的画布」必须先保存才能运行。
+ *
+ * @param {string} workflowId 工作流 id（雪花 ID 字符串）
+ * @param {string} [title] 会话标题，缺省取工作流名称
+ * @returns {Promise<object>} 会话：{ conversationId, workflowId, workflowName, title, createTime, updateTime }
+ */
+export function createConversation(workflowId, title) {
+  return service.post(CHAT_API.conversation, { workflowId, title })
+}
+
+/**
+ * 会话列表（按最近活跃倒序）。
+ *
+ * @returns {Promise<Array>} 会话列表
+ */
+export function listConversations() {
+  return service.get(CHAT_API.conversationList)
 }

@@ -22,6 +22,30 @@ public final class WorkflowConstants {
     /** 状态：草稿 */
     public static final int STATUS_DRAFT = 0;
 
+    /** 执行状态：待运行（一期未使用，保留与 workflow_run 表口径一致） */
+    public static final int RUN_STATUS_PENDING = 0;
+
+    /** 执行状态：执行中 */
+    public static final int RUN_STATUS_RUNNING = 1;
+
+    /** 执行状态：成功 */
+    public static final int RUN_STATUS_SUCCESS = 2;
+
+    /** 执行状态：失败 */
+    public static final int RUN_STATUS_FAILED = 3;
+
+    /** 执行状态：中断（等待人工确认，非终态） */
+    public static final int RUN_STATUS_INTERRUPTED = 4;
+
+    /** 执行状态：已取消（一期未使用，保留） */
+    public static final int RUN_STATUS_CANCELLED = 5;
+
+    /** 判断是否为终态：终态后再次发起 /chat 才新起一条执行实例 */
+    public static boolean isRunTerminal(Integer status) {
+        return status != null
+                && (status == RUN_STATUS_SUCCESS || status == RUN_STATUS_FAILED || status == RUN_STATUS_CANCELLED);
+    }
+
     private WorkflowConstants() {
     }
 

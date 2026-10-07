@@ -442,8 +442,8 @@ test('画布页接线：handleRun 先校验，不通过则展示全部原因并�
     new URL('../src/views/workflow2/WorkflowView.vue', import.meta.url),
     'utf8',
   )
-  const runStart = view.indexOf('const handleRun = () => {')
-  const runEnd = view.indexOf('function confirmNode', runStart)
+  const runStart = view.indexOf('const handleRun = async () => {')
+  const runEnd = view.indexOf('function submitCard', runStart)
   assert.ok(runStart > 0 && runEnd > runStart, '能定位 handleRun 的实现')
   const handleRunBody = view.slice(runStart, runEnd)
 
@@ -458,7 +458,7 @@ test('画布页接线：handleRun 先校验，不通过则展示全部原因并�
     '校验不通过时列出全部错误并提前返回',
   )
   assert.ok(
-    handleRunBody.indexOf('runValidationErrors(') < handleRunBody.indexOf('execute(WORKFLOW_API.run'),
+    handleRunBody.indexOf('runValidationErrors(') < handleRunBody.indexOf('execute({'),
     '校验必须发生在提交执行之前',
   )
   assert.ok(

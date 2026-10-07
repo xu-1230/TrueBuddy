@@ -59,6 +59,17 @@
             <artifactId>postgresql</artifactId>
         </dependency>
 
+        <!--
+          登录态工具：/chat 是要求登录的执行入口，工作流会话 / 执行实例都要记 creator（system_user.id）。
+          SecurityFrameworkUtils / LoginUser 位于该 starter，tb-common 里没有，故编译期必须显式声明；
+          运行时该 jar 已由 tb-module-test 传递进 tb-server，模块间不会产生重复的自动配置。
+        -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-spring-boot-starter-security</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
         <!-- Lombok：@Data / @Slf4j（版本由 Spring Boot 父工程管理，编译期生效） -->
         <dependency>
             <groupId>org.projectlombok</groupId>

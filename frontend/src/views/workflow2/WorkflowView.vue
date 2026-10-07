@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, markRaw, onMounted, onUnmounted, provide, ref } from 'vue'
+import { computed, h, markRaw, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
@@ -12,6 +12,7 @@ import LlmNode from './node/LlmNode.vue'
 import IterateNode from './node/IterateNode.vue'
 import HumanNode from './node/HumanNode.vue'
 import ConnectionLine from './ConnectionLine.vue'
+import HumanCardDialog from './components/HumanCardDialog.vue'
 import NodeDataDrawer from './components/NodeDataDrawer.vue'
 import NodePanel from './components/NodePanel.vue'
 import ToolsWrap from './components/ToolsWrap.vue'
@@ -35,12 +36,14 @@ import {
   planMigration,
 } from './utils/iteration-membership'
 import {
-  buildResumeUrl,
+  buildCardSubmitBody,
+  buildChatBody,
   buildRunDefinition,
   buildWorkflowSchema,
+  createConversation,
   getWorkflowDetail,
   saveWorkflow,
-  WORKFLOW_API,
+  CHAT_API,
 } from '@/api/workflow'
 import { readWorkflowStream } from '@/utils/workflow-sse'
 import {
@@ -52,7 +55,7 @@ import {
 } from './utils/iteration'
 import { ITERATION_DROP_TARGET_KEY, RUN_ACTION_KEY, RUN_STATE_KEY } from './utils/run-inject'
 import { DEFAULT_FLOW_DEFINITION } from './default-flow'
-import { applyRunEvent, beginRun, createRunState, finishRun, resumeRun } from './utils/run-state'
+import { applyRunEvent, beginRun, createRunState, finishRun, pendingCardOf, resumeRun } from './utils/run-state'
 
 const {
   addEdges,
@@ -84,7 +87,7 @@ const nodeTypes = {
 /** 运行态：状态与产出由 run-state 归约，节点卡片按节点 id 读取 */
 const runState = ref(createRunState())
 provide(RUN_STATE_KEY, computed(() => runState.value))
-provide(RUN_ACTION_KEY, { confirm: (nodeId, content) => confirmNode(nodeId, content) })
+provide(RUN_ACTION_KEY, { openCard: () => openCard() })
 
 /** 拖拽命中的迭代容器：容器卡片据此高亮自己，让用户在松手前知道节点会落到哪 */
 const iterationDropTarget = ref(null)
@@ -580,30 +583,52 @@ const abortRun = () => {
   runAbort.value = null
 }
 
+/** 人工确认弹窗：卡片数据由后端的中断帧下发，画布页只负责「弹出来」与「提交回去」 */
+const cardVisible = ref(false)
+const cardData = ref(null)
+
+/** 打开当前待确认的表单卡片（中断时自动打开；节点卡片上的「填写」按钮也能再打开） */
+const openCard = () => {
+  const card = pendingCardOf(runState.value)
+  if (!card) {
+    ElMessage.warning('当前没有等待确认的人工确认节点')
+    return
+  }
+  cardData.value = card
+  cardVisible.value = true
+}
+
+// 收到中断帧（节点进入 waiting 且带卡片）就自动弹出，用户不需要再点一次
+watch(
+  () => pendingCardOf(runState.value)?.node_id ?? '',
+  (nodeId) => { if (nodeId) openCard() },
+)
+
 /**
- * 提交一次执行并消费事件流：事件交给 run-state 归约，节点卡片按 id 渲染状态与产出。
+ * 提交一轮交互并消费事件流：事件交给 run-state 归约，节点卡片按 id 渲染状态与产出。
  *
- * @param {string} url 接口地址（执行或人工确认恢复）
- * @param {object} [options] 选项
- * @param {object} [options.body] 请求体；恢复执行不需要 body
+ * @param {object} options 选项
+ * @param {object} options.body 请求体（首轮 = 会话 + 工作流；续跑 = 会话 + 表单填写值）
+ * @param {boolean} [options.resume] 是否续跑；续跑保留已有产出，首轮重置全部节点状态
  */
-const execute = async (url, options = {}) => {
+const execute = async ({ body, resume = false }) => {
   abortRun()
   const controller = new AbortController()
   runAbort.value = controller
-  // 提交执行时把整份画布节点交给归约：除了给每个节点建运行态，还用它推导迭代进度（容器 → 子块、迭代源）。
+  // 首轮把整份画布节点交给归约：除了给每个节点建运行态，还用它推导迭代进度（容器 → 子块、迭代源）。
   // 取 store 的实时节点（getNodes）而不是 v-model 绑定的 ref：ref 由 Vue Flow 在下一个 tick 才回写，
   // 刚做完删除/清理就点运行时会拿到旧数据，导致残留节点仍被当作顶层节点提交执行。
-  runState.value = options.body ? beginRun(runState.value, getNodes.value) : resumeRun(runState.value)
+  runState.value = resume ? resumeRun(runState.value) : beginRun(runState.value, getNodes.value)
 
   try {
-    await readWorkflowStream(url, {
-      body: options.body,
+    await readWorkflowStream(CHAT_API.chat, {
+      body,
       signal: controller.signal,
       onEvent: (event, payload) => {
         runState.value = applyRunEvent(runState.value, event, payload)
       },
     })
+    // 失败终态由 chat.failed 帧表达（流本身仍正常关闭），故这里不传 failed，交给 finishRun 读本轮结论
     runState.value = finishRun(runState.value)
   } catch (error) {
     // 主动中断（重新运行 / 离开页面）不算失败
@@ -632,14 +657,23 @@ const showRunValidationErrors = (errors) => {
 }
 
 /**
- * 工具栏「运行」：把当前画布提交给后端执行，节点进度与产出通过 SSE 回传。
+ * 工具栏「运行」：把**已保存的**工作流提交给后端执行，节点进度与产出通过 SSE 回传。
+ *
+ * `/chat` 只接受 `workflow_id`、不接受内联画布定义，所以未保存的画布必须先保存
+ * （地址栏带不上 `workflow_id` 时直接拦住，不做静默保存——那会覆盖已发布的定义）。
+ * 每次运行新建一个会话（画布页不做会话列表），中断后的续跑复用同一个会话。
  *
  * 提交前先做一次**运行前校验**（复刻 flowgram 运行时的 TaskValidate：先校验再运行，见
  * utils/run-validation）：不通过就拦住本次运行并把原因全部列出，不进入执行。
  */
-const handleRun = () => {
+const handleRun = async () => {
   if (runState.value.streaming) {
     ElMessage.info('正在执行中，请等待本次执行结束')
+    return
+  }
+  const workflowId = currentWorkflowId.value
+  if (!workflowId) {
+    ElMessage.warning('请先保存工作流再运行（执行按 workflow_id 读取已落库的定义）')
     return
   }
   // 提交前清掉悬空的迭代体子块，避免它们作为顶层节点被提交（定义取自 store 的实时数据）
@@ -657,26 +691,35 @@ const handleRun = () => {
     showRunValidationErrors(errors)
     return
   }
-  execute(WORKFLOW_API.run, { body: definition })
+  try {
+    // 会话在建的那一刻绑定工作流；执行入口按会话查最新一条执行实例来决定「新建 / 续跑」
+    const conversation = await createConversation(workflowId)
+    runState.value = { ...runState.value, conversationId: conversation.conversationId }
+  } catch (error) {
+    ElMessage.error(error?.message || '会话创建失败')
+    return
+  }
+  execute({ body: buildChatBody(runState.value.conversationId, workflowId) })
 }
 
 /**
- * 人工确认节点的「确认继续」：把确认内容回传后端，从暂停处继续执行（新起一条事件流）。
+ * 人工确认弹窗的「确定」：把表单填写值**结构化**回传，从暂停处继续执行（新起一条事件流）。
  *
- * @param {string} nodeId 等待确认的节点 id
- * @param {string} content 用户填写的确认内容
+ * 回传的是 `values`（字段名 → 取值）而不是一段文本：后端按 `state[节点id][变量名]` 回写状态，
+ * 下游节点通过 `blockID + name` 就能引用到人工填写的内容。
+ *
+ * @param {object} payload 弹窗提交内容
+ * @param {string} payload.nodeId 等待确认的节点 id
+ * @param {object} payload.values 字段名 → 取值
  */
-function confirmNode(nodeId, content) {
-  const runId = runState.value.runId
-  if (!runId) {
+function submitCard({ nodeId, values }) {
+  const conversationId = runState.value.conversationId
+  if (!conversationId) {
     ElMessage.warning('没有正在等待确认的执行')
     return
   }
-  if (!content?.trim()) {
-    ElMessage.warning('请先填写确认内容')
-    return
-  }
-  execute(buildResumeUrl(runId, content))
+  cardVisible.value = false
+  execute({ body: buildCardSubmitBody(conversationId, nodeId, values), resume: true })
 }
 
 // 删除键挂在 window 上：画布本身不保证持有焦点（点空白处后焦点会落回 body），
@@ -957,6 +1000,9 @@ async function submitSave() {
         <el-button type="primary" :loading="saving" @click="submitSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 人工确认弹窗：执行到人工确认节点中断时自动弹出，填写值经 /chat 续跑回传 -->
+    <HumanCardDialog v-model="cardVisible" :card="cardData" @submit="submitCard" />
   </div>
 </template>
 

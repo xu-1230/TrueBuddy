@@ -37,12 +37,12 @@
  *   这两种节点，迭代体的入口 / 出口是「容器自身 id」的虚拟边（后端接成 `START` / `END`），没有对应物；
  * - 空的迭代容器：后端 `IterateNode` 对没有子块的迭代体返回空汇总，不是错误；
  * - 输入参数（flowgram 在 schema 校验通过后用 start 节点 `outputs` 对 `inputs` 做的 JSON Schema 校验）：
- *   `/workflow/run` 不接受初始输入。
+ *   `/chat` 首轮不接受业务输入（开始节点的产出是模拟数据）。
  *
  * ⚠️ **唯一会被未来功能推翻的前提**：上面「结构类检查不可达」全都成立在「画布数据只来自本地」——
  * 默认定义（`default-flow.js`）、面板白名单创建、拖拽迁移三处（`WorkflowView.vue` 的 `defaultCanvas`）。
- * 一旦实现「打开工作流」（从后端 / 数据库读回定义填进画布；`WORKFLOW_API.text` 目前未被任何代码引用），
- * 数据形态就不再由前端保证，届时必须补上三项：`schemaFormat`（节点 / 边的必填字段）、
+ * 「打开工作流」（从后端读回定义填进画布）已经实现（画布页按路由 `workflow_id` 载入），
+ * 数据形态已不再完全由前端保证，届时必须补上三项：`schemaFormat`（节点 / 边的必填字段）、
  * `edgeSourceTargetExist`（边端点存在性）、节点类型白名单。
  */
 import { ITERATE_NODE_TYPE, isNestedNode } from './iteration.js'

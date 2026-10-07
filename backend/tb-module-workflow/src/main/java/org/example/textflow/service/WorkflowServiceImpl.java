@@ -49,9 +49,22 @@ public class WorkflowServiceImpl implements WorkflowService {
         this.workflowRepository = workflowRepository;
     }
 
+    /**
+     * 取可执行的画布定义。
+     *
+     * <p>{@code /chat} 只接受已落库的 {@code workflow_id}，故数字 id 一律按 {@code workflow} 表读取
+     * （{@code schema_json} 整体反序列化）；非数字 id（如联调接口 {@code /workflow/text} 传的
+     * {@code "text"}）回落 classpath {@code text.json}，保持联调链路不受影响。
+     */
     @Override
     public WorkflowProcessRespVO getProcess(String workflowId) {
-        return loadProcess();
+        String id = trimToNull(workflowId);
+        if (id == null || !isNumeric(id)) {
+            return loadProcess();
+        }
+        WorkflowDO workflow = workflowRepository.selectById(id)
+                .orElseThrow(() -> badRequest("工作流不存在: " + id));
+        return parseSchema(workflow.getSchemaJson());
     }
 
     @Override
@@ -141,8 +154,16 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     /** 校验画布定义：JSON 结构可反序列化，且连线 id 非空唯一（复用定义加载器的既有口径） */
     private void validateSchema(String schemaJson) {
+        parseSchema(schemaJson);
+    }
+
+    /** 反序列化画布定义，失败转成可直接展示的业务异常 */
+    private WorkflowProcessRespVO parseSchema(String schemaJson) {
+        if (schemaJson == null || schemaJson.isBlank()) {
+            throw badRequest("画布定义不能为空");
+        }
         try {
-            WorkflowProcessLoader.parse(schemaJson);
+            return WorkflowProcessLoader.parse(schemaJson);
         } catch (IOException e) {
             throw badRequest("画布定义不是合法的 JSON: " + e.getMessage());
         } catch (IllegalArgumentException e) {
