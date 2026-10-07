@@ -15,8 +15,9 @@ import org.springframework.stereotype.Component;
  * 模型拿 fileId 逐份读取。取字节只走 {@code fileId → infra_file(bucket, path) → MinIO 对象字节流}，
  * 不依赖预签名 URL（会过期，且 localhost 地址对模型侧不可达）。
  *
- * <p>挂在 {@code HomeworkFileToolConfiguration} 注册为 Spring AI 的 ToolCallback，
- * 与 docx-mcp 的远程工具共用同一套机制，工作流节点可直接使用。
+ * <p>由 {@code HomeworkFileToolConfiguration} 注册为 Spring AI 的 ToolCallback，
+ * 与 docx-mcp 的远程工具共用同一套机制。注意调用方需显式把工具挂到 ChatClient
+ * （provider bean 不会被自动收集，说明见配置类）。
  */
 @Slf4j
 @Component
