@@ -120,7 +120,7 @@ import AttendeeList from './components/AttendeeList.vue'
 import ChatPanel from './components/ChatPanel.vue'
 import ScreenStage from './components/ScreenStage.vue'
 import { useMeetingStore } from './stores/meeting'
-import { useLiveKitRoom } from './hooks/useLiveKitRoom'
+import { useLiveKitRoom, describeChatSend } from './hooks/useLiveKitRoom'
 
 /**
  * 主持人会话存储：键按会议号切分，放在 `localStorage`。
@@ -363,12 +363,13 @@ async function handleClose() {
 
 /** 发言：DataChannel 实时广播 + 后端落库（老师用主持人凭据） */
 async function handleSend(content) {
-  const persisted = await room.sendChat(content, {
+  const result = await room.sendChat(content, {
     meetingNo: session.value?.meetingNo,
     hostToken: session.value?.hostToken,
     self: { attendeeId: null, nickname: HOST_NICKNAME, role: ROLE_HOST },
   })
-  if (!persisted) ElMessage.warning('消息已发出，但未写入历史（刷新后可能看不到）')
+  const tip = describeChatSend(result)
+  if (tip) ElMessage.warning(tip)
 }
 
 // ========== 主持人会话的本地存取（按会议号切分） ==========

@@ -15,6 +15,16 @@
       </div>
     </header>
 
+    <!-- 状态同步失败不能静默：否则表现为「聊天没更新 / 会议结束没提示」 -->
+    <el-alert
+      v-if="stateError"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="会议状态同步失败"
+      :description="`${stateError}；聊天仍可继续，但「会议已结束」的兜底检测会失效，刷新页面可重试。`"
+    />
+
     <main class="room-body">
       <div class="room-body__stage">
         <ScreenStage ref="stageRef" :sharing="store.sharing" :hint="stageHint" />
@@ -57,7 +67,7 @@ import ChatPanel from './components/ChatPanel.vue'
 import NicknameDialog from './components/NicknameDialog.vue'
 import ScreenStage from './components/ScreenStage.vue'
 import { useMeetingStore } from './stores/meeting'
-import { useLiveKitRoom } from './hooks/useLiveKitRoom'
+import { useLiveKitRoom, describeChatSend } from './hooks/useLiveKitRoom'
 
 /** 参会会话存 sessionStorage：刷新页面后免二次输入名字，并用于重新取令牌 */
 const STORAGE_PREFIX = 'tb-meeting-attendee-'
@@ -74,6 +84,8 @@ const loading = ref(false)
 const meetingNo = String(route.params.meetingNo ?? '')
 const selfId = ref(null)
 const selfNickname = ref('')
+/** 状态同步失败的原因：不能静默（它是聊天历史铺底与「会议已结束」兜底的来源） */
+const stateError = ref('')
 let statePollTimer = null
 
 const room = useLiveKitRoom({
@@ -161,26 +173,36 @@ async function connectRoom(realtime) {
 /**
  * 拉会议状态：刷新、重连与轮询共用；返回体里带**新的访问令牌**，因此刷新后仍能连上房间。
  *
- * @returns {Promise<object|null>} 状态；失败返回 null
+ * @param {{ seed?: boolean }} [options] seed=true 表示首次进入 / 刷新恢复，用库里的成员与消息铺底。
+ * @returns {Promise<object|null>} 状态；失败返回 null（原因记进 stateError）
  */
-async function refreshState() {
+async function refreshState({ seed = false } = {}) {
   const session = readSession()
   if (!session) return null
   if (session.nickname) selfNickname.value = session.nickname
   if (session.attendeeId) selfId.value = session.attendeeId
-  loading.value = true
+  if (seed) loading.value = true
   try {
     const state = await getMeetingState(meetingNo, session.attendeeToken)
     store.setMeeting(state.meeting)
-    store.setAttendees(state.attendees)
-    store.setMessages(state.messages)
+    // 铺底时机：首次进入 / 刷新恢复，或者**实时通道不在线**（此时轮询降级为聊天通道）。
+    // 通道在线时绝不覆盖 —— 每 10s 用库里的数据整体覆盖一次，会把刚收到的实时消息
+    // 与以 LiveKit 为准的成员状态打回旧值，页面表现就是「聊天不更新」。
+    // 轮询同时不碰 loading，否则聊天面板每 10s 闪一次骨架。
+    if (seed || store.connection !== 'connected') {
+      store.setAttendees(state.attendees)
+      store.setMessages(state.messages)
+    }
+    stateError.value = ''
     if (state.meeting?.status === 2) markEnded()
     return state
-  } catch {
-    // 凭据失效（多为会议已结束）：保留当前画面，等轮询给出结论
+  } catch (error) {
+    // 以前这里静默返回 null：轮询若一直失败（凭据失效 / 会议被删 / 后端异常），
+    // 页面上只会表现为「什么都不再更新」，查不到原因，因此这里把原因留下来展示
+    stateError.value = error?.message ?? String(error)
     return null
   } finally {
-    loading.value = false
+    if (seed) loading.value = false
   }
 }
 
@@ -191,7 +213,8 @@ function markEnded() {
 
 function startStatePoll() {
   stopStatePoll()
-  statePollTimer = window.setInterval(refreshState, STATE_POLL_INTERVAL_MS)
+  // 包一层：轮询只做「会议是否已结束」的兜底，不带 seed
+  statePollTimer = window.setInterval(() => refreshState(), STATE_POLL_INTERVAL_MS)
 }
 
 function stopStatePoll() {
@@ -202,12 +225,13 @@ function stopStatePoll() {
 /** 发言：DataChannel 实时广播 + 后端落库（学生用参会凭据） */
 async function handleSend(content) {
   const session = readSession()
-  const persisted = await room.sendChat(content, {
+  const result = await room.sendChat(content, {
     meetingNo,
     attendeeToken: session?.attendeeToken,
     self: { attendeeId: selfId.value, nickname: selfNickname.value || '我', role: 2 },
   })
-  if (!persisted) ElMessage.warning('消息已发出，但未写入历史（刷新后可能看不到）')
+  const tip = describeChatSend(result)
+  if (tip) ElMessage.warning(tip)
 }
 
 async function restore() {
@@ -215,7 +239,8 @@ async function restore() {
     dialogVisible.value = true
     return
   }
-  const state = await refreshState()
+  // 刷新恢复：这一次要铺底（消息与成员来自库），此后的轮询只兜底会议结束
+  const state = await refreshState({ seed: true })
   if (!state || store.ended) return
   await connectRoom(state.realtime)
   startStatePoll()

@@ -158,40 +158,54 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
   /**
    * 发送聊天消息：DataChannel 广播 + 后端落库（双写）。
    *
+   * <p>两条路各自记账、互不牵连。特别是**实时广播失败不再被吞掉**：以前房间没连上（或数据通道未就绪）
+   * 时直接 `return false`，消息既没广播也没落库，而调用方只提示「未写入历史」——
+   * 在页面上就表现为「聊天没有更新」这种查不出原因的现象。
+   *
    * @param {string} content 正文
    * @param {{ meetingNo: string, attendeeToken?: string, hostToken?: string, self: object }} context 身份上下文
-   * @returns {Promise<boolean>} 是否已成功写入历史（实时广播成功与否不影响渲染）
+   * @returns {Promise<{ delivered: boolean, persisted: boolean }>} 实时是否广播成功、是否写入历史
    */
   async function sendChat(content, { meetingNo, attendeeToken, hostToken, self } = {}) {
     const text = (content ?? '').trim()
-    if (!text || !room.value) return false
+    if (!text) return { delivered: false, persisted: false }
 
-    const clientId = globalThis.crypto?.randomUUID?.() ?? `local-${Date.now()}`
-    const payload = new TextEncoder().encode(JSON.stringify({ type: 'chat', clientId, content: text }))
-    await room.value.localParticipant.publishData(payload, { reliable: true })
+    let delivered = false
+    if (room.value) {
+      try {
+        const clientId = globalThis.crypto?.randomUUID?.() ?? `local-${Date.now()}`
+        const payload = new TextEncoder().encode(JSON.stringify({ type: 'chat', clientId, content: text }))
+        await room.value.localParticipant.publishData(payload, { reliable: true })
+        delivered = true
 
-    onEvent?.({
-      type: 'chat.message',
-      id: clientId,
-      attendeeId: self?.attendeeId ?? null,
-      nickname: self?.nickname || '我',
-      role: self?.role ?? ROLE_STUDENT,
-      content: text,
-      kind: 1,
-      createTime: new Date().toISOString(),
-    })
+        // DataChannel 不会把数据回给自己，发送端本地先渲染
+        onEvent?.({
+          type: 'chat.message',
+          id: clientId,
+          attendeeId: self?.attendeeId ?? null,
+          nickname: self?.nickname || '我',
+          role: self?.role ?? ROLE_STUDENT,
+          content: text,
+          kind: 1,
+          createTime: new Date().toISOString(),
+        })
+      } catch (error) {
+        // 让调用方据此如实提示；这里不能抛，否则连落库的机会都没了
+        console.warn('[sendChat][实时广播失败，改为只写历史]', error)
+      }
+    }
 
     const body = { meetingNo, content: text, attendeeToken, hostToken }
     try {
       await sendMeetingMessage(body)
-      return true
+      return { delivered, persisted: true }
     } catch {
       // 重试一次：实时已经发出去了，历史缺一条是最需要补救的情况
       try {
         await sendMeetingMessage(body)
-        return true
+        return { delivered, persisted: true }
       } catch {
-        return false
+        return { delivered, persisted: false }
       }
     }
   }
@@ -239,4 +253,17 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
     startScreenShare,
     stopScreenShare,
   }
+}
+
+/**
+ * 把 {@link useLiveKitRoom} 的 `sendChat` 结果翻成一句提示（两个页面共用，避免口径不一致）。
+ *
+ * @param {{ delivered: boolean, persisted: boolean }} result 发送结果
+ * @returns {string} 需要提示时返回文案，一切正常时返回空串
+ */
+export function describeChatSend({ delivered, persisted } = {}) {
+  if (delivered && persisted) return ''
+  if (!delivered && !persisted) return '消息未发送：实时通道未连接，历史也写入失败'
+  if (!delivered) return '实时通道未连接：消息只写入了历史，其他人刷新后才能看到'
+  return '消息已广播，但未写入历史（刷新后可能看不到）'
 }

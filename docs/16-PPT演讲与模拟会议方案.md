@@ -213,13 +213,22 @@ graph TB
 | 成员与在线 | `ParticipantConnected/Disconnected/MetadataChanged` → 由 `remoteParticipants` 重建名单 |
 | 事件契约 | **与旧自建通道同名**（`chat.message` / `attendee.joined` / `attendee.left` / `screen.start` / `screen.stop`），因此 `stores/meeting.js` 的 `applyEvent` 与展示组件未改动 |
 
-聊天**双写**：DataChannel 成功后串行 `POST /meeting/message`，失败重试一次；仍失败只提示「未写入历史」，不影响实时。
+聊天**双写**：`sendChat()` 对两条路**各自记账**，返回 `{ delivered, persisted }`；DataChannel 广播失败（房间没连上 / 数据通道未就绪）**不再吞成静默失败**，照旧尝试 `POST /meeting/message` 落库（失败重试一次），由两页共用的 `describeChatSend()` 译成一句提示。历史落库失败只提示「未写入历史」，不影响实时。
 
 ### 5.5 结束会议的通知路径
 
 1. 老师点「结束会议」→ `POST /meeting/close` → 后端置 `status=2` 并 `DeleteRoom`；
 2. 房间被删 → 房间内所有学生立刻收到 `Disconnected`；
 3. 兜底：学生端每 10s 轮询 `GET /meeting/state`，`status=2` 即展示「会议已结束」。
+
+**学生端这条轮询的取用口径**（它不是聊天通道，聊天走 DataChannel）：
+
+| 情况 | 行为 |
+| --- | --- |
+| 老师端 | **不轮询**：会议是老师自己结束的；万一被别处结束，房间被删后客户端会收到 `Disconnected`，此时 `syncEndedState()` 调一次 `/meeting/detail` 确认 |
+| 学生端 / 实时通道在线 | 轮询只读 `meeting.status` 兜底「已结束」；**不**用返回值覆盖成员与消息（那是 LiveKit 的事实），也不触发 `loading`（否则聊天面板每 10s 闪一次骨架） |
+| 学生端 / 实时通道不在线 | 轮询降级成聊天与成员的通道：把库里的最近消息铺回来。宁可晚 10s 看到，也不要「什么都不更新」 |
+| 学生端 / 轮询失败 | **不静默**：页面顶部给出「会议状态同步失败」提示（静默失败会让现象变成「聊天不更新且没有结束提示」，无从排查） |
 
 ### 5.6 共享动线：建会 → 自动打开放映页 → 自动尝试共享
 
