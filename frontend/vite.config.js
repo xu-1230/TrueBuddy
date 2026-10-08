@@ -39,6 +39,7 @@ export default defineConfig({
       '@bytemd/plugin-mermaid',
       'docx-preview',
       'jszip',
+      'livekit-client',
       'pptx-to-pptist',
       'pptxtojson',
       '@vue-flow/core',
@@ -50,6 +51,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8086',
         changeOrigin: true,
+        // 模拟会议的实时通道（/api/ws/meeting）走 WebSocket 升级，必须显式开启
+        ws: true,
       },
     },
   },

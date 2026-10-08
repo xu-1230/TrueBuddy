@@ -61,14 +61,14 @@
 | 机制 | 位置 | 说明 |
 | --- | --- | --- |
 | `@PermitAll` | 方法 / 类 | 标注即免登录（现有 `AuthController.login`） |
-| `tb.security.permit-all-urls` | `application.yml` | URL 白名单：`/system/auth/login`、`/test2/read-pptx`、`/doc-template/**`、`/workflow/**` |
+| `tb.security.permit-all-urls` | `application.yml` | URL 白名单：`/system/auth/login`、`/test2/read-pptx`、`/test2/file-text`、`/doc-template/**`、`/workflow/**`、`/homework/**`、`/meeting/**`（实时媒体与聊天走自托管 LiveKit 的 7880/7881，不经过本服务） |
 | 兜底 | `SecurityConfig` | `anyRequest().authenticated()`；静态资源与 `DispatcherType.ASYNC` 放行 |
 
 > 新增免登录接口优先使用 `@PermitAll`；批量前缀放行才写入 `permit-all-urls` 并同步本文档。
 >
 > **待整改**：`permit-all-urls` 中仍保留 `/test2/kb-parse`、`/test2/kb-parse-raw`、`/test2/kb-parse-official`、`/test2/kb-parse-structure` 四条，但 `Test2Controller` 当前只有 `/test2/ping` 与 `/test2/read-pptx`，这四个端点已无对应实现，应从白名单清理。
 
-### 2.5 接口清单（共 10 个 Controller / 28 个接口）
+### 2.5 接口清单（共 11 个 Controller / 34 个接口）
 
 > 下表路径均省略上下文前缀 `/api`。
 
@@ -102,6 +102,12 @@
 | 26 | `WorkflowController` | POST | `/workflow/save` | **已实现**：保存工作流定义（`id` 空 = 新建，非空 = 更新；画布 JSON 整存，**不做版本管理**；返回 String 类型的雪花 id） | `CommonResult<String>` |
 | 27 | `WorkflowController` | GET | `/workflow/detail` | **已实现**：工作流详情（query 参数 `workflow_id`；含 `schemaJson` 画布字符串与 `builtin` / `stepCount`） | `CommonResult<WorkflowDetailRespVO>` |
 | 28 | `WorkflowController` | GET | `/workflow/list` | **已实现**：工作流列表（不含 `schemaJson`，按更新时间倒序；含 `builtin` / `stepCount`） | `CommonResult<List<WorkflowVO>>` |
+| 29 | `MeetingController` | POST | `/meeting/create` | 创建会议（老师控制台）：返回会议号、入会链接与主持人凭据 | `CommonResult<MeetingCreateRespVO>` |
+| 30 | `MeetingController` | POST | `/meeting/join` | 学生入会（会议号 + 昵称），返回参会凭据与会议初始数据 | `CommonResult<MeetingJoinRespVO>` |
+| 31 | `MeetingController` | GET | `/meeting/detail` | 会议详情（`meetingNo` + `hostToken`）：控制台初始化 / 刷新恢复 | `CommonResult<MeetingDetailRespVO>` |
+| 32 | `MeetingController` | GET | `/meeting/state` | 学生侧会议状态（`meetingNo` + `attendeeToken`）：刷新 / 断线重连后补齐数据 | `CommonResult<MeetingDetailRespVO>` |
+| 33 | `MeetingController` | POST | `/meeting/close` | 结束会议（`meetingNo` + `hostToken`）：置为已结束并**删除 LiveKit 房间**（房间内学生立即断开） | `CommonResult<Boolean>` |
+| 34 | `MeetingController` | POST | `/meeting/message` | 聊天落库（`meetingNo` + `attendeeToken` 或 `hostToken` + `content`）；实时由 LiveKit DataChannel 承担，本接口只写历史 | `CommonResult<MeetingMessageVO>` |
 
 > 接口 24~28 属**自定义工作流模块**，分两块：
 >
@@ -183,6 +189,7 @@ service.interceptors.response.use(
 | `knowledgebase.js` | `getSpaceList`、`createSpace`、`updateSpace`、`deleteSpace`、`getDocumentList`、`createDocument`、`deleteDocument`、`getChunkList`、`uploadDocument`、`vectorizeDocument` | 接口 12~21 |
 | `homework.js` | `gradeHomework`、`getGradingHistory`、`getGradingDetail`、`exportGradingResult` | **后端暂无对应接口（待联调）** |
 | `workflow.js` | `buildRunDefinition`、`buildWorkflowSchema`、`buildResumeUrl`、`saveWorkflow`、`getWorkflowDetail`、`listWorkflows`；常量 `WORKFLOW_API`（SSE 地址，含 `/api` 前缀）与 `WORKFLOW_REST_API`（REST 路径，无前缀） | 接口 24、26~28：`views/workflow2/WorkflowView.vue`（画布编辑 + 保存对话框 + 按 `workflow_id` 打开 + 试运行 + 节点下方人工确认卡片）、`views/homework/HomeworkGradingView.vue`（工作流下拉走 `listWorkflows`）；SSE 读取封装见 `src/utils/workflow-sse.js`。`GET /workflow/get_process` 未实现，故无轮询兜底 |
+| `meeting.js` | `createMeeting`、`joinMeeting`、`getMeetingDetail`、`getMeetingState`、`sendMeetingMessage`、`closeMeeting`；常量 `MEETING_REST_API` | 接口 29~34：`views/meeting/MeetingConsoleView.vue`（老师控制台）、`views/meeting/MeetingRoomView.vue`（学生会议室）。实时能力不在本文件内：LiveKit 房间客户端见 `views/meeting/hooks/useLiveKitRoom.js` |
 
 ### 3.4 调用约定
 

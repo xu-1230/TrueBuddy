@@ -62,6 +62,12 @@
             <artifactId>tb-module-homework</artifactId>
             <version>${revision}</version>
         </dependency>
+        <!-- 讲课模块：模拟会议（后续承载 PPT 演讲稿优化与 AI 数字人配音） -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-lecture</artifactId>
+            <version>${revision}</version>
+        </dependency>
 
         <!-- 测试 -->
         <dependency>

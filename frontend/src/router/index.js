@@ -35,9 +35,17 @@ const router = createRouter({
         { path: "homework-grading", name: "homework-grading", component: () => import("../views/homework/HomeworkGradingView.vue") },
         { path: "knowledge-base", name: "knowledge-base", component: () => import("../views/knowledgebase/KnowledgeBaseView.vue") },
         { path: "ppt", name: "ppt", component: () => import("../views/ppt/index.vue") },
+        // 模拟会议：老师控制台（建会、看名单与聊天、共享屏幕）
+        { path: "meeting", name: "meeting-console", component: () => import("../views/meeting/MeetingConsoleView.vue") },
         // 工作流编排：画布页（workflow2）
         { path: "workflow", name: "workflow", component: () => import("../views/workflow2/WorkflowView.vue") },
       ],
+    },
+    {
+      // 学生会议室：独立于 /index 布局、免登录，学生点入会链接直接进入
+      path: "/meeting/:meetingNo",
+      name: "meeting-room",
+      component: () => import("../views/meeting/MeetingRoomView.vue"),
     },
     {
       path: "/test",

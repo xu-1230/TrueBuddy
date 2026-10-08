@@ -62,6 +62,19 @@ defineProps({
       />
     </g>
 
+    <!-- 模拟会议：屏幕 + 两位参会者 -->
+    <g v-else-if="name === 'meeting'" class="tb-icon__shape">
+      <path
+        d="M4.6 5h14.8v10.4H4.6V5Zm1.6 1.6v7.2h11.6V6.6H6.2Z"
+        fill-rule="evenodd"
+      />
+      <circle cx="9.6" cy="9.2" r="1.5" />
+      <path d="M7.1 13.2c0-1.3 1.1-2.3 2.5-2.3s2.5 1 2.5 2.3H7.1Z" />
+      <circle cx="14.7" cy="9.4" r="1.2" />
+      <path d="M12.8 13.2c0-1.1.9-1.9 1.9-1.9s1.9.8 1.9 1.9h-3.8Z" />
+      <path d="M11.1 16.6h1.8v2.2h-1.8v-2.2Z" />
+    </g>
+
     <!-- 工作流编排：两个节点 + 连线 -->
     <g v-else-if="name === 'workflow'" class="tb-icon__shape">
       <rect x="4.4" y="4.4" width="6.4" height="6.4" rx="2.2" />

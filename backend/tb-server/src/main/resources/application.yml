@@ -114,6 +114,34 @@ tb:
       - /workflow/**
       # 作业批改：文件夹批量上传，便于未登录态联调
       - /homework/**
+      # 模拟会议：学生点入会链接免登录参会（会议内身份用 hostToken / attendeeToken；
+      # 实时媒体与聊天走 LiveKit 自己的端口 7880/7881，不经过本服务）
+      - /meeting/**
+  # 讲课模块：模拟会议（本期）
+  lecture:
+    meeting:
+      # 学生入会链接基地址（如 http://192.168.1.5:5173）；留空时自动探测本机局域网 IPv4 并拼接前端端口
+      public-base-url: ${TB_MEETING_PUBLIC_BASE_URL:}
+      # 探测局域网 IP 时拼接的前端端口（Vite 开发服务器默认 5173）
+      frontend-port: ${TB_MEETING_FRONTEND_PORT:5173}
+      # 单场会议参会人数上限
+      max-attendees: ${TB_MEETING_MAX_ATTENDEES:20}
+      # 入会与详情接口返回的历史消息条数上限
+      history-limit: ${TB_MEETING_HISTORY_LIMIT:50}
+      # 参会昵称最大长度
+      nickname-max-length: ${TB_MEETING_NICKNAME_MAX_LENGTH:20}
+      # 单条消息长度上限（与前端 DataChannel 正文口径一致）
+      message-max-length: ${TB_MEETING_MESSAGE_MAX_LENGTH:500}
+      # 实时通道：LiveKit（媒体走音视频轨、聊天走 DataChannel，后端只签发令牌与删房间）
+      # 留空表示未配置：会议仍可创建、可查历史，但入会会被明确拒绝（错误码 1_007_000_010）
+      livekit-url: ${LIVEKIT_URL:}
+      # 推导信令地址时使用的端口（livekit-url 留空时按 ws://{局域网IP}:{该端口} 拼接）
+      livekit-port: ${LIVEKIT_PORT:7880}
+      # 必须与 D:\ctf\livekit\.env 里的 LIVEKIT_API_KEY / LIVEKIT_API_SECRET 一致
+      livekit-api-key: ${LIVEKIT_API_KEY:}
+      livekit-api-secret: ${LIVEKIT_API_SECRET:}
+      # 访问令牌有效期（小时）
+      livekit-token-ttl-hours: ${LIVEKIT_TOKEN_TTL_HOURS:6}
   # 知识库文档解析：阿里云文档智能（文档解析大模型版）
   # AK/SK 为必填项，一律通过环境变量注入（项目根目录 .env，模板见 .env.example），缺失时启动即失败
   docmind:

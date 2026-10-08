@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.example</groupId>
+        <artifactId>backend</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>tb-module-lecture</artifactId>
+    <name>tb-module-lecture</name>
+    <description>讲课模块：模拟会议（本期），后续承载 PPT 演讲稿优化与 AI 数字人配音</description>
+
+    <dependencies>
+        <!-- Web 组件：提供 spring-boot-starter-web 注解 + CommonResult -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-spring-boot-starter-web</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 统一返回对象 CommonResult -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-common</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 数据访问：与 tb-module-homework 保持一致，使用 MyBatis 注解 Mapper（无 XML） -->
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <!-- 实时通道：媒体与聊天都交给自托管的 LiveKit（见 docs/16），因此不引入 WebSocket starter；
+             令牌签发用项目已有的 Hutool 手写 HS256，房间管理用 Twirp HTTP 直调 -->
+        <!-- 测试：LiveKit 访问令牌签发的回归锁定（本模块唯一有纯逻辑、值得锁的部分） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

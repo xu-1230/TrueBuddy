@@ -271,6 +271,7 @@ const menuGroups = [
       { path: '/index/doc-template', label: '文档模板生成', icon: 'doc' },
       { path: '/index/homework-grading', label: '作业批改', icon: 'grading' },
       { path: '/index/ppt', label: 'PPT 演示', icon: 'slide' },
+      { path: '/index/meeting', label: '模拟会议', icon: 'meeting' },
     ],
   },
   {

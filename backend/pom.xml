@@ -36,6 +36,8 @@
         <module>tb-module-workflow</module>
         <!-- 作业批改模块（作业文件夹上传 → 文件清单） -->
         <module>tb-module-homework</module>
+        <!-- 讲课模块（本期：模拟会议；后续：PPT 演讲稿优化与 AI 数字人配音） -->
+        <module>tb-module-lecture</module>
 
         <!-- 启动模块 -->
         <module>tb-server</module>

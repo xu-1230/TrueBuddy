@@ -175,6 +175,7 @@ import { Live2DModel } from 'pixi-live2d-display/cubism4'
 import { convertPPTXToPPTist } from 'pptx-to-pptist'
 import { useSlidesStore } from './stores/slides'
 import { useScreenStore } from './stores/screen'
+import { useRoute } from 'vue-router'
 import { VIEWPORT_SIZE } from './configs/canvas'
 import useScreening from './hooks/useScreening'
 
@@ -194,6 +195,25 @@ const screenStore = useScreenStore()
 const { slides, slideIndex, viewportRatio, currentSlide } = storeToRefs(slidesStore)
 const { screening } = storeToRefs(screenStore)
 const { enterScreening, enterScreeningFromStart } = useScreening()
+const route = useRoute()
+
+/**
+ * 由路由参数进入放映：`/index/ppt?screen=1`
+ *
+ * <p>为「创建会议后自动打开的放映页」准备：老师在这个窗口放映，学生通过会议实时通道看画面。
+ * 进会议总是从头讲，因此固定从第一页开始；首屏没有用户手势，浏览器的全屏请求会被拒绝
+ * （`enterFullscreen` 已吞掉该 rejection），这里只保证进入放映状态本身。
+ */
+const enterScreeningByQuery = () => {
+  if (route.query.screen !== '1') return
+  // 这个窗口同时是「被共享的页面」：标题写清楚，浏览器共享选择框里才认得出它
+  document.title = 'PPT 放映页'
+  enterScreeningFromStart()
+}
+
+onMounted(enterScreeningByQuery)
+// 命中已存在的放映页签时（window.open 复用同名窗口）组件不会重新挂载，因此同时监听参数变化
+watch(() => route.query.screen, enterScreeningByQuery)
 
 const fileInputRef = ref(null)
 
