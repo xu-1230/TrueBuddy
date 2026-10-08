@@ -70,6 +70,17 @@
             <version>${revision}</version>
         </dependency>
 
+        <!--
+          作业模块：开始节点的模拟文件树用 HomeworkFileItemVO 承载（与 POST /homework/grade 的
+          files 元素同格式），大模型才能从文件清单里拿到 fileId 去调 read_homework_file_text。
+          单向依赖，作业模块不依赖本模块，无循环。
+        -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-homework</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
         <!-- Lombok：@Data / @Slf4j（版本由 Spring Boot 父工程管理，编译期生效） -->
         <dependency>
             <groupId>org.projectlombok</groupId>

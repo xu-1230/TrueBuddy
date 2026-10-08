@@ -2,6 +2,7 @@ package org.example.textflow.node;
 
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
+import org.example.backend.module.homework.model.vo.HomeworkFileItemVO;
 import org.example.textflow.entity.NodeData;
 import org.example.textflow.entity.NodeField;
 import org.example.textflow.entity.NodeFieldRef;
@@ -18,13 +19,24 @@ public class StartNode implements NodeAction {
 
     private final WorkflowNode definition;
 
-    private static final List<String> DEFAULT_FILE_TREE = List.of(
-            "电子技术基础-第3次作业/20230101-张三/第三章习题.docx",
-            "电子技术基础-第3次作业/20230102-李四/第三章习题.docx",
-            "电子技术基础-第3次作业/20230103-王五/-第三章习题.pdf",
-            "电子技术基础-第3次作业/20230201-赵六/第三章习题.docx",
-//            "电子技术基础-第3次作业/20230201-赵六/第三章习题/第三章习题.md",
-            "电子技术基础-第3次作业/20230202-钱七/课堂笔记.md");
+    /**
+     * 模拟文件树：元素格式与 {@code POST /homework/grade} 的 {@code files}（{@code List<HomeworkFileItemVO>}）一致，
+     * 样例取自 test2 的作业文件文本读取接口（{@code HomeworkFileTextController}）。
+     * <p>带 fileId 才能让大模型直接调 {@code read_homework_file_text(fileId)} 读取文件内容。
+     */
+    private static final List<HomeworkFileItemVO> DEFAULT_FILE_TREE = List.of(
+            fileItem(31L, 99L, "test/test1.txt", "text/plain"));
+
+    /** 按批改请求 files 元素的格式构造一条模拟文件（name 取路径末段；size / url 留空，与样例一致） */
+    private static HomeworkFileItemVO fileItem(Long id, Long fileId, String path, String type) {
+        HomeworkFileItemVO item = new HomeworkFileItemVO();
+        item.setId(id);
+        item.setFileId(fileId);
+        item.setName(path.substring(path.lastIndexOf('/') + 1));
+        item.setPath(path);
+        item.setType(type);
+        return item;
+    }
 
     /** 模拟 AI 批改说明 */
     private static final String DEFAULT_AI_DESCRIPTION =
