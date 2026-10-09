@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { User, Message, Lock } from '@element-plus/icons-vue'
+import { Lock, Message, User } from '@element-plus/icons-vue'
 
 const emit = defineEmits(['register-success'])
 
@@ -39,41 +39,50 @@ function submit() {
 </script>
 
 <template>
-  <el-form ref="formRef" :model="form" :rules="rules" size="large">
-    <el-form-item prop="username">
-      <el-input v-model="form.username" placeholder="账号" :prefix-icon="User" />
+  <el-form
+    ref="formRef"
+    :model="form"
+    :rules="rules"
+    label-position="top"
+    hide-required-asterisk
+    size="large"
+    @submit.prevent
+    @keyup.enter="submit"
+  >
+    <el-form-item label="账号" prop="username">
+      <el-input v-model="form.username" placeholder="学号 / 工号" :prefix-icon="User" />
     </el-form-item>
-    <el-form-item prop="email">
-      <el-input v-model="form.email" placeholder="邮箱" :prefix-icon="Message" />
+    <el-form-item label="邮箱" prop="email">
+      <el-input v-model="form.email" placeholder="name@school.edu" :prefix-icon="Message" />
     </el-form-item>
-    <el-form-item prop="password">
+    <el-form-item label="密码" prop="password">
       <el-input
         v-model="form.password"
         type="password"
-        placeholder="密码"
+        placeholder="设置登录密码"
         show-password
         :prefix-icon="Lock"
       />
     </el-form-item>
-    <el-form-item prop="confirm">
+    <el-form-item label="确认密码" prop="confirm">
       <el-input
         v-model="form.confirm"
         type="password"
-        placeholder="确认密码"
+        placeholder="再输入一次"
         show-password
         :prefix-icon="Lock"
       />
     </el-form-item>
-    <el-button type="primary" class="submit-btn" size="large" @click="submit">注册</el-button>
+    <el-button type="primary" class="submit-btn" size="large" native-type="button" @click="submit"
+      >注册</el-button
+    >
   </el-form>
 </template>
 
 <style scoped>
+/* 字段与按钮排版统一在 LoginView 的 .side__form :deep(...) 里 */
 .submit-btn {
   width: 100%;
-  margin-top: 0.5rem;
-  border-radius: var(--tb-radius-md);
-  background: var(--tb-primary);
-  border-color: var(--tb-primary);
+  margin-top: var(--tb-size-2);
 }
 </style>

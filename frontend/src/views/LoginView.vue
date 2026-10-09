@@ -1,92 +1,57 @@
-<template>
-   <div style="display: flex;padding: 20px;height: 100vh;">
-     <!-- 明暗切换入口：登录页不使用内页外壳，故独立固定在右上角 -->
-     <button
-       type="button"
-       class="page-appearance"
-       role="switch"
-       :aria-checked="isDark"
-       :aria-label="isDark ? '切换到亮色模式' : '切换到暗色模式'"
-       :title="isDark ? '切换到亮色模式' : '切换到暗色模式'"
-       @click="toggle"
-     >
-       <span class="page-appearance__icon" :class="{ 'is-shown': !isDark }">
-         <el-icon><Sunny /></el-icon>
-       </span>
-       <span class="page-appearance__icon" :class="{ 'is-shown': isDark }">
-         <el-icon><MoonNight /></el-icon>
-       </span>
-     </button>
-     <div style="background-color: var(--tb-bg-raised);display: flex;flex: 1;flex-direction: row;gap: 12px;border-radius: var(--tb-radius-lg);overflow: hidden;">
-        <div style="inline-size: 50%;align-items: center;display: flex;justify-content: center;">
-                <div class="login-left">
-                <div class="login-card">
-                  <div class="login-card__header">
-                    <h2 class="login-card__title">HELLO.</h2>
-                  </div>
-
-                  <Transition name="el-zoom-in-center" mode="out-in" appear>
-                    <component
-                      :is="currentComponent"
-                      :key="formType"
-                      @go-forgot="goForgot"
-                      @go-login="switchForm('login')"
-                      @login-success="onLoginSuccess"
-                      @register-success="switchForm('login')"
-                    />
-                  </Transition>
-
-                  <div class="account-switch">
-                    <span>{{ formType === 'register' ? '已有账号？' : '没有账号？' }}</span>
-                    <a class="account-switch__link" @click="switchForm(formType === 'register' ? 'login' : 'register')">
-                      {{ formType === 'register' ? '点击登录' : '进行注册' }}
-                    </a>
-                  </div>
-                </div>
-                </div>
-        </div>
-        <!-- 右侧展示台：刻意保持深色（两态都比表单半屏更暗），故直接引用色板而非语义变量；
-             内部白色块代表「幻灯片预览」，同样不随 UI 主题变化 -->
-        <div style="inline-size: 50%;background-color: light-dark(var(--tb-neutral-900), var(--tb-neutral-950));display: flex;flex-direction: column;justify-content: center;overflow: hidden;gap: 40px;">
-           <div style="font-size: 15px;color: var(--tb-neutral-50);">Continue exploring powerful features that make data collection effortless</div>
-           <el-carousel class="carousel" height="400px" indicator-position="outside" type="card" arrow="never" interval="10000000">
-             <el-carousel-item v-for="item in 4" :key="item">
-                 <div style="font-size: 24px;color: var(--tb-neutral-50);">6666</div>
-                 <div style="font-size: 15px;color: var(--tb-neutral-50);"> 777777777777777</div>
-                 <div style="width: 90%;height: 300px;background-color: var(--tb-neutral-0);"> </div>
-             </el-carousel-item>
-           </el-carousel>
-        </div>
-     </div>
-   </div>
-</template>
-
 <script setup>
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { MoonNight, Sunny } from '@element-plus/icons-vue'
-import LoginForm from '../components/LoginForm.vue'
-import RegisterForm from '../components/RegisterForm.vue'
-import ForgetPasswordForm from '../components/ForgetPasswordForm.vue'
+import LoginForm from '@/components/LoginForm.vue'
+import RegisterForm from '@/components/RegisterForm.vue'
+import ForgetPasswordForm from '@/components/ForgetPasswordForm.vue'
+import LoginShowcase from '@/components/LoginShowcase.vue'
 import { useAppearance } from '@/composables/useAppearance'
 
+const route = useRoute()
 const router = useRouter()
 
 /** 明暗态：本页不使用内页外壳，故独立提供切换入口 */
 const { isDark, toggle } = useAppearance()
 
-const formType = ref('login')
-
-const formMap = {
+const FORM_MAP = {
   login: LoginForm,
   register: RegisterForm,
   forgot: ForgetPasswordForm,
 }
 
-const currentComponent = computed(() => formMap[formType.value])
+/** 引导语文案与表单态联动，避免注册态仍挂着「HELLO.」 */
+const COPY = {
+  login: {
+    eyebrow: 'Sign in · 登录',
+    title: 'HELLO.',
+    lede: '欢迎回来，接着上次的备课与批改继续。',
+  },
+  register: {
+    eyebrow: 'Sign up · 注册',
+    title: 'JOIN US.',
+    lede: '开一个账号，把模板、批改、知识库与演讲收进同一张工作台。',
+  },
+  forgot: {
+    eyebrow: 'Reset · 重置密码',
+    title: 'RESET.',
+    lede: '用邮箱验证码重新设置登录密码，两步即可回到工作台。',
+  },
+}
+
+const FORM_KEYS = Object.keys(FORM_MAP)
+
+/** /register 复用本页，初始态跟随路由名；页内切换不回写地址，避免路由与状态两份真相 */
+const initialKey = FORM_KEYS.includes(route.name) ? route.name : 'login'
+const formType = ref(initialKey)
+
+const currentComponent = computed(() => FORM_MAP[formType.value])
+const copy = computed(() => COPY[formType.value])
+/** 忘记密码态由表单自带的「返回登录」收尾，底部不再重复一个导航 */
+const showSwitch = computed(() => formType.value !== 'forgot')
 
 function switchForm(key) {
-  formType.value = key
+  if (FORM_KEYS.includes(key)) formType.value = key
 }
 
 function goForgot() {
@@ -94,28 +59,190 @@ function goForgot() {
 }
 
 function onLoginSuccess() {
-  router.push('/')
+  // 工作台外壳 /index 会重定向到 /index/home；'/' 在本项目没有注册路由
+  router.push('/index')
 }
 </script>
 
+<template>
+  <div class="login">
+    <main class="login__frame">
+      <section class="side">
+        <header class="side__bar">
+          <p class="brand">
+            <span class="brand__mark" aria-hidden="true" />
+            <span class="brand__word">TrueBuddy</span>
+            <span class="brand__sub">教学智能体工作台</span>
+          </p>
+
+          <button
+            type="button"
+            class="page-appearance"
+            role="switch"
+            :aria-checked="isDark"
+            :aria-label="isDark ? '切换到亮色模式' : '切换到暗色模式'"
+            :title="isDark ? '切换到亮色模式' : '切换到暗色模式'"
+            @click="toggle"
+          >
+            <span class="page-appearance__icon" :class="{ 'is-shown': !isDark }">
+              <el-icon><Sunny /></el-icon>
+            </span>
+            <span class="page-appearance__icon" :class="{ 'is-shown': isDark }">
+              <el-icon><MoonNight /></el-icon>
+            </span>
+          </button>
+        </header>
+
+        <div class="side__intro" aria-live="polite">
+          <p class="intro__eyebrow">{{ copy.eyebrow }}</p>
+          <h2 class="intro__title">{{ copy.title }}</h2>
+          <p class="intro__lede">{{ copy.lede }}</p>
+        </div>
+
+        <!-- 表单落在 1fr 行里：卡片总高由展台锚定，切换三态不再顶开版面 -->
+        <div class="side__form">
+          <Transition name="form-swap" mode="out-in">
+            <component
+              :is="currentComponent"
+              :key="formType"
+              @go-forgot="goForgot"
+              @go-login="switchForm('login')"
+              @login-success="onLoginSuccess"
+              @register-success="switchForm('login')"
+            />
+          </Transition>
+        </div>
+
+        <footer class="side__foot">
+          <p v-if="showSwitch" class="account-switch">
+            <span>{{ formType === 'register' ? '已经开过账号？' : '还没有账号？' }}</span>
+            <a
+              class="account-switch__link"
+              role="button"
+              tabindex="0"
+              @click="switchForm(formType === 'register' ? 'login' : 'register')"
+              @keyup.enter="switchForm(formType === 'register' ? 'login' : 'register')"
+            >
+              {{ formType === 'register' ? '直接登录' : '注册一个' }}
+            </a>
+          </p>
+          <p class="side__meta">© 2026 TrueBuddy · 师范生教学练一体化平台</p>
+        </footer>
+      </section>
+
+      <aside class="stage">
+        <LoginShowcase />
+      </aside>
+    </main>
+  </div>
+</template>
+
 <style scoped>
-/* 明暗切换按钮：固定右上角（登录页无内页外壳），两枚图标叠放交叉淡入 */
+/* —— 环境层：与首页同一套纸面网格语言，卡片浮在其上 —— */
+.login {
+  --login-pad: clamp(var(--tb-size-3), 2.6vw, var(--tb-size-6));
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--login-pad);
+  background-color: var(--tb-paper-bg);
+  background-image:
+    linear-gradient(90deg, var(--tb-paper-line) 1px, transparent 1px),
+    linear-gradient(var(--tb-paper-line) 1px, transparent 1px);
+  background-size: var(--tb-paper-size) var(--tb-paper-size);
+}
+
+/* 一次性入场：只做透明度与极小位移，不遮挡首屏可读性（docs/09-样式规范.md §6.2 例外见 §6.4） */
+.login__frame {
+  display: grid;
+  grid-template-columns: minmax(0, 46fr) minmax(0, 54fr);
+  width: min(1800px, 100%);
+  height: clamp(600px, calc(100dvh - var(--login-pad) * 2), 780px);
+  overflow: hidden;
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-xl);
+  background-color: var(--tb-bg-surface);
+  box-shadow: var(--tb-shadow-4);
+  animation: frame-in var(--tb-dur-4) var(--tb-ease-out) both;
+}
+
+@keyframes frame-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+}
+
+/* —— 左栏：四行网格，表单行吃掉剩余高度 —— */
+.side {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: clamp(var(--tb-size-4), 4.2vh, var(--tb-size-6));
+  min-width: 0;
+  min-height: 0;
+  padding: clamp(var(--tb-size-5), 3.4vw, var(--tb-size-7)) clamp(var(--tb-size-5), 3vw, var(--tb-size-7));
+  background-color: var(--tb-bg-surface);
+}
+
+.side__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tb-size-4);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--tb-size-2);
+  margin: 0;
+  min-width: 0;
+}
+
+.brand__mark {
+  position: relative;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--tb-brand-400), var(--tb-primary));
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--tb-primary) 16%, transparent);
+}
+
+.brand__word {
+  font-family: var(--tb-font-display);
+  font-size: var(--tb-text-lg);
+  font-weight: var(--tb-weight-display);
+  letter-spacing: var(--tb-tracking-tight);
+  color: var(--tb-text-primary);
+}
+
+.brand__sub {
+  padding-left: var(--tb-size-2);
+  border-left: var(--tb-border-width) solid var(--tb-border);
+  color: var(--tb-text-tertiary);
+  font-size: var(--tb-text-2xs);
+  white-space: nowrap;
+}
+
+/* 明暗切换：随 NavbarItem 的既有语言，位置从「固定右上角」改为品牌行内，
+   不再压在深色展台上，浅色态下也不会出现白块浮在暗底 */
 .page-appearance {
-  position: fixed;
-  top: 28px;
-  right: 28px;
-  z-index: 10;
+  position: relative;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: var(--tb-control-md);
   height: var(--tb-control-md);
   padding: 0;
-  border: 1px solid var(--tb-border-strong);
+  border: 1px solid var(--tb-border);
   border-radius: var(--tb-radius-sm);
   background: var(--tb-bg-surface);
   color: var(--tb-text-secondary);
   cursor: pointer;
+  /* hover 只换底色与描边，不做位移（与首页卡片同一套反馈语言） */
   transition:
     background var(--tb-motion-dur) var(--tb-motion-ease),
     border-color var(--tb-motion-dur) var(--tb-motion-ease),
@@ -148,68 +275,309 @@ function onLoginSuccess() {
   transform: rotate(0) scale(1);
 }
 
-.el-carousel__item h3 {
-  /* display: flex;
-  color: #fff;
-  border: 1px solid #409eff;
-  background-color: red;
-  align-items: center;
-  justify-content: center;
-  line-height: 280px;
-  width: 100%;
-  margin: 0; */
+/* —— 引导语 —— */
+.intro__eyebrow {
+  margin: 0 0 var(--tb-size-2);
+  color: var(--tb-primary-text);
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-widest);
+  text-transform: uppercase;
 }
 
-.el-carousel__item{
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  border: 1px solid var(--tb-brand-500);
-  border-radius: var(--tb-radius-lg);
-  background-color: light-dark(var(--tb-neutral-900), var(--tb-neutral-950));
-}
-:deep(.el-carousel__mask) {
-  background-color: light-dark(var(--tb-neutral-900), var(--tb-neutral-950));
-}
-
-.carousel {
-  width: 160%;
-  margin-left: -30%;
-}
-
-.login-left{
-  width: 100%;
-  max-width: 400px;
-}
-
-.login-card__title{
+.intro__title {
+  margin: 0;
   font-family: var(--tb-font-display);
-  font-size: 38px;
+  font-size: clamp(var(--tb-text-2xl), 3.4vw, var(--tb-text-3xl));
   font-weight: var(--tb-weight-display);
-  letter-spacing: var(--tb-tracking-display);
-  margin-bottom: 20px;
+  line-height: var(--tb-leading-tight);
+  letter-spacing: var(--tb-tracking-tight);
+  color: var(--tb-text-primary);
+}
+
+.intro__lede {
+  margin: var(--tb-size-3) 0 0;
+  max-width: 30ch;
+  color: var(--tb-text-secondary);
+  font-size: var(--tb-text-sm);
+  line-height: var(--tb-leading-normal);
+}
+
+/* —— 表单槽 —— */
+.side__form {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  max-width: 440px;
+}
+
+/* 三态表单共用一套字段语言：标签在上、行距收紧、控件对齐刻度。
+   子组件只保留各自的结构件，避免同一份排版在三个文件里各写一遍。 */
+.side__form :deep(.el-form-item) {
+  margin-bottom: var(--tb-size-4);
+}
+
+.side__form :deep(.el-form-item__label) {
+  height: auto;
+  padding: 0;
+  margin-bottom: var(--tb-size-1);
+  line-height: var(--tb-leading-snug);
+  font-size: var(--tb-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tb-tracking-normal);
+  color: var(--tb-text-secondary);
+}
+
+.side__form :deep(.el-input__wrapper) {
+  border-radius: var(--tb-radius-md);
+  background-color: var(--tb-bg-surface);
+  box-shadow: 0 0 0 1px var(--tb-border-strong) inset;
+  transition: box-shadow var(--tb-motion-dur) var(--tb-motion-ease);
+}
+
+.side__form :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px var(--tb-primary-border) inset;
+}
+
+.side__form :deep(.el-input__wrapper.is-focus) {
+  box-shadow:
+    0 0 0 1px var(--tb-primary) inset,
+    0 0 0 4px var(--tb-ring);
+}
+
+.side__form :deep(.el-input__inner) {
+  font-size: var(--tb-text-md);
+}
+
+.side__form :deep(.el-input__prefix),
+.side__form :deep(.el-input__suffix) {
+  color: var(--tb-text-tertiary);
+  transition: color var(--tb-motion-dur) var(--tb-motion-ease);
+}
+
+.side__form :deep(.el-input__wrapper.is-focus .el-input__prefix) {
+  color: var(--tb-primary-text);
+}
+
+.side__form :deep(.el-form-item__error) {
+  /* EP 默认 line-height 让错误文案吃掉 15px，与下一个标签只剩 1px 缝；
+     压到 1 并去掉 padding-top，让错误紧贴自己的字段，又不顶到下一个标签 */
+  padding-top: 0;
+  font-size: var(--tb-text-2xs);
+  line-height: 1;
+}
+
+.side__form :deep(.el-checkbox__label) {
+  font-size: var(--tb-text-sm);
+  color: var(--tb-text-secondary);
+}
+
+.side__form :deep(.el-button) {
+  border-radius: var(--tb-radius-md);
+  font-weight: 500;
+  letter-spacing: var(--tb-tracking-wide);
+  transition:
+    background-color var(--tb-motion-dur) var(--tb-motion-ease),
+    border-color var(--tb-motion-dur) var(--tb-motion-ease),
+    box-shadow var(--tb-motion-dur) var(--tb-motion-ease);
+}
+
+.side__form :deep(.el-button--large) {
+  min-height: var(--tb-control-lg);
+}
+
+/* 主 CTA 用品牌色投影抬高一级，hover 只把投影压深，不做位移 */
+.side__form :deep(.el-button--primary:not(.is-link)) {
+  box-shadow: var(--tb-shadow-brand);
+}
+
+.side__form :deep(.el-button--primary:not(.is-link):hover) {
+  box-shadow: 0 12px 28px color-mix(in oklab, var(--tb-brand-600) 34%, transparent);
+}
+
+.form-swap-enter-active,
+.form-swap-leave-active {
+  transition:
+    opacity var(--tb-dur-2) var(--tb-motion-ease),
+    transform var(--tb-dur-3) var(--tb-ease-out);
+}
+
+.form-swap-enter-from,
+.form-swap-leave-to {
+  opacity: 0;
+  transform: translate3d(0, 8px, 0);
+}
+
+/* —— 页脚 —— */
+.side__foot {
+  display: grid;
+  gap: var(--tb-size-2);
 }
 
 .account-switch {
-  margin-top: 1rem;
-  font-size: 0.875rem;
+  margin: 0;
+  font-size: var(--tb-text-sm);
   color: var(--tb-text-secondary);
 }
 
 .account-switch__link {
+  margin-left: var(--tb-size-1);
   color: var(--tb-primary-text);
   cursor: pointer;
-  margin-left: 4px;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition:
+    color var(--tb-motion-dur) var(--tb-motion-ease),
+    border-color var(--tb-motion-dur) var(--tb-motion-ease);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .page-appearance__icon {
-    transition: none;
+.account-switch__link:hover {
+  color: var(--tb-primary);
+  border-bottom-color: var(--tb-primary-border);
+}
+
+.account-switch__link:focus-visible {
+  outline: 2px solid var(--tb-primary);
+  outline-offset: 2px;
+  border-radius: var(--tb-radius-xs);
+}
+
+.side__meta {
+  margin: 0;
+  color: var(--tb-text-tertiary);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-wide);
+}
+
+/* —— 右栏：展台 —— */
+.stage {
+  /* 展台底色由页面按「全局」明暗决定：亮色主题走港湾夜蓝（brand-800 → brand-950），
+     避免一块纯黑压在暖纸面上像贴上去的；暗色主题收到近黑，与页面底色连成一片。
+     底色必须画在 .stage 上而不是 .showcase 上——后者起了 color-scheme: dark，
+     light-dark() 在使用处解析，传进去的表达式会恒取暗支（实测踩到）。 */
+  background-color: light-dark(var(--tb-brand-950), var(--tb-neutral-950));
+  background-image:
+    radial-gradient(
+      120% 85% at 80% -15%,
+      light-dark(var(--tb-brand-800), var(--tb-neutral-900)),
+      transparent 62%
+    ),
+    linear-gradient(
+      180deg,
+      transparent 52%,
+      light-dark(
+        color-mix(in oklab, var(--tb-brand-950) 55%, var(--tb-neutral-950)),
+        color-mix(in oklab, var(--tb-neutral-950) 70%, transparent)
+      )
+    );
+
+  min-width: 0;
+  min-height: 0;
+}
+
+/* —— 响应式：断点沿用项目既有取值（1024 / 768） —— */
+@media (max-width: 1024px) {
+  .login__frame {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    max-height: none;
+  }
+
+  /* 单栏时把左栏收成一条居中的阅读列，避免表单贴着 440px 上限、右边留大片空白 */
+  .side {
+    width: min(100%, 620px);
+    margin-inline: auto;
+    gap: var(--tb-size-5);
+    padding: var(--tb-size-6);
+  }
+
+  .side__form {
+    max-width: none;
+    overflow: visible;
   }
 }
 
-/* @media (max-width: 900px) {
+@media (max-width: 768px) {
+  .login {
+    --login-pad: var(--tb-size-3);
+    align-items: start;
+  }
 
-} */
+  .login__frame {
+    border-radius: var(--tb-radius-lg);
+  }
+
+  .side {
+    padding: var(--tb-size-5) var(--tb-size-4);
+    gap: var(--tb-size-4);
+  }
+
+  .brand__sub {
+    display: none;
+  }
+
+  .intro__lede {
+    font-size: var(--tb-text-md);
+  }
+
+  .page-appearance {
+    /* 触摸目标放大到 --tb-control-lg */
+    width: var(--tb-control-lg);
+    height: var(--tb-control-lg);
+  }
+
+  .account-switch {
+    font-size: var(--tb-text-md);
+  }
+
+  /* 触摸优先：控件抬到 --tb-control-lg，输入字号到 16px 以免 iOS 聚焦时自动放大页面 */
+  .side__form {
+    max-width: none;
+  }
+
+  .side__form :deep(.el-input__wrapper) {
+    min-height: var(--tb-control-lg);
+  }
+
+  .side__form :deep(.el-input__inner) {
+    font-size: var(--tb-text-lg);
+  }
+
+  .side__form :deep(.el-form-item) {
+    margin-bottom: var(--tb-size-5);
+  }
+}
+
+/* 矮视口：先让位给表单，装饰与大字收敛 */
+@media (max-height: 780px) and (min-width: 1025px) {
+  .intro__lede {
+    display: none;
+  }
+
+  .side {
+    gap: var(--tb-size-4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login__frame {
+    animation: none;
+  }
+
+  .page-appearance__icon,
+  .page-appearance,
+  .account-switch__link {
+    transition: none;
+  }
+
+  .form-swap-enter-active,
+  .form-swap-leave-active {
+    transition: opacity var(--tb-dur-1) linear;
+  }
+
+  .form-swap-enter-from,
+  .form-swap-leave-to {
+    transform: none;
+  }
+}
 </style>
