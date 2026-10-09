@@ -117,6 +117,8 @@ tb:
       # 模拟会议：学生点入会链接免登录参会（会议内身份用 hostToken / attendeeToken；
       # 实时媒体与聊天走 LiveKit 自己的端口 7880/7881，不经过本服务）
       - /meeting/**
+      # PPT 讲稿生成：前端 /index/ppt 目前不依赖登录态（无状态接口，不碰数据库）
+      - /ppt/**
   # 讲课模块：模拟会议（本期）
   lecture:
     meeting:
@@ -142,6 +144,18 @@ tb:
       livekit-api-secret: ${LIVEKIT_API_SECRET:}
       # 访问令牌有效期（小时）
       livekit-token-ttl-hours: ${LIVEKIT_TOKEN_TTL_HOURS:6}
+    # PPT 讲稿生成（前端 /index/ppt 的两个 AI 按钮 → POST /ppt/speech/optimize）
+    ppt:
+      # 时长 → 字数的语速常数（字/秒）：4.0 ≈ 240 字/分钟
+      chars-per-second: ${TB_PPT_CHARS_PER_SECOND:4.0}
+      # 每次模型调用的页数：模型输出有 token 上限，整篇一次问会被截断成无效 JSON
+      batch-size: ${TB_PPT_BATCH_SIZE:8}
+      # 单次请求页数安全上限（超出直接报错，避免误把上百页灌进来）
+      max-pages: ${TB_PPT_MAX_PAGES:200}
+      # 单页讲稿字数硬上限（模型偶尔写飞，超出即截断）
+      max-remark-chars: ${TB_PPT_MAX_REMARK_CHARS:1500}
+      # 单页正文/备注送进 prompt 的字符上限
+      max-page-input-chars: ${TB_PPT_MAX_PAGE_INPUT_CHARS:1200}
   # 知识库文档解析：阿里云文档智能（文档解析大模型版）
   # AK/SK 为必填项，一律通过环境变量注入（项目根目录 .env，模板见 .env.example），缺失时启动即失败
   docmind:

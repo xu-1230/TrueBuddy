@@ -42,7 +42,7 @@ backend/
 ├── tb-module-doctemplate/         # 文档模板复刻生成（MCP + LLM + 检索增强）
 ├── tb-module-workflow/            # 自定义工作流（画布 schema → spring-ai-alibaba-graph 可执行图；MVP 模拟数据）
 ├── tb-module-homework/            # 作业批改（作业文件夹上传 → 文件清单）
-├── tb-module-lecture/             # 讲课模块（本期：模拟会议，实时走自托管 LiveKit；后续：PPT 演讲稿 / AI 数字人）
+├── tb-module-lecture/             # 讲课模块（meeting：模拟会议，实时走自托管 LiveKit；ppt：AI 讲稿生成；后续：AI 数字人）
 ├── tb-server/                     # 启动模块（BackendApplication + application.yml）
 ├── sql/                           # 数据库脚本
 └── mvnw / mvnw.cmd                # Maven Wrapper
@@ -174,7 +174,7 @@ spring:
 
 ## 7. 接口规范
 
-接口清单以 [../docs/05-API规范.md](../docs/05-API规范.md) §2.5 为唯一权威来源，当前为 **11 个 Controller / 34 个接口**（实时媒体与聊天由自托管 LiveKit 承载，不经过本服务）：
+接口清单以 [../docs/05-API规范.md](../docs/05-API规范.md) §2.5 为唯一权威来源，当前为 **12 个 Controller / 35 个接口**（实时媒体与聊天由自托管 LiveKit 承载，不经过本服务）：
 
 | 模块 | 前缀 | 接口数 | 代表接口 |
 |------|------|--------|----------|
@@ -188,6 +188,7 @@ spring:
 | 知识库分片 | `/knowledge-base/chunk` | 1 | `GET /knowledge-base/chunk/list` |
 | 自定义工作流 | `/workflow` | 5 | `POST /workflow/run`（**SSE** 提交执行 / 恢复人工确认，双语义）、`GET /workflow/get_process`（节点级执行状态轮询兜底，建议 2s）、`POST /workflow/save`、`GET /workflow/detail`、`GET /workflow/list`（定义已落库；大模型仍为模拟数据，白名单放行 `/workflow/**`） |
 | 模拟会议 | `/meeting` | 6 | `POST /meeting/create`、`POST /meeting/join`、`GET /meeting/detail`、`GET /meeting/state`（三者下发 LiveKit 接入信息）、`POST /meeting/message`（聊天落库）、`POST /meeting/close`（并删 LiveKit 房间）；实时媒体与聊天走自托管 LiveKit，**不经过本服务**；白名单放行 `/meeting/**` |
+| PPT 讲稿 | `/ppt/speech` | 1 | `POST /ppt/speech/optimize`（`pages` 长度 1 = 本页，长度 N = 全部）：**无状态、不落库**，内部按 `tb.lecture.ppt.batch-size` 分批调对话模型，部分失败走 `failedIndexes`；白名单放行 `/ppt/**` |
 
 - **上下文路径**：`/api`（端口 8086）
 

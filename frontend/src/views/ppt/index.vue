@@ -19,6 +19,27 @@
           <el-icon class="btn-icon"><VideoPlay /></el-icon>
           从当前页放映
         </el-button>
+        <!-- 本场时长：AI 按「总时长 ÷ 页数 × 4.0 字/秒」给每页定篇幅（换算在后端，只此一处） -->
+        <span class="ppt-toolbar-field">
+          本场时长
+          <el-input-number
+            v-model="aiTargetMinutes"
+            class="ppt-target-minutes"
+            :min="1"
+            :max="300"
+            :step="1"
+            size="small"
+            :disabled="aiRunning"
+            controls-position="right"
+          />
+          分钟
+        </span>
+        <el-tooltip content="用 AI 把全部页的备注改写成演讲稿" placement="bottom" :show-after="300">
+          <el-button type="warning" plain :loading="aiRunning" @click="optimizeAllRemarks">
+            <AiSparkIcon class="btn-icon" :size="14" />
+            AI 优化全部备注
+          </el-button>
+        </el-tooltip>
       </div>
       <input
         ref="fileInputRef"
@@ -28,6 +49,21 @@
         @change="onFileChange"
       />
     </div>
+
+    <!-- AI 采纳后可一键撤销：改写备注是不可逆操作，必须留退路（关掉这个提示就放弃撤销入口） -->
+    <el-alert
+      v-if="aiUndo"
+      class="ppt-ai-undo"
+      type="success"
+      :closable="true"
+      show-icon
+      title="已应用 AI 讲稿"
+      @close="aiUndo = null"
+    >
+      <div class="ppt-ai-undo__actions">
+        <el-button size="small" @click="undoAiRemarks">撤销本次优化（还原原备注）</el-button>
+      </div>
+    </el-alert>
 
     <!-- 主体区域 -->
     <div class="ppt-body">
@@ -129,6 +165,18 @@
         <!-- 备注区：center-bottom（参考 PPTist Remark，可拖拽调整高度，编辑后点击保存写回当前页） -->
         <div class="remark center-bottom" :style="{ height: remarkHeight + 'px' }">
           <div class="resize-handler" @mousedown="resizeRemark($event)"></div>
+          <!-- AI 优化本页备注：常显在备注区右上角（「保存」只在有改动时出现，两者互不挤占） -->
+          <el-tooltip content="AI 优化本页备注（生成演讲稿）" placement="top" :show-after="300">
+            <button
+              type="button"
+              class="remark-ai"
+              :class="{ 'is-running': aiRunning }"
+              :disabled="aiRunning || !currentSlide"
+              @click="optimizeCurrentRemark"
+            >
+              <AiSparkIcon :size="16" />
+            </button>
+          </el-tooltip>
           <textarea
             v-model="remarkDraft"
             :placeholder="currentSlide ? '暂无演讲者备注，可在此编辑后保存' : ''"
@@ -160,13 +208,33 @@
 
     <!-- 放映模式 -->
     <ScreenView v-if="screening" />
+
+    <!-- AI 讲稿对比弹窗：单页（备注区星形按钮）/ 整篇（工具栏按钮） -->
+    <AiRemarkDialog
+      v-model="aiSingle.visible"
+      :page-label="`第 ${aiSingle.pageIndex} 页`"
+      :original="aiSingle.original"
+      :remark="aiSingle.remark"
+      :chars="aiSingle.chars"
+      :seconds="aiSingle.seconds"
+      :regenerating="aiSingle.regenerating"
+      @apply="applyCurrentRemark"
+      @regenerate="regenerateCurrentRemark"
+    />
+    <AiRemarkBatchDialog
+      v-model="aiBatch.visible"
+      :pages="aiBatch.pages"
+      :retrying="aiBatch.retrying"
+      @apply="applyBatchRemarks"
+      @retry-failed="retryFailedRemarks"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   CaretLeft, CaretRight, DocumentChecked, FullScreen, Minus, Monitor, Plus, UploadFilled, VideoPlay,
 } from '@element-plus/icons-vue'
@@ -182,9 +250,14 @@ import useScreening from './hooks/useScreening'
 import './styles/prosemirror.css'
 import './styles/animation.css'
 
+import { optimizeSpeech } from '@/api/ppt'
+import { buildSpeechPages, extractSlideTitle, htmlToPlainText } from './utils/slide-text'
 import ThumbnailSlide from './components/thumbnail/ThumbnailSlide.vue'
 import ScreenSlide from './components/screen/ScreenSlide.vue'
 import ScreenView from './screen/ScreenView.vue'
+import AiSparkIcon from './components/ai/AiSparkIcon.vue'
+import AiRemarkDialog from './components/ai/AiRemarkDialog.vue'
+import AiRemarkBatchDialog from './components/ai/AiRemarkBatchDialog.vue'
 
 if (typeof window !== 'undefined' && typeof window.Buffer === 'undefined') {
   window.Buffer = { isBuffer: () => false }
@@ -274,7 +347,11 @@ onMounted(() => {
   initLive2D()
 })
 // 放在 beforeUnmount：此时 canvas 仍在 DOM 中，PIXI 可安全释放渲染器与 WebGL 上下文
-onBeforeUnmount(() => destroyLive2D())
+onBeforeUnmount(() => {
+  destroyLive2D()
+  // 离开 PPT 页就别再等讲稿了（后端仍会把当前批次跑完，这是无状态接口的固有代价）
+  aiAbortController?.abort()
+})
 onUnmounted(() => canvasResizeObserver && canvasResizeObserver.disconnect())
 
 const viewportWidth = computed(() => VIEWPORT_SIZE * canvasScale.value)
@@ -321,31 +398,15 @@ const handleMousewheelCanvas = (e) => {
 // ===== 备注区（参考 PPTist Remark，可编辑当前页备注、拖拽调整高度）=====
 const remarkHeight = ref(100)
 
-// pptx 解析出的备注为 HTML 段落（如 <p style="text-align:left;">…</p>），转换为纯文本展示
-const remarkToPlainText = (remark) => {
-  if (!remark) return ''
-  // 已是纯文本（用户编辑后的内容）则原样返回，避免被再次处理导致换行/空格丢失
-  if (!/<[a-z][^>]*>/i.test(remark)) return remark
-  return remark
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|li)>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\n{2,}/g, '\n')
-    .trim()
-}
 // 备注编辑草稿：随当前页切换自动同步；内容有变化时才显示「保存」按钮，保存后按钮消失
 const remarkDraft = ref('') // 正在编辑的内容
 const remarkOriginal = ref('') // 当前页已保存的内容
 const remarkChanged = computed(() => remarkDraft.value !== remarkOriginal.value)
 
 watch(() => currentSlide.value?.id, () => {
-  const text = remarkToPlainText(currentSlide.value?.remark)
+  // pptx 解析出的备注是 HTML 段落（如 <p style="text-align:left;">…</p>），统一转纯文本
+  // （与正文提取共用 utils/slide-text.js 的同一份实现）
+  const text = htmlToPlainText(currentSlide.value?.remark)
   remarkDraft.value = text
   remarkOriginal.value = text
 }, { immediate: true })
@@ -375,6 +436,212 @@ const resizeRemark = (e) => {
     document.onmousemove = null
     document.onmouseup = null
   }
+}
+
+// ===== AI 讲稿优化（备注区星形按钮 = 本页；工具栏按钮 = 全部）=====
+/** 本场默认时长（分钟）：用于把总时长均摊成每页目标字数（后端按 4.0 字/秒换算） */
+const aiTargetMinutes = ref(8)
+/** 跑批中：两个按钮 disabled（并发跑批在演示里只会有害） */
+const aiRunning = ref(false)
+/** 最近一次 AI 应用的可撤销快照：采纳前把原备注留在内存，采纳后可一键还原 */
+const aiUndo = ref(null)
+
+const aiSingle = reactive({
+  visible: false, pageIndex: 0, slideId: '', original: '', remark: '', chars: 0, seconds: 0, regenerating: false,
+})
+const aiBatch = reactive({ visible: false, pages: [], retrying: false })
+/** 当前请求的中止句柄：离开 PPT 页 / 切路由时中止等待（后端仍会把当前批次跑完，见 docs/16 风险表） */
+let aiAbortController = null
+
+/** 目标总时长（秒）：非法或非正数就不传，后端按「不约束篇幅」处理 */
+const aiTargetSeconds = () => {
+  const minutes = Number(aiTargetMinutes.value)
+  return Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : undefined
+}
+
+/**
+ * 请求前的快照：页码 → { slideId, title, original }。
+ *
+ * 回填一律按 `slideId`（不按「当前页」），因此老师在等待期间翻页、甚至切到别的页，也不会写错页。
+ */
+const snapshotOf = (entries) => entries.map(({ index, slide }) => ({
+  index,
+  slideId: slide.id,
+  title: extractSlideTitle(slide) || `第 ${index} 页`,
+  original: htmlToPlainText(slide.remark),
+}))
+
+async function requestSpeech(pages) {
+  aiAbortController?.abort()
+  aiAbortController = new AbortController()
+  return optimizeSpeech({ targetSeconds: aiTargetSeconds(), pages }, aiAbortController.signal)
+}
+
+/** 主动中止不算失败：老师切页/离开时必然发生一次，不该弹红字 */
+const isAborted = (error) => error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED'
+
+/** 生成一页讲稿：单页按钮、整篇里的补生成、单页「重新生成」都走这里，保证输入口径一致 */
+async function generatePageScript(slide, index) {
+  const [page] = buildSpeechPages([{ index, slide }])
+  const result = await requestSpeech([page])
+  return result?.pages?.[0] ?? null
+}
+
+/** 当前页被改写时同步备注区草稿与「已保存」基准（否则面板上还是旧备注） */
+function syncRemarkDraft(slideId, remark) {
+  if (slideId !== currentSlide.value?.id) return
+  remarkDraft.value = remark
+  remarkOriginal.value = remark
+}
+
+/** 备注区星形按钮：优化当前页备注 */
+const optimizeCurrentRemark = async () => {
+  const slide = currentSlide.value
+  if (!slide) {
+    ElMessage.warning('请先导入 PPT 数据')
+    return
+  }
+  const index = slideIndex.value + 1
+  const original = htmlToPlainText(slide.remark)
+  aiRunning.value = true
+  try {
+    const item = await generatePageScript(slide, index)
+    if (!item?.remark) {
+      ElMessage.warning('这一页没能生成讲稿，可以再点一次试试')
+      return
+    }
+    Object.assign(aiSingle, {
+      visible: true, pageIndex: index, slideId: slide.id, original,
+      remark: item.remark, chars: item.chars, seconds: item.seconds, regenerating: false,
+    })
+  } catch (error) {
+    if (!isAborted(error)) ElMessage.error(error?.message || '讲稿生成失败')
+  } finally {
+    aiRunning.value = false
+  }
+}
+
+/** 单页弹窗的「重新生成」：仍以**原备注**为输入，避免一轮轮把 AI 的措辞越改越远 */
+const regenerateCurrentRemark = async () => {
+  const slide = slides.value.find(item => item.id === aiSingle.slideId)
+  if (!slide) return
+  aiSingle.regenerating = true
+  try {
+    const item = await generatePageScript(slide, aiSingle.pageIndex)
+    if (item?.remark) {
+      Object.assign(aiSingle, { remark: item.remark, chars: item.chars, seconds: item.seconds })
+      ElMessage.success('已重新生成')
+    } else {
+      ElMessage.warning('这次没有生成成功，可以再试一次')
+    }
+  } catch (error) {
+    if (!isAborted(error)) ElMessage.error(error?.message || '讲稿生成失败')
+  } finally {
+    aiSingle.regenerating = false
+  }
+}
+
+/** 采纳单页讲稿：按 slideId 写回 */
+const applyCurrentRemark = (remark) => {
+  slidesStore.updateSlideById(aiSingle.slideId, { remark })
+  syncRemarkDraft(aiSingle.slideId, remark)
+  aiUndo.value = { pages: [{ slideId: aiSingle.slideId, original: aiSingle.original }] }
+  aiSingle.visible = false
+  ElMessage.success('已应用 AI 讲稿')
+}
+
+/** 工具栏按钮：优化全部页备注（一次请求，后端内部按批跑） */
+const optimizeAllRemarks = async () => {
+  const entries = slides.value.map((slide, i) => ({ index: i + 1, slide }))
+  if (!entries.length) {
+    ElMessage.warning('请先导入 PPT 数据')
+    return
+  }
+  // 跑之前确认一次：整篇会改写所有页的备注；覆盖前留快照，采纳后可一键撤销
+  const confirmed = await ElMessageBox.confirm(
+    `将对全部 ${entries.length} 页生成讲稿，AI 会改写这些页现有的备注。生成完成后可以逐页挑选，也可以一键撤销。`,
+    'AI 优化全部备注',
+    { type: 'warning', confirmButtonText: '开始生成', cancelButtonText: '取消' },
+  )
+    .then(() => true)
+    .catch(() => false)
+  if (!confirmed) return
+
+  const snapshot = snapshotOf(entries)
+  aiRunning.value = true
+  try {
+    const result = await requestSpeech(buildSpeechPages(entries))
+    const byIndex = new Map((result?.pages ?? []).map(item => [item.index, item]))
+    aiBatch.pages = snapshot.map(item => {
+      const generated = byIndex.get(item.index)
+      return {
+        index: item.index,
+        slideId: item.slideId,
+        title: item.title,
+        original: item.original,
+        remark: generated?.remark ?? '',
+        chars: generated?.chars ?? 0,
+        seconds: generated?.seconds ?? 0,
+        failed: !generated?.remark,
+      }
+    })
+    aiBatch.visible = true
+  } catch (error) {
+    if (!isAborted(error)) ElMessage.error(error?.message || '讲稿生成失败')
+  } finally {
+    aiRunning.value = false
+  }
+}
+
+/** 采纳整篇里勾选的页 */
+const applyBatchRemarks = (indexes) => {
+  const selected = new Set(indexes)
+  const applied = aiBatch.pages.filter(page => selected.has(page.index) && !page.failed)
+  applied.forEach(page => {
+    slidesStore.updateSlideById(page.slideId, { remark: page.remark })
+    syncRemarkDraft(page.slideId, page.remark)
+  })
+  aiUndo.value = { pages: applied.map(page => ({ slideId: page.slideId, original: page.original })) }
+  aiBatch.visible = false
+  ElMessage.success(`已应用 ${applied.length} 页 AI 讲稿`)
+}
+
+/** 只重试失败的页：不重跑全篇，避免又等一两分钟 */
+const retryFailedRemarks = async () => {
+  const entries = aiBatch.pages
+    .filter(page => page.failed)
+    .map(page => ({ index: page.index, slide: slides.value.find(item => item.id === page.slideId) }))
+    .filter(entry => entry.slide)
+  if (!entries.length) return
+  aiBatch.retrying = true
+  try {
+    const result = await requestSpeech(buildSpeechPages(entries))
+    const byIndex = new Map((result?.pages ?? []).map(item => [item.index, item]))
+    let recovered = 0
+    aiBatch.pages = aiBatch.pages.map(page => {
+      const generated = byIndex.get(page.index)
+      if (!generated?.remark) return page
+      recovered += 1
+      return { ...page, remark: generated.remark, chars: generated.chars, seconds: generated.seconds, failed: false }
+    })
+    if (recovered) ElMessage.success(`已补生成 ${recovered} 页`)
+    else ElMessage.warning('补生成仍未成功，可以稍后再试')
+  } catch (error) {
+    if (!isAborted(error)) ElMessage.error(error?.message || '重试失败')
+  } finally {
+    aiBatch.retrying = false
+  }
+}
+
+/** 一键撤销：只回滚被采纳过的那几页 */
+const undoAiRemarks = () => {
+  const pages = aiUndo.value?.pages ?? []
+  pages.forEach(page => {
+    slidesStore.updateSlideById(page.slideId, { remark: page.original })
+    syncRemarkDraft(page.slideId, page.original)
+  })
+  aiUndo.value = null
+  ElMessage.success('已还原到 AI 优化前的备注')
 }
 
 // 右侧工具栏宽度
@@ -597,6 +864,25 @@ const initLive2D = async () => {
 .btn-icon {
   margin-right: 4px;
 }
+/* 工具栏里的「本场时长」输入（AI 按总时长 ÷ 页数给每页定篇幅） */
+.ppt-toolbar-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tb-text-secondary);
+  font-size: var(--tb-text-sm);
+  white-space: nowrap;
+}
+.ppt-target-minutes {
+  width: 96px;
+}
+/* AI 应用后的撤销入口（关掉即放弃撤销） */
+.ppt-ai-undo {
+  margin: 0 0 0.5rem;
+}
+.ppt-ai-undo__actions {
+  margin-top: 0.25rem;
+}
 .file-input {
   display: none;
 }
@@ -781,6 +1067,8 @@ const initLive2D = async () => {
     right: 0;
     bottom: 0;
     padding-bottom: 34px;
+    /* 给右上角的 AI 按钮留位（textarea 是绝对定位铺满的，不留位会被盖住） */
+    padding-right: 38px;
     color: var(--tb-text-secondary);
   }
 }
@@ -789,6 +1077,46 @@ const initLive2D = async () => {
   right: 8px;
   bottom: 8px;
   z-index: 3;
+}
+/* AI 优化本页备注：备注区右上角常显（「保存」只在有改动时出现，两者互不挤占） */
+.remark-ai {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--tb-primary);
+  background: var(--tb-bg-surface);
+  border: 1px solid var(--tb-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.remark-ai:hover:not(:disabled) {
+  color: var(--tb-bg-surface);
+  background: var(--tb-primary);
+  border-color: var(--tb-primary);
+}
+.remark-ai:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+/* 生成中：呼吸提示（单页也要等十几秒，光靠 disabled 太安静） */
+.remark-ai.is-running {
+  animation: remark-ai-pulse 1.2s ease-in-out infinite;
+}
+@keyframes remark-ai-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 .resize-handler {
   height: 7px;
