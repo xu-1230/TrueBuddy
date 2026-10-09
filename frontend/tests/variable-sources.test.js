@@ -134,28 +134,30 @@ test('未绑定取值：默认流程的所有输入 / 迭代变量都有来源�
 const cardSourceOf = (file) =>
   readFileSync(new URL(`../src/views/workflow2/node/${file}`, import.meta.url), 'utf8')
 
-test('卡片接线：输入 / 迭代变量行都挂上未绑定告警，且口径唯一', () => {
+test('卡片接线：输入 / 迭代变量都挂上未绑定告警，且口径唯一', () => {
   // 旧实现只有大模型卡片挂了这个 prop（VariableTags 的注释还写着「其余节点没有这个概念」），
-  // 于是迭代节点的迭代源完全没绑定时卡片毫无提示、人工确认同理——这里把三张卡片一起锁住
+  // 于是迭代节点的迭代源完全没绑定时卡片毫无提示、人工确认同理——这里把四张卡片一起锁住。
+  // 只锁「绑的是哪个口径」，不锁行标签：标签属文案（结束节点这行的 label 曾从「输入」改成「输出」，
+  // 一度把这条用例染红），而 `unboundInputNames` / `unboundParamNames` 两个名字本身已足以区分同一卡片内的多行。
   const cards = {
-    'LlmNode.vue': [['输入', 'unboundInputNames']],
-    'IterateNode.vue': [['输入', 'unboundInputNames'], ['迭代变量', 'unboundParamNames']],
-    'HumanNode.vue': [['输入', 'unboundInputNames']],
-    'EndNode.vue': [['输入', 'unboundInputNames']],
+    'LlmNode.vue': ['unboundInputNames'],
+    'IterateNode.vue': ['unboundInputNames', 'unboundParamNames'],
+    'HumanNode.vue': ['unboundInputNames'],
+    'EndNode.vue': ['unboundInputNames'],
   }
 
-  for (const [file, rows] of Object.entries(cards)) {
+  for (const [file, names] of Object.entries(cards)) {
     const source = cardSourceOf(file)
     assert.match(
       source,
       /import \{ unboundNamesOf \} from '\.\.\/utils\/variable-sources'/,
       `${file} 必须复用统一口径（unboundNamesOf），不能自己写一份判定`,
     )
-    for (const [label, names] of rows) {
+    for (const name of names) {
       assert.match(
         source,
-        new RegExp(`<VariableTags[^>]*label="${label}"[\\s\\S]*?:undefined-names="${names}"`),
-        `${file} 的「${label}」行要挂上未绑定告警`,
+        new RegExp(`<VariableTags[^>]*?:undefined-names="${name}"`),
+        `${file} 要有一行 VariableTags 把告警名单接到 ${name} 上`,
       )
     }
   }

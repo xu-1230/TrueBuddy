@@ -106,11 +106,6 @@ const applyPatch = (nodes, id, patch) => nodes.map((node) => (
   node?.id === id ? { ...node, ...patch } : node
 ))
 
-/** 写回连线：等价于画布页 `normalizeIterationEdges` 里的 `setEdges(map(edge => ({ ...edge, ...patch })))` */
-const applyEdgePatches = (edges, patches) => edges.map((edge) => (
-  patches.has(edge.id) ? { ...edge, ...patches.get(edge.id) } : edge
-))
-
 /** 读取组件源码（源码契约断言用；路径相对本测试文件） */
 const readSource = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8')
 
