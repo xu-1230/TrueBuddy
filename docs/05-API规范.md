@@ -1,9 +1,9 @@
 # 05 - API 规范
 
 > 项目：TrueBuddy
-> 生效日期：2026-09-18 ｜ 规范入口：[README.md](./README.md)
+> 生效日期：2026-09-18 ｜ 最近核对代码现状：2026-10-10 ｜ 规范入口：[README.md](./README.md)
 > 适用范围：后端接口定义与前端 `src/api/` 调用层
-> 相关：[06-路由规范.md](./06-路由规范.md)、[08-通用约束.md](./08-通用约束.md)
+> 相关：[06-路由规范.md](./06-路由规范.md)、[08-通用约束.md](./08-通用约束.md)、[12-工作流规范.md](./12-工作流规范.md)
 
 ---
 
@@ -15,10 +15,10 @@
 | 上下文路径 | `/api`（`server.servlet.context-path`，**不计入 Controller 映射**） |
 | 完整 URL 前缀 | `/api/{模块}/{资源}` |
 | 数据格式 | JSON（`application/json`）；文件上传 `multipart/form-data` |
-| 上传上限 | 单文件 / 单请求 `50MB` |
-| 统一返回 | `CommonResult<T>`（`code = 0` 成功） |
-| 认证 | 请求头 `Authorization: Bearer <token>`，或参数 `token` |
-| 跨域 | 全局 CORS（`SecurityConfig` 开启），前端开发另走 Vite 代理 |
+| 上传上限 | 单文件 `50MB`、单请求 `1024MB`（`spring.servlet.multipart`；整包上传靠请求上限放行） |
+| 统一返回 | `CommonResult<T>`（`code = 0` 成功）；例外：`POST /chat` 返回 `SseEmitter`、`GET /workflow/text` 返回 `void` |
+| 认证 | 请求头 `Authorization: Bearer <token>`，或参数 `token`（`tb.security.token-parameter`） |
+| 跨域 | **未配置可用的 CORS 来源**：`SecurityConfig` 只有 `.cors(withDefaults())`，全仓无 `CorsConfigurationSource` / `@CrossOrigin`，前端开发一律走 Vite 代理 `/api` → `8086` |
 
 ---
 
@@ -26,7 +26,7 @@
 
 ### 2.1 返回结构
 
-所有接口**一律**返回 `CommonResult<T>`：
+业务接口一律返回 `CommonResult<T>`（两个已记录的例外：`POST /chat` 的 `SseEmitter`、`GET /workflow/text` 的 `void`）：
 
 ```json
 // 成功
@@ -66,9 +66,11 @@
 
 > 新增免登录接口优先使用 `@PermitAll`；批量前缀放行才写入 `permit-all-urls` 并同步本文档。
 >
-> **待整改**：`permit-all-urls` 中仍保留 `/test2/kb-parse`、`/test2/kb-parse-raw`、`/test2/kb-parse-official`、`/test2/kb-parse-structure` 四条，但 `Test2Controller` 当前只有 `/test2/ping` 与 `/test2/read-pptx`，这四个端点已无对应实现，应从白名单清理。
+> **已整改**：`/test2/kb-parse*` 四条残留已从白名单清理，当前 `permit-all-urls` 与 `Test2Controller` 实际端点一致。
+>
+> **仍待整改**：`application.yml` 里 `/workflow/**` 上方的注释仍写着「`/run`、`/resume` 为 SSE 流」，而这两个端点已合并为 `POST /chat`（且 `/chat/**` **故意不放行**，要求登录）；注释误导，需随代码修正。
 
-### 2.5 接口清单（共 12 个 Controller / 36 个接口）
+### 2.5 接口清单（共 15 个 `@RestController` / 43 个接口）
 
 > 下表路径均省略上下文前缀 `/api`。
 
@@ -97,26 +99,34 @@
 | 21 | `KbDocumentController` | DELETE | `/knowledge-base/document/delete` | 删除文档（`id`） | `CommonResult<Boolean>` |
 | 22 | `KbDocumentController` | POST | `/knowledge-base/document/abandon` | 放弃未向量化的文档（`documentId`） | `CommonResult<Boolean>` |
 | 23 | `KbDocumentChunkController` | GET | `/knowledge-base/chunk/list` | 文档分片列表（`documentId`） | `CommonResult<List<ChunkRespVO>>` |
-| 24 | `WorkflowController` | POST | `/workflow/run` | 提交执行：请求体为画布定义（`{nodes, edges}`，可省略，省略时回落 classpath `text.json`）；人工确认由 `POST /workflow/resume` 单独承接（详见 [12-工作流规范.md](./12-工作流规范.md) §2.1） | `SseEmitter`（`text/event-stream`） |
-| 25 | `WorkflowController` | GET | `/workflow/get_process` | 查询执行状态与结果（`workflow_id`；SSE 的**轮询兜底**）——**当前未实现**（规划项，见下方说明） | `CommonResult<WorkflowProcessRespVO>` |
-| 26 | `WorkflowController` | POST | `/workflow/save` | **已实现**：保存工作流定义（`id` 空 = 新建，非空 = 更新；画布 JSON 整存，**不做版本管理**；返回 String 类型的雪花 id） | `CommonResult<String>` |
-| 27 | `WorkflowController` | GET | `/workflow/detail` | **已实现**：工作流详情（query 参数 `workflow_id`；含 `schemaJson` 画布字符串与 `builtin` / `stepCount`） | `CommonResult<WorkflowDetailRespVO>` |
-| 28 | `WorkflowController` | GET | `/workflow/list` | **已实现**：工作流列表（不含 `schemaJson`，按更新时间倒序；含 `builtin` / `stepCount`） | `CommonResult<List<WorkflowVO>>` |
-| 29 | `MeetingController` | POST | `/meeting/create` | 创建会议（老师控制台）：返回会议号、入会链接与主持人凭据 | `CommonResult<MeetingCreateRespVO>` |
-| 30 | `MeetingController` | POST | `/meeting/join` | 学生入会（会议号 + 昵称），返回参会凭据与会议初始数据；**不限人数**（上限闸门已作废，见 ADR-0001） | `CommonResult<MeetingJoinRespVO>` |
-| 31 | `MeetingController` | POST | `/meeting/leave` | 学生离会（`meetingNo` + `attendeeToken`）：只给入会台账补 `leave_time`，幂等；**不是**在线状态来源 | `CommonResult<Boolean>` |
-| 32 | `MeetingController` | GET | `/meeting/detail` | 会议详情（`meetingNo` + `hostToken`）：控制台初始化 / 刷新恢复；响应不含 `onlineCount`（在线只看房间事件，ADR-0002） | `CommonResult<MeetingDetailRespVO>` |
-| 33 | `MeetingController` | GET | `/meeting/state` | 学生侧会议状态（`meetingNo` + `attendeeToken`）：刷新 / 断线重连后补齐数据；同 `detail` 不下发 `onlineCount` | `CommonResult<MeetingDetailRespVO>` |
-| 34 | `MeetingController` | POST | `/meeting/close` | 结束会议（`meetingNo` + `hostToken`）：置为已结束、给台账补离会时间并**删除 LiveKit 房间**（房间内学生立即断开） | `CommonResult<Boolean>` |
-| 35 | `MeetingController` | POST | `/meeting/message` | 聊天落库（`meetingNo` + `attendeeToken` 或 `hostToken` + `content`）；实时由 LiveKit DataChannel 承担，本接口只写历史 | `CommonResult<MeetingMessageVO>` |
-| 36 | `PptSpeechController` | POST | `/ppt/speech/optimize` | PPT 讲稿生成（`pages` 长度 1 = 本页，长度 N = 全部）；无状态、不落库，内部按 `tb.lecture.ppt.batch-size` 分批调用模型，部分失败走 `failedIndexes` | `CommonResult<PptSpeechOptimizeRespVO>` |
+| 24 | `WorkflowController` | GET | `/workflow/text` | **联调专用**：同步执行 classpath 内置定义一次，把终态状态键打到控制台，不是业务接口 | `void`（无包装） |
+| 25 | `WorkflowController` | POST | `/workflow/save` | 保存工作流定义（`id` 空 = 新建，非空 = 更新；画布 JSON 整存，**不做版本管理**；返回 String 类型的雪花 id） | `CommonResult<String>` |
+| 26 | `WorkflowController` | GET | `/workflow/detail` | 工作流详情（query 参数 `workflow_id`；含 `schemaJson` 画布字符串与 `builtin` / `stepCount`） | `CommonResult<WorkflowDetailRespVO>` |
+| 27 | `WorkflowController` | GET | `/workflow/list` | 工作流列表（不含 `schemaJson`，按更新时间倒序；含 `builtin` / `stepCount`） | `CommonResult<List<WorkflowVO>>` |
+| 28 | `ChatController` | POST | `/chat` | **执行入口（SSE）**：`produces = text/event-stream`，请求体 `{conversation_id, workflow_id?, message?}`；首轮与人工确认续跑同一端点，画布**不内联提交**（靠 `workflow_id` 引用已落库定义）。事件协议见 `ChatProtocol`，详见 [12-工作流规范.md](./12-工作流规范.md) §2.2 | `SseEmitter` |
+| 29 | `ChatController` | POST | `/chat/conversation` | 新建会话（`workflow_id` 必须已落库） | `CommonResult<ConversationVO>` |
+| 30 | `ChatController` | GET | `/chat/conversation/list` | 当前用户的会话列表 | `CommonResult<List<ConversationVO>>` |
+| 31 | `HomeworkController` | POST | `/homework/upload` | 作业文件夹批量上传（multipart：`files` + 可选 `paths`（与 `files` 顺序一一对应的相对路径）+ 可选 `folderName`），落 `homework_task` / `homework_file` 并返回文件树 | `CommonResult<HomeworkUploadRespVO>` |
+| 32 | `HomeworkController` | POST | `/homework/grade` | 提交批改（`taskId` / `spaceIds` / `files` / `description` / `exportFormat` / `workflowId`），转交 workflow 执行链 | `CommonResult<Boolean>` |
+| 33 | `HomeworkFileTextController` | GET | `/test2/file-text` | 读取作业文件文本，逐条返回、单文件失败不影响整批（HTTP 恒 200）；内部用模拟批改请求，**是联调桩，不是业务接口** | `CommonResult<HomeworkFileTextRespVO>` |
+| 34 | `MeetingController` | POST | `/meeting/create` | 创建会议（老师控制台）：返回会议号、入会链接与主持人凭据 | `CommonResult<MeetingCreateRespVO>` |
+| 35 | `MeetingController` | POST | `/meeting/join` | 学生入会（会议号 + 昵称），返回参会凭据与会议初始数据；**不限人数**（上限闸门已作废，见 ADR-0001） | `CommonResult<MeetingJoinRespVO>` |
+| 36 | `MeetingController` | POST | `/meeting/leave` | 学生离会（`meetingNo` + `attendeeToken`）：只给入会台账补 `leave_time`，幂等；**不是**在线状态来源 | `CommonResult<Boolean>` |
+| 37 | `MeetingController` | GET | `/meeting/detail` | 会议详情（`meetingNo` + `hostToken`）：控制台初始化 / 刷新恢复；响应不含 `onlineCount`（在线只看房间事件，ADR-0002） | `CommonResult<MeetingDetailRespVO>` |
+| 38 | `MeetingController` | GET | `/meeting/state` | 学生侧会议状态（`meetingNo` + `attendeeToken`）：刷新 / 断线重连后补齐数据；同 `detail` 不下发 `onlineCount` | `CommonResult<MeetingDetailRespVO>` |
+| 39 | `MeetingController` | POST | `/meeting/close` | 结束会议（`meetingNo` + `hostToken`）：置为已结束、给台账补离会时间并**删除 LiveKit 房间**（房间内学生立即断开） | `CommonResult<Boolean>` |
+| 40 | `MeetingController` | POST | `/meeting/message` | 聊天落库（`meetingNo` + `attendeeToken` 或 `hostToken` + `content`）；实时由 LiveKit DataChannel 承担，本接口只写历史 | `CommonResult<MeetingMessageVO>` |
+| 41 | `MeetingController` | GET | `/meeting/digital/status` | 数字人可用性探测（`meetingNo`；后端会按 `worker-probe-timeout-ms` 探一次 worker 的 `/healthz`），前端据此显示「数字人不可用」而不是静默无声 | `CommonResult<DigitalStatusVO>` |
+| 42 | `MeetingController` | POST | `/meeting/digital/say` | 让数字人在会议里播报一段文本（`meetingNo` + `hostToken` + `text`，长度受 `tb.lecture.digital-human.max-text-length` 约束）；合成走 CosyVoice、发布走 Node worker | `CommonResult<DigitalSayRespVO>` |
+| 43 | `PptSpeechController` | POST | `/ppt/speech/optimize` | PPT 讲稿生成（`pages` 长度 1 = 本页，长度 N = 全部）；无状态、不落库，内部按 `tb.lecture.ppt.batch-size` 分批调用模型，部分失败走 `failedIndexes` | `CommonResult<PptSpeechOptimizeRespVO>` |
 
-> 接口 24~28 属**自定义工作流模块**，分两块：
+> 接口 24~30 属**自定义工作流模块**（包根 `org.example.textflow`），分两块：
 >
-> - **定义持久化（接口 26~28，已实现）**：工作流定义落在 `workflow` 表（脚本 `sql/workflow.sql`，表结构见 [12-工作流规范.md](./12-工作流规范.md) §6）。`POST /workflow/save` 新建 / 更新定义（`id` 空 = 新建、非空 = 更新；`id` 全程为**字符串形式**的雪花 id，避免前端 JS 丢精度）；`GET /workflow/detail` 返回含 `schemaJson` 的详情；`GET /workflow/list` 返回不含画布的列表。详情与列表都带 `builtin`（是否内置模板）与 `stepCount`（顶层节点数），供批改页工作流下拉分组与「N 个步骤」展示。内置模板「标准批改作业」由启动初始化器在表为空时写入（固定 id，幂等）。
-> - **执行链路（接口 24~25）**：`POST /workflow/run` 请求体提交画布定义（省略时回落 classpath `text.json`），以 `text/event-stream` 推 `run` / `node` / `interrupt` 三种事件（详见 [12](./12-工作流规范.md) §2.2）；人工确认由 `POST /workflow/resume?run_id=&content=` 承接。中断点、当次画布定义与 checkpoint 均**存内存**（进程重启即失效）；大模型节点为**模拟实现**。`GET /workflow/get_process` **尚未实现**，当前没有轮询兜底。
+> - **定义持久化（接口 25~27）**：工作流定义落在 `workflow` 表（脚本 `sql/workflow.sql`，表结构见 [12-工作流规范.md](./12-工作流规范.md) §6）。`POST /workflow/save` 新建 / 更新定义（`id` 空 = 新建、非空 = 更新；`id` 全程为**字符串形式**的雪花 id，避免前端 JS 丢精度）；`GET /workflow/detail` 返回含 `schemaJson` 的详情；`GET /workflow/list` 返回不含画布的列表。详情与列表都带 `builtin`（是否内置模板）与 `stepCount`（顶层节点数），供批改页工作流下拉分组与「N 个步骤」展示。内置模板「标准批改作业」由启动初始化器在表为空时写入（固定 id，幂等）。
+> - **执行链路（接口 28~30）**：入口是 **`POST /chat`**（不再是 `POST /workflow/run`，也没有 `POST /workflow/resume`）。请求体 `{conversationId, workflowId?, message?}`：无 `conversationId` 时先建会话，**首轮与人工确认续跑共用同一端点**，靠「该会话最新一条执行记录的状态」分流（客户端不传状态）。事件帧为 `conversation.chat.in_progress` → `conversation.message.completed`\*（节点产出 / 表单卡片 / 正文）→ 终态帧 `conversation.chat.{completed,failed,requires_action}`，每轮都以 `done` 收尾（**终态看帧，不看流是否结束**）。会话与执行实例落 `workflow_conversation` / `workflow_run`；**中断点与图 checkpoint 仍是内存 Map**（`executeId` → `InterruptionMetadata`、`MemorySaver`），进程重启后续跑会退化为新执行。LLM 节点注入真实 `ChatClient`（知识库检索工具仍为占位）。
 >
-> 白名单放行 `/workflow/**`；前端接口层 `frontend/src/api/workflow.js`：SSE 地址常量 `WORKFLOW_API`（`run` / `resume`，**带** `/api` 前缀，供 `fetch` 使用）与 REST 路径常量 `WORKFLOW_REST_API`（`save` / `detail` / `list`，走 axios 实例，**不带**前缀以免与 `baseURL` 重复拼接），以及 `buildRunDefinition` / `buildWorkflowSchema` / `buildResumeUrl` / `saveWorkflow` / `getWorkflowDetail` / `listWorkflows`。SSE 读取封装在 `frontend/src/utils/workflow-sse.js`（`fetch` + `ReadableStream`，因 `EventSource` 只支持 GET）。消费方：画布页 `views/workflow2/WorkflowView.vue`（保存对话框 / 按 `workflow_id` 打开 / 试运行 / 节点下方人工确认卡片）与批改页 `views/homework/HomeworkGradingView.vue`（工作流下拉）。
+> 放行与鉴权的分工：`/workflow/**` 免登录（联调方便），**`/chat/**` 不在白名单内**——会话与执行实例要记 `creator` 并按用户隔离，因此要求登录（这也是它不挂在 `/workflow` 前缀下的原因）。
+> 前端接口层 `frontend/src/api/workflow.js`：`CHAT_API`（`chat` = `/api/chat`，**带** `/api` 前缀，因为 `fetch` 不走 axios 实例；`conversation` / `conversationList` **不带**前缀）与 `WORKFLOW_REST_API`（`save` / `detail` / `list`，走 axios，避免与 `baseURL` 重复拼接），导出 `buildChatBody` / `buildCardSubmitBody` / `buildRunDefinition` / `buildWorkflowSchema` / `saveWorkflow` / `getWorkflowDetail` / `listWorkflows` / `createConversation` / `listConversations`。SSE 读取封装在 `frontend/src/utils/workflow-sse.js` 的 `readWorkflowStream`（`fetch` + `ReadableStream`，因 `EventSource` 只支持 GET），事件到状态快照的归约在 `views/workflow2/utils/run-state.js`。消费方：画布页 `views/workflow2/WorkflowView.vue`（建会话 / 试运行 / 节点下方人工确认卡片）、批改页 `views/homework/HomeworkGradingView.vue`（工作流下拉 `listWorkflows`）与首页 `views/system/SystemHomeView.vue`（`listWorkflows` / `listConversations` 拉动态）。
 
 ### 2.6 待整改（后端）
 
@@ -126,6 +136,8 @@
 | `PptxPage` | VO 置于 `controller` 包 | 移入 `model/vo/` |
 | 列表接口 | 未使用分页 | 数据量增长后改为 `PageResult` + 分页参数 |
 | `TestController` / `Test2Controller` | 验证性接口保留在生产代码中 | 明确其为测试用途，上线前下线或收敛 |
+| `HomeworkController.grade` | 方法体里用 `System.out.println(reqVO)` 打请求 | 改用日志（`log.info`）或删除，禁止 `System.out` |
+| `HomeworkFileTextController` | `/test2/file-text` 内部走 `mockGradeReq()` 硬编码样本，白名单放行 | 联调桩不得当业务接口用；接入真实作业来源后再决定去留 |
 | `SecurityConfig.filterChain` | `permitAllUrls` 容器始终为空（未采集 `@PermitAll` 注解），方法级 `@PermitAll` 实际不生效 | 统一走 `tb.security.permit-all-urls`，或补齐注解采集逻辑 |
 
 ---
@@ -189,10 +201,10 @@ service.interceptors.response.use(
 | `doctemplate.js` | `generateDoc`、`getGenerationHistory`、`getGenerationDetail` | 接口 9~11 |
 | `file.js` | `uploadFile` | 接口 8 |
 | `knowledgebase.js` | `getSpaceList`、`createSpace`、`updateSpace`、`deleteSpace`、`getDocumentList`、`createDocument`、`deleteDocument`、`getChunkList`、`uploadDocument`、`vectorizeDocument` | 接口 12~21 |
-| `homework.js` | `gradeHomework`、`getGradingHistory`、`getGradingDetail`、`exportGradingResult` | **后端暂无对应接口（待联调）** |
-| `workflow.js` | `buildRunDefinition`、`buildWorkflowSchema`、`buildResumeUrl`、`saveWorkflow`、`getWorkflowDetail`、`listWorkflows`；常量 `WORKFLOW_API`（SSE 地址，含 `/api` 前缀）与 `WORKFLOW_REST_API`（REST 路径，无前缀） | 接口 24、26~28：`views/workflow2/WorkflowView.vue`（画布编辑 + 保存对话框 + 按 `workflow_id` 打开 + 试运行 + 节点下方人工确认卡片）、`views/homework/HomeworkGradingView.vue`（工作流下拉走 `listWorkflows`）；SSE 读取封装见 `src/utils/workflow-sse.js`。`GET /workflow/get_process` 未实现，故无轮询兜底 |
-| `meeting.js` | `createMeeting`、`joinMeeting`、`leaveMeeting`、`getMeetingDetail`、`getMeetingState`、`sendMeetingMessage`、`closeMeeting`；常量 `MEETING_REST_API` | 接口 29~35：`views/meeting/MeetingConsoleView.vue`（老师控制台）、`views/meeting/MeetingRoomView.vue`（学生会议室）。`leaveMeeting` 走 `navigator.sendBeacon`（组件卸载路径上普通请求会被浏览器掐掉），因此带 `/api` 前缀而非用 axios 实例。实时能力不在本文件内：LiveKit 房间客户端见 `views/meeting/hooks/useLiveKitRoom.js`，「在线成员 vs 入会台账」的裁决见 `views/meeting/utils/attendees.js` |
-| `ppt.js` | `optimizeSpeech(payload, signal)`；常量 `PPT_REST_API` | 接口 36：`views/ppt/index.vue`（备注区星形按钮 = 本页、工具栏按钮 = 全部）+ 两个对比弹窗（`views/ppt/components/ai/`）。整篇是**一次长请求**，离开页面用 `AbortController` 中止 |
+| `homework.js` | `uploadHomeworkFiles(files, paths, folderName, onUploadProgress)`、`submitGrading(payload)` | 接口 31~32：`views/homework/HomeworkGradingView.vue` 已接线（上传成功后串行提交批改，上传带进度回调）。历史的 `gradeHomework` / `getGradingHistory` / `getGradingDetail` / `exportGradingResult` 属演示态，已随页面改造移除；批改**历史与导出**目前仍走本地，无后端接口 |
+| `workflow.js` | `buildChatBody`、`buildCardSubmitBody`、`buildRunDefinition`、`buildWorkflowSchema`、`saveWorkflow`、`getWorkflowDetail`、`listWorkflows`、`createConversation`、`listConversations`；常量 `CHAT_API`（SSE / 会话地址，其中 `chat` **含** `/api` 前缀）与 `WORKFLOW_REST_API`（REST 路径，无前缀） | 接口 25~30：`views/workflow2/WorkflowView.vue`（画布编辑 + 保存对话框 + 按 `workflow_id` 打开 + 建会话 + 试运行 + 节点下方人工确认卡片）、`views/homework/HomeworkGradingView.vue` 与 `views/system/SystemHomeView.vue`（`listWorkflows` / `listConversations`）；SSE 读取封装见 `src/utils/workflow-sse.js`。**没有轮询兜底**：`GET /workflow/get_process` 从未实现，终态只认 SSE 帧 |
+| `meeting.js` | `createMeeting`、`joinMeeting`、`leaveMeeting`、`getMeetingDetail`、`getMeetingState`、`sendMeetingMessage`、`closeMeeting`、`getDigitalStatus`、`sayDigital`；常量 `MEETING_REST_API` | 接口 34~42：`views/meeting/MeetingConsoleView.vue`（老师控制台）、`views/meeting/MeetingRoomView.vue`（学生会议室）、`views/meeting/components/DigitalHumanAvatar.vue`（播报与可用性状态）。`leaveMeeting` 走 `navigator.sendBeacon`（组件卸载路径上普通请求会被浏览器掐掉），因此带 `/api` 前缀而非用 axios 实例。实时能力不在本文件内：LiveKit 房间客户端见 `views/meeting/hooks/useLiveKitRoom.js`，「在线成员 vs 入会台账」的裁决见 `views/meeting/utils/attendees.js`，数字人 PCM 播放见 `views/meeting/utils/agentAudio.js` |
+| `ppt.js` | `optimizeSpeech(payload, signal)`；常量 `PPT_REST_API` | 接口 43：`views/ppt/index.vue`（备注区星形按钮 = 本页、工具栏按钮 = 全部）+ 两个对比弹窗（`views/ppt/components/ai/`）。整篇是**一次长请求**，离开页面用 `AbortController` 中止 |
 
 ### 3.4 调用约定
 
@@ -218,10 +230,10 @@ async function load() {
 | 项 | 前端 | 后端 |
 | --- | --- | --- |
 | 前缀 | `baseURL: "/api"` | `context-path: /api` |
-| 认证 | `Authorization: Bearer <token>`（Cookie 存储） | `TokenAuthenticationFilter` 解析 |
-| 返回 | 拦截器解包 `code === 0` | 统一 `CommonResult<T>` |
-| 上传 | `FormData` + 不设 Content-Type | `MultipartFile` + 50MB 上限 |
-| 实时 | `EventSource`（**规划**） | SSE（**规划**，已为 ASYNC 放行） |
+| 认证 | 登录态 `Authorization: Bearer <token>`（Cookie，`utils/auth.js`）；会议凭据另走 `hostToken` / `attendeeToken`（localStorage / sessionStorage，不进 `auth.js`） | `TokenAuthenticationFilter` 解析 Bearer，白名单见 §2.4 |
+| 返回 | 拦截器解包 `code === 0` | 统一 `CommonResult<T>`（SSE / `void` 例外） |
+| 上传 | `FormData` + 不设 Content-Type | `MultipartFile` + 单文件 50MB / 单请求 1024MB |
+| 实时 | **SSE 已实现**：`fetch` + `ReadableStream`（`utils/workflow-sse.js`），未用 `EventSource`（只支持 GET，且无法带请求体）；会议走 `livekit-client` 直连 7880 | `POST /chat` 返回 `SseEmitter`（异步不超时，ASYNC 已放行）；数字人音频轨由 `digital-human-worker/` 发布 |
 
 ---
 
