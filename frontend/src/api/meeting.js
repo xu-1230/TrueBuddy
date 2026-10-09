@@ -19,6 +19,8 @@ export const MEETING_REST_API = {
   state: '/meeting/state',
   /** 消息落库：{ meetingNo, attendeeToken | hostToken, content }（实时走 LiveKit DataChannel，本接口只写历史） */
   message: '/meeting/message',
+  /** 学生离会：{ meetingNo, attendeeToken }（只给台账补记 leave_time，不是在线状态来源） */
+  leave: '/meeting/leave',
   /** 结束会议：{ meetingNo, hostToken } */
   close: '/meeting/close',
 }
@@ -85,4 +87,33 @@ export function getMeetingState(meetingNo, attendeeToken) {
  */
 export function closeMeeting(meetingNo, hostToken) {
   return service.post(MEETING_REST_API.close, { meetingNo, hostToken })
+}
+
+/**
+ * 学生离会：给参会台账补记离会时间（后端幂等，重复调用不会覆盖首次时间）。
+ *
+ * 用 `sendBeacon` 而不是 axios：调用点在页面/组件正在拆毁的路径上，普通请求可能被浏览器
+ * 直接掐掉。它只写台账，**不影响在线名单**——在线与否只看 LiveKit 房间事件（docs/adr/0002）。
+ * 返回是否成功交给浏览器发送；调用方不要据此提示用户。
+ *
+ * @param {string} meetingNo 会议号
+ * @param {string} attendeeToken 参会凭据
+ * @returns {boolean}
+ */
+export function leaveMeeting(meetingNo, attendeeToken) {
+  if (!meetingNo || !attendeeToken) return false
+  // 与 axios 实例的 baseURL 保持一致（/api 是后端 context-path）
+  const url = `/api${MEETING_REST_API.leave}`
+  const payload = JSON.stringify({ meetingNo, attendeeToken })
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    // Blob 显式声明 application/json，后端的 @RequestBody 才解析得动
+    return navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }))
+  }
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload,
+    keepalive: true,
+  }).catch(() => {})
+  return true
 }

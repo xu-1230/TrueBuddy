@@ -83,6 +83,9 @@
 | Q14（讲稿） | 结构化输出 | prompt 内给死 JSON schema + 后端容错解析（剥代码块 / 定位数组），**不用** `response_format` |
 | Q16（讲稿） | 并发与中止 | 跑批期间两个按钮 disabled；离开 PPT 页 `AbortController` 中止等待（**后端仍会把当前批次跑完**，无状态接口的固有代价） |
 | Q17（讲稿） | 来源标记 | **不做** `remarkSource` 标记；单页弹窗内可「重新生成」，弹窗内保留原备注对照 |
+| ~~Q9（LiveKit）~~ | 成员/在线真相 | **已被 ADR-0002 取代**：原口径是「DB `online` 退化为历史但保留列」；实际它同时被入会闸门和 `onlineCount` 读，两处都在谎报。现已**删掉 `online` 列**，参会表退化为纯台账（`join_time` / `leave_time`），在线只认房间事件 |
+| Q1（生命周期修复） | 入会上限 | **作废** `max-attendees` 闸门与错误码 `1_007_000_005`（编号不复用），见 [ADR-0001](adr/0001-入会人数上限闸门作废.md)。不补心跳、不改问 LiveKit：单机演示场景收益低于其机制成本 |
+| Q2（生命周期修复） | 主持人凭据找回 | **不提供**重签接口，见 [ADR-0003](adr/0003-主持人凭据不提供重新签发路径.md)：`/meeting/**` 免登录，任何按会议号重签都等于开放会议接管。同理**不做** `GET /meeting/list` |
 
 ---
 
@@ -329,14 +332,19 @@ graph TB
 | M2 | LiveKit 令牌签发 + 房间管理（`DeleteRoom`）+ `/meeting/message` | 已落地；**令牌与房间管理已在真实服务端验证** |
 | M3 | 前端房间客户端、屏幕共享、聊天 DataChannel、成员取自房间事件 | 已落地，**待真实浏览器联调** |
 | M4 | 删除自建 WS / MSE 链路与过时测试 | 已完成（14 模块编译通过、后端 9/9 测试通过、前端 ESLint 干净） |
+| M5 | 生命周期修复：入会上限作废、`/meeting/leave`、删 `online` 列、在线只认房间事件、预留列清理 | 已落地（`./mvnw -pl tb-module-lecture -am test` **35/35**、前端 `attendees.test.js` 5/5、oxlint + eslint 干净、`vite build` 通过）；**在线名单实时性仍需真实浏览器联调** |
 
 ### 9.2 后端测试
 
-`backend/tb-module-lecture/src/test/java/.../LiveKitTokenServiceTest.java`（9 条）：JWT 结构（三段 / base64url 无 padding / HS256 头）、**用独立实现的 HMAC 复算签名**、老师/学生/服务端三类令牌的字段级断言、有效期与时钟偏差、未配置时的行为、信令地址推导；另有 `-DlivekitProbe=true` 探针用于对着真实服务端验收。
+- `LiveKitTokenServiceTest`（9 条）：JWT 结构（三段 / base64url 无 padding / HS256 头）、**用独立实现的 HMAC 复算签名**、老师/学生/服务端三类令牌的字段级断言、有效期与时钟偏差、未配置时的行为、信令地址推导；另有 `-DlivekitProbe=true` 探针用于对着真实服务端验收。
+- `LanAddressUtilsTest`（6 条）：局域网 IPv4 探测（热点换 IP 时信令地址跟着走）。
+- **`MeetingServiceImplTest`（7 条，M5 新增）**：Mockito mock 三个 mapper，**不启 Spring 上下文、不连库** —— 全仓没有独立测试库，而 [11-测试规范.md](./11-测试规范.md) §2.2 禁止污染 `tb` 生产库。锁的行为：台账 25 行仍可入会（闸门回归锁）、离会幂等与两类凭据错误、`close` 走 `markAllLeft`、响应 VO 里 `online` / `onlineCount` 字段已消失。
+  **已知盲区（必须知道）**：mock 掉 mapper 意味着 **SQL 文本本身没被测过** —— `WHERE leave_time IS NULL`、`deleted = FALSE`、删列后的建表脚本都只由 §11.2 的手工联调 + 逐字 review 兜住。
 
 ```bash
-cd backend && ./mvnw.cmd -pl tb-module-lecture test        # 9/9
-cd frontend && npm test                                    # 153/154（1 条既有 workflow 用例失败，与本期无关）
+cd backend && ./mvnw.cmd -o -pl tb-module-lecture -am test   # 35/35
+cd frontend && node --test tests/attendees.test.js            # 5/5（在线名单 vs 台账的裁决）
+cd frontend && npm test                                       # 159/160（1 条既有 workflow 用例失败，与本期无关）
 ```
 
 ### 9.3 后续阶段（占位）
@@ -380,16 +388,22 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 
 | # | 步骤 | 通过标准 |
 | --- | --- | --- |
+| 0 | **（已建过库的机器先执行）** `ALTER TABLE lecture_meeting DROP COLUMN IF EXISTS planned_minutes, DROP COLUMN IF EXISTS document_id;` `ALTER TABLE lecture_meeting_attendee DROP COLUMN IF EXISTS online;` `DROP INDEX IF EXISTS idx_lecture_meeting_create_time;` —— 全仓无 flyway/liquibase，建表脚本只对新库生效 | 各条语句均返回 `DROP`/`NOTICE`，无报错 |
 | 0 | 执行三张建表脚本；启动 LiveKit（`D:\ctf\livekit\start.ps1`）；启动后端与前端（学生端需局域网可达，`npm run dev -- --host`） | LiveKit 日志显示 `nodeIP` 为本机 WLAN 地址 |
 | 1 | 老师登录 → 控制台创建会议 | 返回 6 位会议号与入会链接；`lecture_meeting` 落库；连接状态变「已连接」 |
 | 2 | 老师点「开始共享」并选 PPT 窗口 | 老师端有本地预览；日志提示已开始共享 |
 | 3 | 手机打开入会链接 → 输名字 → 进入 | 左侧看到老师画面 |
-| 4 | 手机再开一个窗口用另一个名字入会 | 成员列表实时增加；超上限被拒 |
+| 4 | 手机再开一个窗口用另一个名字入会 | 成员列表实时增加（**不再有人数上限**，见 ADR-0001） |
 | 5 | 双方各发一条消息 | 双向实时到达；刷新后从历史仍能看到（双写生效） |
 | 6 | 学生刷新页面 | 自动重新入会并看到画面（`state` 下发了新令牌） |
 | 7 | 老师停止共享 | 学生端回到「等待主持人开始共享」占位 |
 | 8 | 老师结束会议 | 学生端立即提示「会议已结束」；`lecture_meeting.status = 2`；房间被删除 |
 | 9 | 未配置 `LIVEKIT_API_KEY` 时启动后端再入会 | 返回可读错误（错误码 `1_007_000_010`），不是 500 |
+| 10 | **（M5）** 反复用同一入会链接进会议室、每次直接关标签页，累计 25 次后再开第 26 个 | 仍能入会；不再出现「人数已满」（`1_007_000_005` 已作废，ADR-0001） |
+| 11 | **（M5）** 老师控制台开着，学生进出会议室 | 在线人数**立即**跟着房间事件变化；静置 30s（跨过两次 10s 轮询）数字**不会被打回旧值**（ADR-0002） |
+| 12 | **（M5）** 学生用 SPA 内导航离开会议室（非刷新） | `lecture_meeting_attendee` 该行 `leave_time` 被写入；刷新**不会**写（否则会记下"已离开但其实还在"的假事实） |
+| 13 | **（M5）** 清掉浏览器存储后带着 `?meetid=` 打开控制台 | 显示「本浏览器没有会议 X 的主持人凭据」与「新建会议」出口，不白屏、无未捕获异常（ADR-0003） |
+| 14 | **（M5）** 新建一场会 | 凭据提示条出现，含完整 `hostToken` 与「复制凭据」按钮，并写明"丢失无法找回" |
 
 ### 11.3 回归重点
 

@@ -8,6 +8,7 @@ import org.example.backend.module.lecture.model.vo.MeetingCreateRespVO;
 import org.example.backend.module.lecture.model.vo.MeetingDetailRespVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinRespVO;
+import org.example.backend.module.lecture.model.vo.MeetingLeaveReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageVO;
 import org.example.backend.module.lecture.service.MeetingService;
@@ -47,6 +48,18 @@ public class MeetingController {
     @PostMapping("/join")
     public CommonResult<MeetingJoinRespVO> join(@RequestBody MeetingJoinReqVO reqVO) {
         return success(meetingService.join(reqVO));
+    }
+
+    /**
+     * 学生离会：给参会台账补记离会时间。
+     *
+     * <p>由学生端在页面关闭前用 {@code sendBeacon} 触发；重复调用幂等。
+     * 本接口<b>不</b>维护「在线」状态——在线与否只看 LiveKit 房间事件。
+     */
+    @PostMapping("/leave")
+    public CommonResult<Boolean> leave(@RequestBody MeetingLeaveReqVO reqVO) {
+        meetingService.leave(reqVO);
+        return success(true);
     }
 
     /** 会议详情：老师控制台初始化 / 刷新后恢复 */

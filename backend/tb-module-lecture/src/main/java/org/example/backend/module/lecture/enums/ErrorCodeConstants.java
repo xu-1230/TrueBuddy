@@ -16,7 +16,7 @@ public interface ErrorCodeConstants {
     ErrorCode MEETING_ALREADY_CLOSED = new ErrorCode(1_007_000_002, "会议已结束");
     ErrorCode MEETING_NICKNAME_REQUIRED = new ErrorCode(1_007_000_003, "请输入你的名字");
     ErrorCode MEETING_NICKNAME_TOO_LONG = new ErrorCode(1_007_000_004, "名字长度不能超过 {} 个字符");
-    ErrorCode MEETING_ATTENDEE_LIMIT_EXCEED = new ErrorCode(1_007_000_005, "会议人数已达上限（{} 人）");
+    // 1_007_000_005 已作废：入会人数上限闸门移除，见 docs/adr/0001（编号不复用）
     ErrorCode MEETING_HOST_TOKEN_INVALID = new ErrorCode(1_007_000_006, "主持人凭据无效");
     ErrorCode MEETING_NO_GENERATE_FAILED = new ErrorCode(1_007_000_007, "会议号生成失败，请重试");
     ErrorCode MEETING_TITLE_TOO_LONG = new ErrorCode(1_007_000_008, "会议标题长度不能超过 {} 个字符");

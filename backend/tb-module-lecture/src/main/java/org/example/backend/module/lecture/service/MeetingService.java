@@ -7,6 +7,7 @@ import org.example.backend.module.lecture.model.vo.MeetingCreateRespVO;
 import org.example.backend.module.lecture.model.vo.MeetingDetailRespVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinRespVO;
+import org.example.backend.module.lecture.model.vo.MeetingLeaveReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageVO;
 
@@ -31,7 +32,10 @@ public interface MeetingService {
     MeetingCreateRespVO create(MeetingCreateReqVO reqVO);
 
     /**
-     * 学生入会：校验会议可入、昵称合法、人数未满，落参会人并签发参会凭据。
+     * 学生入会：校验会议可入、昵称合法，落参会人并签发参会凭据。
+     *
+     * <p>不限制人数：入会曾按 {@code online} 布尔列设上限闸门，而该列没有任何写入方能把它改回 false，
+     * 会在实际无人在线时抛「人数已满」——闸门已作废，见 docs/adr/0001。
      *
      * @param reqVO 会议号与昵称
      * @return 参会凭据、会议信息、参会人列表、最近消息与实时接入信息
@@ -48,7 +52,18 @@ public interface MeetingService {
     MeetingDetailRespVO detail(String meetingNo, String hostToken);
 
     /**
-     * 结束会议：置为已结束、写结束时间、把全部在线参会人置为离线，并删除 LiveKit 房间。
+     * 学生离会：给参会台账的那一行补记离会时间。
+     *
+     * <p>重复调用**不报错且不覆盖**首次时间（幂等），因为页面关闭前 {@code sendBeacon} 可能重试。
+     * 崩溃 / 断网 / 直接杀进程不会走到这里，台账会留下一行 {@code leaveTime} 为空的记录——
+     * 这是预期行为，该行<b>不代表</b>此人在线（见 docs/adr/0002）。
+     *
+     * @param reqVO 会议号与参会凭据
+     */
+    void leave(MeetingLeaveReqVO reqVO);
+
+    /**
+     * 结束会议：置为已结束、写结束时间、给全部「尚未显式离开」的台账行补记离会时间，并删除 LiveKit 房间。
      *
      * @param reqVO 会议号与主持人凭据
      */

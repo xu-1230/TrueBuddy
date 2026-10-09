@@ -19,6 +19,7 @@ import org.example.backend.module.lecture.model.vo.MeetingDetailRespVO;
 import org.example.backend.module.lecture.model.vo.MeetingInfoVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinRespVO;
+import org.example.backend.module.lecture.model.vo.MeetingLeaveReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageVO;
 import org.example.backend.module.lecture.model.vo.MeetingRealtimeVO;
@@ -36,7 +37,6 @@ import java.util.function.Supplier;
 
 import static org.example.backend.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.MEETING_ALREADY_CLOSED;
-import static org.example.backend.module.lecture.enums.ErrorCodeConstants.MEETING_ATTENDEE_LIMIT_EXCEED;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.MEETING_ATTENDEE_TOKEN_INVALID;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.MEETING_HOST_TOKEN_INVALID;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.MEETING_LIVEKIT_NOT_CONFIGURED;
@@ -142,17 +142,12 @@ public class MeetingServiceImpl implements MeetingService {
         if (nickname.length() > nicknameMaxLength) {
             throw exception(MEETING_NICKNAME_TOO_LONG, nicknameMaxLength);
         }
-        int maxAttendees = meetingProperties.getMaxAttendees();
-        if (attendeeMapper.countOnline(meeting.getId()) >= maxAttendees) {
-            throw exception(MEETING_ATTENDEE_LIMIT_EXCEED, maxAttendees);
-        }
 
         LectureMeetingAttendeeDO attendee = new LectureMeetingAttendeeDO();
         attendee.setMeetingId(meeting.getId());
         attendee.setNickname(deduplicateNickname(meeting.getId(), nickname));
         attendee.setAttendeeToken(randomToken());
         attendee.setRole(ROLE_STUDENT);
-        attendee.setOnline(true);
         attendeeMapper.insert(attendee);
         log.info("[join][入会成功 meetingNo={}, attendeeId={}, nickname={}]",
                 meeting.getMeetingNo(), attendee.getId(), attendee.getNickname());
@@ -182,6 +177,23 @@ public class MeetingServiceImpl implements MeetingService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void leave(MeetingLeaveReqVO reqVO) {
+        LectureMeetingDO meeting = getMeetingOrThrow(reqVO.getMeetingNo());
+        if (STATUS_CLOSED == meeting.getStatus()) {
+            throw exception(MEETING_ALREADY_CLOSED);
+        }
+        LectureMeetingAttendeeDO attendee = getAttendeeByToken(reqVO.getAttendeeToken());
+        if (attendee == null || !meeting.getId().equals(attendee.getMeetingId())) {
+            throw exception(MEETING_ATTENDEE_TOKEN_INVALID);
+        }
+        // 只更新 leave_time IS NULL 的行：sendBeacon 重试时第二次拿不到影响行数，也不会覆盖首次时间
+        int updated = attendeeMapper.markLeft(attendee.getId());
+        log.info("[leave][学生离会 meetingNo={}, attendeeId={}, updated={}]",
+                meeting.getMeetingNo(), attendee.getId(), updated);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void close(MeetingCloseReqVO reqVO) {
         LectureMeetingDO meeting = getMeetingOrThrow(reqVO.getMeetingNo());
         validateHostToken(meeting, reqVO.getHostToken());
@@ -189,7 +201,7 @@ public class MeetingServiceImpl implements MeetingService {
             throw exception(MEETING_ALREADY_CLOSED);
         }
         meetingMapper.updateStatus(meeting.getId(), STATUS_CLOSED, LocalDateTime.now());
-        attendeeMapper.markAllOffline(meeting.getId());
+        attendeeMapper.markAllLeft(meeting.getId());
         // 删掉 LiveKit 房间：房间内所有客户端会立刻收到 Disconnected，这正是「会议已结束」的实时通知
         // （best-effort，失败只记日志 —— 学生端还有 GET /meeting/state 轮询兜底）
         liveKitRoomServiceClient.deleteRoom(meeting.getMeetingNo());
@@ -361,9 +373,8 @@ public class MeetingServiceImpl implements MeetingService {
         infoVO.setStatus(meeting.getStatus());
         infoVO.setStartTime(meeting.getStartTime());
         infoVO.setEndTime(meeting.getEndTime());
-        List<LectureMeetingAttendeeDO> attendees = attendeeMapper.selectListByMeetingId(meeting.getId());
-        infoVO.setAttendeeCount(attendees.size());
-        infoVO.setOnlineCount((int) attendees.stream().filter(a -> Boolean.TRUE.equals(a.getOnline())).count());
+        // 台账口径的累计入会人数：在线人数由端上从 LiveKit 房间事件得出，后端不再冒充「在线」
+        infoVO.setAttendeeCount(attendeeMapper.countByMeetingId(meeting.getId()));
         return infoVO;
     }
 
@@ -374,8 +385,8 @@ public class MeetingServiceImpl implements MeetingService {
             vo.setId(attendee.getId());
             vo.setNickname(attendee.getNickname());
             vo.setRole(attendee.getRole());
-            vo.setOnline(attendee.getOnline());
             vo.setJoinTime(attendee.getJoinTime());
+            vo.setLeaveTime(attendee.getLeaveTime());
             list.add(vo);
         }
         return list;

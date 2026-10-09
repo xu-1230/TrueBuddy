@@ -18,8 +18,8 @@ public interface LectureMeetingMessageMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(LectureMeetingMessageDO message);
 
-    /** 按主键查询 */
-    @Select("SELECT * FROM lecture_meeting_message WHERE id = #{id}")
+    /** 按主键查询（仅未删除，与其余查询口径一致） */
+    @Select("SELECT * FROM lecture_meeting_message WHERE id = #{id} AND deleted = FALSE")
     LectureMeetingMessageDO selectById(Long id);
 
     /**

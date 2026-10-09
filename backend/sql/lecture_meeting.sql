@@ -4,8 +4,7 @@
 -- 说明：
 --   1. 一次「开启会议」= 一行；参会人见 lecture_meeting_attendee，消息见 lecture_meeting_message；
 --   2. 软删用 deleted 布尔列（与 infra_file / workflow / homework_task 一致）；
---   3. creator / updater 为逻辑外键（system_user.id），不建物理外键约束；
---   4. planned_minutes / document_id 为后续「PPT 演讲稿优化」阶段预留的空列，本期不写入、不读取。
+--   3. creator / updater 为逻辑外键（system_user.id），不建物理外键约束。
 -- =============================================================
 
 CREATE TABLE IF NOT EXISTS lecture_meeting (
@@ -14,8 +13,6 @@ CREATE TABLE IF NOT EXISTS lecture_meeting (
     title           VARCHAR(255) NOT NULL,                   -- 会议标题
     host_token      VARCHAR(64)  NOT NULL,                   -- 主持人凭据（仅创建时返回，控制台操作时校验）
     status          SMALLINT     NOT NULL DEFAULT 1,         -- 会议状态：1=进行中，2=已结束
-    planned_minutes INTEGER,                                 -- 计划时长（分钟），预留给演讲稿阶段
-    document_id     BIGINT,                                  -- 绑定的 PPT 文档 id，预留给演讲稿阶段
     start_time      TIMESTAMP    NOT NULL DEFAULT now(),     -- 开始时间
     end_time        TIMESTAMP,                               -- 结束时间
     create_time     TIMESTAMP    NOT NULL DEFAULT now(),     -- 创建时间
@@ -31,15 +28,9 @@ COMMENT ON COLUMN lecture_meeting.meeting_no IS '会议号（6 位数字，未�
 COMMENT ON COLUMN lecture_meeting.title IS '会议标题';
 COMMENT ON COLUMN lecture_meeting.host_token IS '主持人凭据（创建时返回，控制台接口校验）';
 COMMENT ON COLUMN lecture_meeting.status IS '会议状态：1=进行中，2=已结束';
-COMMENT ON COLUMN lecture_meeting.planned_minutes IS '计划时长（分钟）：预留给后续演讲稿阶段';
-COMMENT ON COLUMN lecture_meeting.document_id IS '绑定的 PPT 文档 id：预留给后续演讲稿阶段';
 COMMENT ON COLUMN lecture_meeting.start_time IS '开始时间';
 COMMENT ON COLUMN lecture_meeting.end_time IS '结束时间';
 
 -- 会议号唯一（仅约束未删除记录）
 CREATE UNIQUE INDEX IF NOT EXISTS uk_lecture_meeting_no
     ON lecture_meeting (meeting_no) WHERE deleted = FALSE;
-
--- 历史会议列表按创建时间倒序
-CREATE INDEX IF NOT EXISTS idx_lecture_meeting_create_time
-    ON lecture_meeting (create_time DESC) WHERE deleted = FALSE;

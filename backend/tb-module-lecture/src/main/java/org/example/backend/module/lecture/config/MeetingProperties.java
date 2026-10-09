@@ -24,11 +24,6 @@ public class MeetingProperties {
     private Integer frontendPort = 5173;
 
     /**
-     * 单场会议参会人数上限。
-     */
-    private Integer maxAttendees = 20;
-
-    /**
      * 入会与详情接口返回的历史消息条数上限。
      */
     private Integer historyLimit = 50;

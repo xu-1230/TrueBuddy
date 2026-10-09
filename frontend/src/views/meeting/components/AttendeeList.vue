@@ -1,8 +1,9 @@
 <template>
   <section class="attendee-list">
     <header class="attendee-list__head">
-      <span class="attendee-list__title">参会成员</span>
-      <span class="attendee-list__count">{{ onlineCount }}/{{ attendees.length }}</span>
+      <!-- 连上房间才敢叫「在线成员」；降级时这里只是台账，不能冒充在线 -->
+      <span class="attendee-list__title">{{ degraded ? '入会记录（实时连接不可用）' : '在线成员' }}</span>
+      <span v-if="!degraded" class="attendee-list__count">{{ onlineCount }}</span>
     </header>
 
     <ul class="attendee-list__body">
@@ -11,20 +12,22 @@
           {{ initialOf(item.nickname) }}
         </span>
         <span class="attendee-list__name">{{ item.nickname }}</span>
-        <span class="attendee-list__state" :class="{ 'is-offline': !item.online }">
-          {{ item.online ? '在线' : '已离开' }}
-        </span>
+        <span v-if="!degraded" class="attendee-list__state">在线</span>
       </li>
     </ul>
 
-    <el-empty v-if="!attendees.length" description="暂无成员" :image-size="60" />
+    <el-empty v-if="!attendees.length" :description="degraded ? '暂无入会记录' : '暂无在线成员'" :image-size="60" />
   </section>
 </template>
 
 <script setup>
 defineProps({
+  /** 要展示的成员项：在线成员或降级台账，由 store 的 displayAttendees 裁决 */
   attendees: { type: Array, default: () => [] },
-  onlineCount: { type: Number, default: 0 },
+  /** 在线人数；降级时为 null（没有真相源就不显示数字） */
+  onlineCount: { type: Number, default: null },
+  /** 是否处于降级态（房间连不上，展示的是入会台账） */
+  degraded: { type: Boolean, default: false },
 })
 
 /** 头像取昵称首字符 */
@@ -107,9 +110,5 @@ function initialOf(nickname) {
 .attendee-list__state {
   color: var(--tb-success);
   font-size: var(--tb-text-xs);
-}
-
-.attendee-list__state.is-offline {
-  color: var(--tb-text-tertiary);
 }
 </style>

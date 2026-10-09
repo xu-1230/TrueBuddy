@@ -126,8 +126,6 @@ tb:
       public-base-url: ${TB_MEETING_PUBLIC_BASE_URL:}
       # 探测局域网 IP 时拼接的前端端口（Vite 开发服务器默认 5173）
       frontend-port: ${TB_MEETING_FRONTEND_PORT:5173}
-      # 单场会议参会人数上限
-      max-attendees: ${TB_MEETING_MAX_ATTENDEES:20}
       # 入会与详情接口返回的历史消息条数上限
       history-limit: ${TB_MEETING_HISTORY_LIMIT:50}
       # 参会昵称最大长度

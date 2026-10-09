@@ -7,7 +7,8 @@
           <p class="console-bar__title">{{ store.meeting?.title || '模拟会议' }}</p>
           <p class="console-bar__sub">
             会议号 <strong>{{ session?.meetingNo || '—' }}</strong>
-            <span v-if="session"> · {{ store.onlineCount }} 人在线</span>
+            <span v-if="session && !store.degraded"> · {{ store.onlineCount }} 人在线</span>
+            <span v-else-if="session && store.connection !== 'idle'"> · 实时连接不可用</span>
           </p>
         </div>
       </div>
@@ -33,6 +34,23 @@
     >
       <div class="console-missing__action">
         <el-button size="small" type="primary" @click="handleForgetMeetId">新建会议</el-button>
+      </div>
+    </el-alert>
+
+    <!-- 主持人凭据只随「创建成功」这一次响应下发：不给复制入口，老师清一次存储就只能重开会（ADR-0003） -->
+    <el-alert
+      v-if="credentialVisible && session"
+      class="console-credential"
+      type="warning"
+      show-icon
+      :closable="true"
+      title="请保存主持人凭据"
+      @close="credentialVisible = false"
+    >
+      <p>凭据只在下发会议号时返回一次，之后任何接口都不会再给。丢失无法找回，只能重新建会。</p>
+      <div class="console-credential__row">
+        <code class="console-credential__token">{{ session.hostToken }}</code>
+        <el-button size="small" @click="handleCopyCredential">复制凭据</el-button>
       </div>
     </el-alert>
 
@@ -102,7 +120,11 @@
       </div>
 
       <aside class="console-body__side">
-        <AttendeeList :attendees="store.attendees" :online-count="store.onlineCount" />
+        <AttendeeList
+          :attendees="store.displayAttendees"
+          :online-count="store.onlineCount"
+          :degraded="store.degraded"
+        />
         <el-divider class="console-body__divider" />
         <ChatPanel :messages="store.messages" :disabled="store.ended" @send="handleSend" />
       </aside>
@@ -161,6 +183,8 @@ const meetId = computed(() => String(route.query.meetid ?? '').trim())
 const restoring = ref(false)
 /** 地址栏带了会议号，但本浏览器没有这场会的主持人凭据 */
 const missingCredential = ref(false)
+/** 建会成功后展示主持人凭据的提示条（关掉就不再出现——凭据本身仍在本地会话里） */
+const credentialVisible = ref(false)
 /** 本机还留着主持人凭据的会议：建会态下列出来，作为「回到某一场」的入口 */
 const knownMeetings = ref([])
 
@@ -254,6 +278,8 @@ async function handleCreate() {
     await router.replace({ query: { meetid: created.meetingNo } })
     store.setMeeting({ title, meetingNo: created.meetingNo, status: 1 })
     ElMessage.success(`会议已创建，会议号 ${created.meetingNo}`)
+    // 这是本场会唯一一次能看到凭据，错过就得重开（ADR-0003 决定不提供找回）
+    credentialVisible.value = true
     // 详情接口才会下发可发布的访问令牌（create 只返回会议号与主持人凭据）
     await loadDetail()
     // 控制台负责「讲」，放映页负责「放」：建会成功后把放映页打开成放映状态
@@ -274,7 +300,7 @@ async function loadDetail() {
   if (!session.value) return null
   const detail = await getMeetingDetail(session.value.meetingNo, session.value.hostToken)
   store.setMeeting(detail.meeting)
-  store.setAttendees(detail.attendees)
+  store.setJoinLedger(detail.attendees)
   store.setMessages(detail.messages)
   if (detail.meeting?.status === 2) {
     store.ended = true
@@ -303,6 +329,18 @@ async function handleCopyLink() {
     ElMessage.success('入会链接已复制，发给学生即可')
   } catch {
     ElMessage.info(session.value.joinUrl)
+  }
+}
+
+/** 复制主持人凭据：拿不到剪贴板时至少把凭据本身显示出来，别让人空手丢一场会 */
+async function handleCopyCredential() {
+  const token = session.value?.hostToken
+  if (!token) return
+  try {
+    await navigator.clipboard.writeText(token)
+    ElMessage.success('主持人凭据已复制，请自行保存')
+  } catch {
+    ElMessage.info(token)
   }
 }
 
@@ -353,6 +391,7 @@ async function handleClose() {
     await closeMeeting(session.value.meetingNo, session.value.hostToken)
     // 这一场到此为止：删掉本机凭据、摘掉地址栏会议号（watch 会清掉界面状态），控制台回到建会态
     clearHostSession(session.value.meetingNo)
+    credentialVisible.value = false
     await router.replace({ query: {} })
     await room.disconnect()
     ElMessage.success('会议已结束，学生端已断开，可以创建下一场')
@@ -503,6 +542,7 @@ function handleEnterMeeting(meetingNo) {
 /** 「新建会议」出口：摘掉地址栏会议号、断开当前房间，回到建会态 */
 async function handleForgetMeetId() {
   missingCredential.value = false
+  credentialVisible.value = false
   await router.replace({ query: {} })
   await room.disconnect()
 }
@@ -610,6 +650,24 @@ onBeforeUnmount(() => {
 
 .console-missing__action {
   margin-top: 0.5rem;
+}
+
+.console-credential__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.console-credential__token {
+  flex: 1;
+  overflow-x: auto;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-bg-raised);
+  color: var(--tb-text-primary);
+  font-size: var(--tb-text-sm);
+  white-space: nowrap;
 }
 
 /* 建会态下列出的「本机还能回到的会议」 */

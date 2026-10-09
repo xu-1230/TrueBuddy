@@ -15,8 +15,8 @@ import java.util.List;
 public interface LectureMeetingAttendeeMapper {
 
     /** 新增参会人（自增主键回填 id） */
-    @Insert("INSERT INTO lecture_meeting_attendee (meeting_id, nickname, attendee_token, role, online) "
-            + "VALUES (#{meetingId}, #{nickname}, #{attendeeToken}, #{role}, #{online})")
+    @Insert("INSERT INTO lecture_meeting_attendee (meeting_id, nickname, attendee_token, role) "
+            + "VALUES (#{meetingId}, #{nickname}, #{attendeeToken}, #{role})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(LectureMeetingAttendeeDO attendee);
 
@@ -34,14 +34,22 @@ public interface LectureMeetingAttendeeMapper {
     @Select("SELECT * FROM lecture_meeting_attendee WHERE attendee_token = #{attendeeToken} AND deleted = FALSE")
     LectureMeetingAttendeeDO selectByAttendeeToken(String attendeeToken);
 
-    /** 统计在线人数 */
-    @Select("SELECT COUNT(1) FROM lecture_meeting_attendee WHERE meeting_id = #{meetingId} "
-            + "AND online = TRUE AND deleted = FALSE")
-    int countOnline(Long meetingId);
+    /** 累计入会人数（台账行数，不是在线人数） */
+    @Select("SELECT COUNT(1) FROM lecture_meeting_attendee WHERE meeting_id = #{meetingId} AND deleted = FALSE")
+    int countByMeetingId(Long meetingId);
 
-    /** 会议结束时把全部在线参会人置为离线 */
-    @Update("UPDATE lecture_meeting_attendee SET online = FALSE, leave_time = now(), update_time = now() "
-            + "WHERE meeting_id = #{meetingId} AND online = TRUE AND deleted = FALSE")
-    int markAllOffline(Long meetingId);
+    /**
+     * 单个参会人离会：只更新尚未记过离会时间的行。
+     *
+     * <p>{@code leave_time IS NULL} 条件保证重复调用幂等——第二次不会把首次离会时间刷成当下。
+     */
+    @Update("UPDATE lecture_meeting_attendee SET leave_time = now(), update_time = now() "
+            + "WHERE id = #{id} AND leave_time IS NULL AND deleted = FALSE")
+    int markLeft(Long id);
+
+    /** 会议结束时给全部「尚未显式离开」的台账行补记离会时间 */
+    @Update("UPDATE lecture_meeting_attendee SET leave_time = now(), update_time = now() "
+            + "WHERE meeting_id = #{meetingId} AND leave_time IS NULL AND deleted = FALSE")
+    int markAllLeft(Long meetingId);
 
 }

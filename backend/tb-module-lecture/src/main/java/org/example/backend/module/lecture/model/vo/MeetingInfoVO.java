@@ -22,9 +22,7 @@ public class MeetingInfoVO {
     private LocalDateTime startTime;
     /** 结束时间 */
     private LocalDateTime endTime;
-    /** 参会人总数 */
+    /** 累计入会人数（台账行数，不是在线人数） */
     private Integer attendeeCount;
-    /** 在线人数 */
-    private Integer onlineCount;
 
 }

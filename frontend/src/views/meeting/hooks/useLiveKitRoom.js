@@ -8,18 +8,18 @@
  * - 屏幕共享：老师 `setScreenShareEnabled(true)`（内部走 `getDisplayMedia`）；学生订阅到共享轨后 attach 到 `<video>`
  * - 聊天：走 DataChannel（RELIABLE，保证送达与顺序），**LiveKit 不落库**，所以发送方额外调一次
  *   `POST /meeting/message` 写历史（失败只影响历史，不影响实时）
- * - 成员与在线数：以房间内的 participant 事件为准（DB 的 `online` 字段已退化为历史）
+ * - 成员与在线数：以房间内的 participant 事件为准（`lecture_meeting_attendee` 只是累计入会台账，
+ *   没有 online 列，也不得有代码把它的行当成在线——见 docs/adr/0002 与 `utils/attendees.js`）
  *
- * 对外事件名与旧自建 WebSocket 通道**保持一致**（`chat.message` / `attendee.joined` / `attendee.left` /
- * `screen.start` / `screen.stop`），因此 `stores/meeting.js` 的 `applyEvent` 与两个展示组件都不用改。
+ * 对外事件名沿用旧自建 WebSocket 通道的那一套（`chat.message` / `attendee.joined` / `attendee.left` /
+ * `screen.start` / `screen.stop`），由 `stores/meeting.js` 的 `applyEvent` 落到 `roomAttendees`。
  */
 import { ref, shallowRef } from 'vue'
 import { Room, RoomEvent, Track } from 'livekit-client'
 import { sendMeetingMessage } from '@/api/meeting'
+import { fromRoomParticipants, roleOfParticipant } from '@/views/meeting/utils/attendees'
 
-/** 角色：老师（与后端 role 口径一致） */
-const ROLE_HOST = 1
-/** 角色：学生 */
+/** 角色：学生（聊天回显里拿不到角色时的兜底） */
 const ROLE_STUDENT = 2
 
 /**
@@ -37,30 +37,14 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
   /** 本端是否正在共享屏幕（浏览器共享栏点「停止」也会回到 false） */
   const sharing = ref(false)
 
-  /** 从 participant 的 metadata 里取角色；metadata 缺失/非法时按学生处理 */
-  function roleOf(participant) {
-    try {
-      const metadata = JSON.parse(participant?.metadata || '{}')
-      return metadata.role === ROLE_HOST ? ROLE_HOST : ROLE_STUDENT
-    } catch {
-      return ROLE_STUDENT
-    }
-  }
-
-  function attendeeOf(participant) {
-    return {
-      id: participant.identity,
-      nickname: participant.name || participant.identity,
-      role: roleOf(participant),
-      online: true,
-    }
-  }
-
-  /** 当前房间成员：本端 + 所有远端（顺序稳定，便于列表渲染） */
+  /**
+   * 当前房间成员：本端 + 所有远端（顺序稳定，便于列表渲染）。
+   *
+   * 映射逻辑放在 `utils/attendees.js`，因为「房间成员 vs 入会台账」的裁决必须能被单测覆盖。
+   */
   function attendeeList() {
     if (!room.value) return []
-    const remote = [...room.value.remoteParticipants.values()]
-    return [room.value.localParticipant, ...remote].map(attendeeOf)
+    return fromRoomParticipants([room.value.localParticipant, ...room.value.remoteParticipants.values()])
   }
 
   /**
@@ -140,7 +124,7 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
         id: body.clientId,
         attendeeId: participant?.identity ?? null,
         nickname: participant?.name || participant?.identity || '匿名',
-        role: roleOf(participant),
+        role: roleOfParticipant(participant),
         content: body.content,
         kind: 1,
         createTime: new Date().toISOString(),

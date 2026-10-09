@@ -10,7 +10,9 @@
       </div>
 
       <div class="room-bar__actions">
-        <el-tag size="small" effect="plain" type="info">{{ store.onlineCount }} 人在线</el-tag>
+        <el-tag v-if="!store.degraded" size="small" effect="plain" type="info">{{ store.onlineCount }} 人在线</el-tag>
+        <!-- 房间连不上时只剩台账，而台账行数是「尚未显式离开」，不能当成人数展示出去：只说不可用 -->
+        <el-tag v-else size="small" effect="plain" type="warning">实时连接不可用</el-tag>
         <el-tag size="small" effect="plain" :type="connectionTagType">{{ connectionText }}</el-tag>
       </div>
     </header>
@@ -31,7 +33,11 @@
       </div>
 
       <aside class="room-body__side">
-        <AttendeeList :attendees="store.attendees" :online-count="store.onlineCount" />
+        <AttendeeList
+          :attendees="store.displayAttendees"
+          :online-count="store.onlineCount"
+          :degraded="store.degraded"
+        />
         <el-divider class="room-body__divider" />
         <ChatPanel
           :messages="store.messages"
@@ -61,7 +67,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getMeetingState, joinMeeting } from '@/api/meeting'
+import { getMeetingState, joinMeeting, leaveMeeting } from '@/api/meeting'
 import AttendeeList from './components/AttendeeList.vue'
 import ChatPanel from './components/ChatPanel.vue'
 import NicknameDialog from './components/NicknameDialog.vue'
@@ -143,7 +149,7 @@ async function handleJoin(nickname) {
     selfId.value = result.attendeeId
     selfNickname.value = nickname
     store.setMeeting(result.meeting)
-    store.setAttendees(result.attendees)
+    store.setJoinLedger(result.attendees)
     store.setMessages(result.messages)
     dialogVisible.value = false
     await connectRoom(result.realtime)
@@ -190,7 +196,7 @@ async function refreshState({ seed = false } = {}) {
     // 与以 LiveKit 为准的成员状态打回旧值，页面表现就是「聊天不更新」。
     // 轮询同时不碰 loading，否则聊天面板每 10s 闪一次骨架。
     if (seed || store.connection !== 'connected') {
-      store.setAttendees(state.attendees)
+      store.setJoinLedger(state.attendees)
       store.setMessages(state.messages)
     }
     stateError.value = ''
@@ -250,6 +256,12 @@ onMounted(restore)
 
 onBeforeUnmount(() => {
   stopStatePoll()
+  // 路由内离开会议室 = 显式离会，给台账补一笔 leave_time。
+  // 只在这一条路径发：刷新走的是 pagehide，而刷新后 sessionStorage 里的凭据会继续用、
+  // 不会重新 join —— 若那时也发 leave，台账会记下一条「已离开但其实还在」的假事实，
+  // 比留着不动更糟。关标签页 / 崩溃留下的「尚未显式离开」才是 CONTEXT.md 认定的口径。
+  const session = readSession()
+  if (session?.attendeeToken) leaveMeeting(meetingNo, session.attendeeToken)
   room.disconnect()
   store.reset()
 })

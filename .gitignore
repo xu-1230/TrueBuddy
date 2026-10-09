@@ -11,6 +11,7 @@ tmp/
 devserver.err
 
 # AI agent scratch output (docker/build/env probing dumps, repro scripts)
+.scratch/
 .repro/
 .playwright-cli/
 .build*.txt

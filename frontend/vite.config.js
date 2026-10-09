@@ -51,7 +51,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8086',
         changeOrigin: true,
-        // 模拟会议的实时通道（/api/ws/meeting）走 WebSocket 升级，必须显式开启
+        // 保留 ws 升级能力：LiveKit 信令并不走这里（直连 livekitUrl 的 7880），
+        // 自建的 /api/ws/meeting 通道已随 docs/16 M4 删除，此 flag 只作通用兜底
         ws: true,
       },
     },
