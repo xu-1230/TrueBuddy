@@ -131,11 +131,14 @@ html[data-theme="harbor"],
   --tb-radius-full: 6px;
   --tb-border-width: 1px;
 
-  /* 阴影：亮色靠浅灰投影分层，暗色靠更深的黑色投影分层（否则暗色下层级消失） */
-  --tb-shadow-1: light-dark(0 1px 2px rgba(20, 30, 45, 0.08), 0 1px 2px rgba(0, 0, 0, 0.5));
-  --tb-shadow-2: light-dark(0 2px 8px rgba(20, 30, 45, 0.1), 0 2px 8px rgba(0, 0, 0, 0.5));
-  --tb-shadow-3: light-dark(0 8px 22px rgba(20, 30, 45, 0.12), 0 8px 22px rgba(0, 0, 0, 0.55));
-  --tb-shadow-4: light-dark(0 18px 48px rgba(20, 30, 45, 0.16), 0 18px 48px rgba(0, 0, 0, 0.6));
+  /* 阴影：亮色靠浅灰投影分层，暗色靠更深的黑色投影分层（否则暗色下层级消失）。
+     light-dark() 只能包住**颜色**，不能包住整条 box-shadow —— 写成
+     `light-dark(0 1px 2px rgba(…), 0 1px 2px rgba(…))` 会让变量替换后的值无效，
+     box-shadow 直接回落成 none（全站阴影静默消失，实测过）。 */
+  --tb-shadow-1: 0 1px 2px light-dark(rgba(20, 30, 45, 0.08), rgba(0, 0, 0, 0.5));
+  --tb-shadow-2: 0 2px 8px light-dark(rgba(20, 30, 45, 0.1), rgba(0, 0, 0, 0.5));
+  --tb-shadow-3: 0 8px 22px light-dark(rgba(20, 30, 45, 0.12), rgba(0, 0, 0, 0.55));
+  --tb-shadow-4: 0 18px 48px light-dark(rgba(20, 30, 45, 0.16), rgba(0, 0, 0, 0.6));
   --tb-shadow-brand: 0 8px 22px color-mix(in oklab, var(--tb-brand-600) 26%, transparent);
 
   --tb-motion-ease: var(--tb-ease-inout);
@@ -284,8 +287,8 @@ body {
   --el-border-radius-base: var(--tb-radius-sm);
   --el-border-radius-small: var(--tb-radius-xs);
   --el-border-radius-round: var(--tb-radius-full);
-  --el-box-shadow-light: light-dark(var(--tb-shadow-2), 0 2px 8px rgba(0, 0, 0, 0.5));
-  --el-box-shadow: light-dark(var(--tb-shadow-3), 0 8px 22px rgba(0, 0, 0, 0.55));
+  --el-box-shadow-light: var(--tb-shadow-2);
+  --el-box-shadow: var(--tb-shadow-3);
 }
 
 /* ==========================================================================
@@ -313,6 +316,11 @@ body {
     --tb-overlay: color-mix(in oklab, var(--tb-neutral-900) 46%, transparent);
     --tb-paper-bg: #f7f4ef;
     --tb-paper-line: #e7e5e4b3;
+    /* 阴影也降级为亮色取值：不写这组的话，不支持 light-dark() 的内核里 box-shadow 又变回 none */
+    --tb-shadow-1: 0 1px 2px rgba(20, 30, 45, 0.08);
+    --tb-shadow-2: 0 2px 8px rgba(20, 30, 45, 0.1);
+    --tb-shadow-3: 0 8px 22px rgba(20, 30, 45, 0.12);
+    --tb-shadow-4: 0 18px 48px rgba(20, 30, 45, 0.16);
   }
 
   /* Element Plus 色阶同样降级为亮色取值（须与主映射同为 :root:root 才能生效） */
