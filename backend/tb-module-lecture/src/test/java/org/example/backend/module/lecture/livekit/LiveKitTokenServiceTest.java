@@ -122,6 +122,26 @@ class LiveKitTokenServiceTest {
     }
 
     @Test
+    @DisplayName("数字人令牌：可发布音频轨，但不发 DataChannel（聊天仍是师生特权）")
+    void agentToken() {
+        JSONObject payload = payloadOf(newService().createAgentToken(MEETING_NO));
+        assertEquals(LiveKitTokenService.AGENT_IDENTITY, payload.getStr("sub"),
+                "前端按 identity 识别数字人轨，身份串不能改");
+        assertEquals("数字人", payload.getStr("name"));
+
+        JSONObject video = payload.getJSONObject("video");
+        assertEquals(ROOM_NAME, video.getStr("room"));
+        assertTrue(video.getBool("roomJoin"));
+        assertTrue(video.getBool("canPublish"), "数字人必须能发布音频轨");
+        assertTrue(video.getBool("canSubscribe"));
+        assertFalse(video.getBool("canPublishData"), "数字人只出声音，不能替人发消息");
+        assertFalse(video.containsKey("roomAdmin"));
+
+        JSONObject metadata = JSONUtil.parseObj(payload.getStr("metadata"));
+        assertEquals(3, metadata.getInt("role"), "role=3 是数字人，与消息表 kind=2 的口径配套");
+    }
+
+    @Test
     @DisplayName("有效期与时钟偏差：exp ≈ 6 小时后、nbf 略早于当前时刻")
     void expiry() {
         JSONObject payload = payloadOf(newService().createHostToken(MEETING_NO));

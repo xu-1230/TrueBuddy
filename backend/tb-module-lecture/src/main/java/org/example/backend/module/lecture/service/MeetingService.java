@@ -1,6 +1,7 @@
 package org.example.backend.module.lecture.service;
 
 import org.example.backend.module.lecture.model.LectureMeetingAttendeeDO;
+import org.example.backend.module.lecture.model.LectureMeetingDO;
 import org.example.backend.module.lecture.model.vo.MeetingCloseReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingCreateReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingCreateRespVO;
@@ -106,5 +107,23 @@ public interface MeetingService {
      * @return 已落库的消息
      */
     MeetingMessageVO sendMessage(Long meetingId, Long attendeeId, String nickname, Integer role, String content);
+
+    /**
+     * 同 {@link #sendMessage}，但显式指定消息类型（数字人播报走 {@code kind=2}，不是文字）。
+     *
+     * @param kind 消息类型：1=文字，2=数字人播报，3=语音转写（预留）
+     */
+    MeetingMessageVO sendMessage(Long meetingId, Long attendeeId, String nickname, Integer role, String content, Integer kind);
+
+    /**
+     * 校验主持人凭据并返回**进行中**的会议，供老师侧动作（如数字人播报）复用同一套鉴权口径。
+     *
+     * <p>会议不存在 / 已结束 / 凭据不符时抛对应业务异常。
+     *
+     * @param meetingNo 会议号
+     * @param hostToken 主持人凭据
+     * @return 进行中的会议
+     */
+    LectureMeetingDO requireRunningMeetingByHost(String meetingNo, String hostToken);
 
 }

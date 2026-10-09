@@ -21,9 +21,21 @@
       :description="`${stateError}；聊天仍可继续，但「会议已结束」的兜底检测会失效，刷新页面可重试。`"
     />
 
+    <!-- 开了数字人但 worker 不在：明确说出来，不能表现为「老师在讲话却没声音」 -->
+    <el-alert
+      v-if="digitalUnavailable"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="数字人不可用"
+      description="已启用但音频服务未就绪：启动 digital-human-worker 后刷新本页即可恢复。"
+    />
+
     <main class="room-body" :data-panel="activePanel">
       <div class="room-body__stage">
         <ScreenStage ref="stageRef" :sharing="store.sharing" :hint="stageHint" />
+        <!-- 数字人：它真的在房间里才挂形象（worker 一次进房后轨常驻，出现即表示正在播或刚播过） -->
+        <DigitalHumanAvatar v-if="digitalPresent" class="room-body__avatar" :level="mouthLevel" />
       </div>
 
       <aside class="room-body__side">
@@ -66,9 +78,10 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Monitor } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { getMeetingState, joinMeeting, leaveMeeting } from '@/api/meeting'
+import { getDigitalStatus, getMeetingState, joinMeeting, leaveMeeting } from '@/api/meeting'
 import AttendeeList from './components/AttendeeList.vue'
 import ChatPanel from './components/ChatPanel.vue'
+import DigitalHumanAvatar from './components/DigitalHumanAvatar.vue'
 import MeetingTopBar from './components/MeetingTopBar.vue'
 import NicknameDialog from './components/NicknameDialog.vue'
 import ScreenStage from './components/ScreenStage.vue'
@@ -106,6 +119,22 @@ const room = useLiveKitRoom({
   onEvent: (payload) => store.applyEvent(payload),
   onConnectionChange: (status) => store.setConnection(status),
 })
+/** 数字人是否在房间里 + 口型开合度（来自那条音频轨的逐帧响度） */
+const { digitalPresent, mouthLevel } = room
+
+/** 后端下发的数字人可用性：{ enabled, workerReachable, available, room, identity } */
+const digital = ref(null)
+/** 开了数字人但 worker 不在：必须显式说出来，不能表现为「点了没声音」 */
+const digitalUnavailable = computed(() => Boolean(digital.value?.enabled) && !digital.value?.available)
+
+async function refreshDigitalStatus() {
+  try {
+    digital.value = await getDigitalStatus(meetingNo)
+  } catch {
+    // 取不到状态就当不可用：宁可多提示一次，也不要静默
+    digital.value = null
+  }
+}
 
 const stageHint = computed(() =>
   store.connection === 'connected' ? '等待主持人开始共享' : '正在连接会议…',
@@ -213,8 +242,12 @@ function markEnded() {
 
 function startStatePoll() {
   stopStatePoll()
-  // 包一层：轮询只做「会议是否已结束」的兜底，不带 seed
-  statePollTimer = window.setInterval(() => refreshState(), STATE_POLL_INTERVAL_MS)
+  // 包一层：轮询只做「会议是否已结束」的兜底，不带 seed；数字人可用性搭这趟车，不另开定时器
+  refreshDigitalStatus()
+  statePollTimer = window.setInterval(() => {
+    refreshState()
+    refreshDigitalStatus()
+  }, STATE_POLL_INTERVAL_MS)
 }
 
 function stopStatePoll() {
@@ -282,8 +315,17 @@ onBeforeUnmount(() => {
 }
 
 .room-body__stage {
+  position: relative;
   min-width: 0;
   min-height: 0;
+}
+
+/* 数字人贴在画面左下角：共享内容是主视图，形象只要「在」并且能看见嘴动 */
+.room-body__avatar {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 0.75rem;
+  box-shadow: var(--tb-shadow-md, 0 6px 18px rgb(0 0 0 / 18%));
 }
 
 .room-body__side {

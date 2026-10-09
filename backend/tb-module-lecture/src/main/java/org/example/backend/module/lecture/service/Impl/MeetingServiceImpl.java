@@ -2,7 +2,9 @@ package org.example.backend.module.lecture.service.Impl;
 
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.example.backend.module.lecture.config.DigitalHumanProperties;
 import org.example.backend.module.lecture.config.MeetingProperties;
+import org.example.backend.module.lecture.digital.worker.DigitalHumanWorkerClient;
 import org.example.backend.module.lecture.livekit.LiveKitRoomServiceClient;
 import org.example.backend.module.lecture.livekit.LiveKitTokenService;
 import org.example.backend.module.lecture.mapper.LectureMeetingAttendeeMapper;
@@ -94,6 +96,10 @@ public class MeetingServiceImpl implements MeetingService {
     private LiveKitTokenService liveKitTokenService;
     @Resource
     private LiveKitRoomServiceClient liveKitRoomServiceClient;
+    @Resource
+    private DigitalHumanProperties digitalHumanProperties;
+    @Resource
+    private DigitalHumanWorkerClient workerClient;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -205,6 +211,10 @@ public class MeetingServiceImpl implements MeetingService {
         // 删掉 LiveKit 房间：房间内所有客户端会立刻收到 Disconnected，这正是「会议已结束」的实时通知
         // （best-effort，失败只记日志 —— 学生端还有 GET /meeting/state 轮询兜底）
         liveKitRoomServiceClient.deleteRoom(meeting.getMeetingNo());
+        // 数字人 worker 也要请出房间：它占一个参会席位，不主动退会会一直挂着（见 docs/17 §12）
+        if (Boolean.TRUE.equals(digitalHumanProperties.getEnabled())) {
+            workerClient.closeSession(LiveKitTokenService.roomNameOf(meeting.getMeetingNo()));
+        }
         log.info("[close][会议已结束 meetingNo={}, meetingId={}]", meeting.getMeetingNo(), meeting.getId());
     }
 
@@ -271,15 +281,32 @@ public class MeetingServiceImpl implements MeetingService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public MeetingMessageVO sendMessage(Long meetingId, Long attendeeId, String nickname, Integer role, String content) {
+        return sendMessage(meetingId, attendeeId, nickname, role, content, KIND_TEXT);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public MeetingMessageVO sendMessage(Long meetingId, Long attendeeId, String nickname, Integer role,
+                                        String content, Integer kind) {
         LectureMeetingMessageDO message = new LectureMeetingMessageDO();
         message.setMeetingId(meetingId);
         message.setAttendeeId(attendeeId);
         message.setNickname(nickname);
         message.setRole(role);
         message.setContent(content);
-        message.setKind(KIND_TEXT);
+        message.setKind(kind);
         messageMapper.insert(message);
         return buildMessageVO(messageMapper.selectById(message.getId()));
+    }
+
+    @Override
+    public LectureMeetingDO requireRunningMeetingByHost(String meetingNo, String hostToken) {
+        LectureMeetingDO meeting = getMeetingOrThrow(meetingNo);
+        if (STATUS_CLOSED == meeting.getStatus()) {
+            throw exception(MEETING_ALREADY_CLOSED);
+        }
+        validateHostToken(meeting, hostToken);
+        return meeting;
     }
 
     // ========== 内部方法 ==========

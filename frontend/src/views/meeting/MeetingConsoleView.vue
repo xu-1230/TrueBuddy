@@ -15,6 +15,7 @@
           <el-button @click="handleCopyLink">复制入会链接</el-button>
           <el-button v-if="!store.sharing" type="primary" @click="handleStartShare">开始共享</el-button>
           <el-button v-else @click="handleStopShare">停止共享</el-button>
+          <el-button :disabled="store.ended" @click="openDigitalDialog">数字人播报</el-button>
           <el-button type="danger" :disabled="store.ended" @click="handleClose">结束会议</el-button>
         </template>
       </template>
@@ -123,6 +124,37 @@
         <ChatPanel class="console-body__chat" :messages="store.messages" :disabled="store.ended" @send="handleSend" />
       </aside>
     </section>
+    <el-dialog v-model="digitalVisible" title="数字人播报" width="520px">
+      <p class="digital-dialog__state">
+        <el-tag v-if="!digitalStatus" type="info" size="small">状态未知</el-tag>
+        <el-tag v-else-if="!digitalStatus.enabled" type="info" size="small">未启用</el-tag>
+        <el-tag v-else-if="!digitalStatus.available" type="warning" size="small">
+          已启用但音频服务未就绪
+        </el-tag>
+        <el-tag v-else type="success" size="small">可用</el-tag>
+        <span class="digital-dialog__hint">{{ digitalHint }}</span>
+        <el-button link type="primary" size="small" @click="refreshDigitalStatus">刷新状态</el-button>
+      </p>
+      <el-input
+        v-model="digitalText"
+        type="textarea"
+        :rows="4"
+        maxlength="1000"
+        show-word-limit
+        placeholder="要播报的内容（会由数字人在会议室里读出来）"
+      />
+      <template #footer>
+        <el-button @click="digitalVisible = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :loading="saying"
+          :disabled="!digitalText.trim() || !digitalStatus?.available"
+          @click="handleDigitalSay"
+        >
+          播报
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -131,7 +163,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Loading, VideoCamera } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { closeMeeting, createMeeting, getMeetingDetail } from '@/api/meeting'
+import { closeMeeting, createMeeting, getDigitalStatus, getMeetingDetail, sayDigital } from '@/api/meeting'
 import AttendeeList from './components/AttendeeList.vue'
 import ChatPanel from './components/ChatPanel.vue'
 import MeetingTopBar from './components/MeetingTopBar.vue'
@@ -166,6 +198,65 @@ const form = reactive({ title: '' })
 const session = ref(null)
 /** 放映页标签页句柄：同一浏览器会话内复用，避免每建一次会就多开一个页签 */
 let screeningTab = null
+
+// ===== 数字人播报（后续二阶段一，见 docs/17）=====
+const digitalVisible = ref(false)
+const digitalText = ref('')
+const digitalStatus = ref(null)
+const saying = ref(false)
+
+const digitalHint = computed(() => {
+  const status = digitalStatus.value
+  if (!status) return '点「刷新状态」重新探测。'
+  if (!status.enabled) return '后端未开启数字人（tb.lecture.digital-human.enabled=false）。'
+  if (!status.workerReachable) return '请启动音频服务：cd digital-human-worker && npm start，然后刷新状态。'
+  return `音频服务在线，将在房间 ${status.room} 内播报。`
+})
+
+async function refreshDigitalStatus() {
+  if (!session.value?.meetingNo) return
+  try {
+    digitalStatus.value = await getDigitalStatus(session.value.meetingNo)
+  } catch {
+    digitalStatus.value = null
+  }
+}
+
+function openDigitalDialog() {
+  digitalVisible.value = true
+  refreshDigitalStatus()
+}
+
+async function handleDigitalSay() {
+  const text = digitalText.value.trim()
+  if (!text || !session.value) return
+  saying.value = true
+  try {
+    const result = await sayDigital({
+      meetingNo: session.value.meetingNo,
+      hostToken: session.value.hostToken,
+      text,
+    })
+    ElMessage.success(`数字人已开始播报（约 ${(result.durationMs / 1000).toFixed(1)} 秒，首包 ${result.firstChunkMs}ms）`)
+    // 本端回显：后端已以数字人身份落库，但 DataChannel 不会把这条广播出去
+    store.applyEvent({
+      type: 'chat.message',
+      id: result.requestId,
+      attendeeId: null,
+      nickname: '数字人',
+      role: 3,
+      content: text,
+      kind: 2,
+      createTime: result.message?.createTime ?? new Date().toISOString(),
+      self: false,
+    })
+    digitalText.value = ''
+  } catch (error) {
+    ElMessage.error(error?.message ?? '数字人播报失败')
+  } finally {
+    saying.value = false
+  }
+}
 
 /**
  * 地址栏会议号（`?meetid=`）。
@@ -536,6 +627,18 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.digital-dialog__state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  font-size: var(--tb-text-sm, 13px);
+}
+
+.digital-dialog__hint {
+  color: var(--tb-text-secondary);
+}
+
 .meeting-console {
   display: flex;
   flex-direction: column;

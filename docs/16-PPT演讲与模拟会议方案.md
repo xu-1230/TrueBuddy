@@ -32,7 +32,7 @@
 | 阶段 | 能力 | 与本期关系 |
 | --- | --- | --- |
 | 后续一 | PPT 演讲稿优化 —— **已落地，见 §12**（口径有调整：不做 pptx 上传与 `ppt_page` 落库，讲稿**就是页面的 `remark`**，接口无状态） | 已实现 |
-| 后续二 | AI 数字人：TTS 配音 + Live2D 口型 + 会议内播报 + 数字人挂 `@Tool` 工具（翻页 / 播报 / 开关语音答疑 / 读学生反馈） | **依赖本期**的 LiveKit 房间；数字人语音可直接发布为 LiveKit 音频轨（不必再走 PCM over WS） |
+| 后续二 | AI 数字人：TTS 配音 + Live2D 口型 + 会议内播报 + 数字人挂 `@Tool` 工具（翻页 / 播报 / 开关语音答疑 / 读学生反馈） | **依赖本期**的 LiveKit 房间；数字人语音可直接发布为 LiveKit 音频轨（不必再走 PCM over WS）。**2026-10-09 修正**：「直接」二字不成立 —— LiveKit 无 JVM 服务端媒体 SDK，发布方必须是一个具备实时媒体客户端的 Node worker，方案见 [17-AI数字人语音链路方案.md](./17-AI数字人语音链路方案.md) |
 
 ### 1.4 范围外（本期明确不做）
 
@@ -182,12 +182,12 @@ graph TB
 | --- | --- |
 | `.env` | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET`（**必须与仓库根 `.env` 同一对**）、`LAN_IP`（可留空自动探测）、`LIVEKIT_IMAGE`、`GATE_PORT` |
 | `livekit.yaml.template` | 配置模板：`rtc.node_ip` 显式注入、`use_external_ip: false`、UDP 收敛 `50000-50100`、TCP 兜底 `7881`、`room.auto_create/empty_timeout=300/max_participants=20` |
-| `start.ps1` | 读 `.env` → 探测 WLAN 网卡 IP（排除 WSL/VMware 虚拟网卡）→ 生成 `livekit.generated.yaml`（**无 BOM**，否则 YAML 解析失败）→ `docker compose up -d` → 打印手机访问地址；`-Stop` 停止 |
+| `start.ps1` | 读 `.env` → 探测 WLAN 网卡 IP（排除 WSL/VMware 虚拟网卡）→ 生成 `livekit.generated.yaml`（**无 BOM**，否则 YAML 解析失败）→ `docker compose up -d` → 打印手机访问地址；`-Stop` 停止。**已知缺陷：容器已在跑时 `up -d` 不会重启它，而 LiveKit 只在启动时读配置 —— 换了 IP 必须再执行 `docker compose restart` 才生效（待整改：脚本内检测到 `node_ip` 变化时自动 restart）** |
 | `docker-compose.yml` | `livekit-server:v1.9.12`（**钉版本**；Docker Hub 直连不可用，镜像走 `docker.m.daocloud.io`） |
 | `make-token.mjs` | 手动签发令牌（Node 内置模块），**同时是后端 Java 实现的参照口径** |
 | `gate/` | 5 分钟可行性验证页（老师共享 / 手机观看）与一个静态服务器（`serve.mjs`，含 `/token` 代签端点） |
 
-> 演示前必做：重跑 `start.ps1`（热点 IP 每次可能变），它会把新的手机访问地址打印出来。
+> 演示前必做：重跑 `start.ps1`（热点 IP 每次可能变），它会把新的手机访问地址打印出来。**并且必须紧跟 `docker compose restart`**，否则容器仍在用旧的 `node_ip`。核对方式：`docker logs livekit-server | grep starting` 里的 `nodeIP` 应等于当前 WLAN 地址——2026-10-09 就出现过 `node_ip` 停留在已失效的 `172.16.209.195`、而客户端连的是新 IP，结果是信令 200、媒体连不通（黑屏）。
 
 ### 5.2 访问令牌（后端签发）
 

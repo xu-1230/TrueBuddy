@@ -38,10 +38,14 @@ public class LiveKitTokenService {
     public static final String HOST_IDENTITY = "host";
     /** 服务端身份（调用 RoomService 时使用） */
     public static final String SERVER_IDENTITY = "server";
+    /** 数字人身份：worker 用它进房间，前端按此 identity 识别哪条音频轨是数字人 */
+    public static final String AGENT_IDENTITY = "digital-human";
     /** 主持人角色（与 tb-module-lecture 的 role 口径一致） */
     private static final int ROLE_HOST = 1;
     /** 学生角色 */
     private static final int ROLE_STUDENT = 2;
+    /** 数字人角色 */
+    private static final int ROLE_AGENT = 3;
     /** 允许的时钟偏差（秒）：避免刚签发就被判「尚未生效」 */
     private static final long CLOCK_SKEW_SECONDS = 10;
 
@@ -77,21 +81,28 @@ public class LiveKitTokenService {
      * 老师端令牌：可发布（屏幕共享），身份 {@code host}。
      */
     public String createHostToken(String meetingNo) {
-        return createToken(roomNameOf(meetingNo), HOST_IDENTITY, "老师", ROLE_HOST, true, false);
+        return createToken(roomNameOf(meetingNo), HOST_IDENTITY, "老师", ROLE_HOST, true, false, true);
     }
 
     /**
      * 学生端令牌：不可发布、只能订阅，但可发 DataChannel（聊天）。
      */
     public String createAttendeeToken(String meetingNo, Long attendeeId, String nickname) {
-        return createToken(roomNameOf(meetingNo), attendeeIdentityOf(attendeeId), nickname, ROLE_STUDENT, false, false);
+        return createToken(roomNameOf(meetingNo), attendeeIdentityOf(attendeeId), nickname, ROLE_STUDENT, false, false, true);
+    }
+
+    /**
+     * 数字人令牌：可发布音频轨，但<b>不发 DataChannel</b>（聊天仍是师生两端的特权，数字人只出声音）。
+     */
+    public String createAgentToken(String meetingNo) {
+        return createToken(roomNameOf(meetingNo), AGENT_IDENTITY, "数字人", ROLE_AGENT, true, false, false);
     }
 
     /**
      * 服务端令牌：房间管理权限，用于 {@code RoomService/DeleteRoom}（结束会议时把学生踢出房间）。
      */
     public String createServerToken(String meetingNo) {
-        return createToken(roomNameOf(meetingNo), SERVER_IDENTITY, "服务端", ROLE_HOST, false, true);
+        return createToken(roomNameOf(meetingNo), SERVER_IDENTITY, "服务端", ROLE_HOST, false, true, true);
     }
 
     /**
@@ -123,7 +134,7 @@ public class LiveKitTokenService {
     // ========== 内部方法 ==========
 
     private String createToken(String roomName, String identity, String displayName, int role,
-                              boolean canPublish, boolean roomAdmin) {
+                              boolean canPublish, boolean roomAdmin, boolean canPublishData) {
         String apiKey = meetingProperties.getLivekitApiKey();
         String apiSecret = meetingProperties.getLivekitApiSecret();
         if (StrUtil.isBlank(apiKey) || StrUtil.isBlank(apiSecret)) {
@@ -137,8 +148,8 @@ public class LiveKitTokenService {
         video.put("room", roomName);
         video.put("canPublish", canPublish);
         video.put("canSubscribe", true);
-        // 聊天走 DataChannel，因此数据发布权限必须开启（学生也需要发消息）
-        video.put("canPublishData", true);
+        // 聊天走 DataChannel，因此师生两端必须开数据发布权限；数字人只出声音，故显式关闭
+        video.put("canPublishData", canPublishData);
         if (roomAdmin) {
             video.put("roomAdmin", true);
             video.put("roomList", true);

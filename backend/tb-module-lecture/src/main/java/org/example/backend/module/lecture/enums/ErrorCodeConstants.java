@@ -27,4 +27,14 @@ public interface ErrorCodeConstants {
     ErrorCode MEETING_MESSAGE_CONTENT_TOO_LONG = new ErrorCode(1_007_000_012, "消息长度不能超过 {} 个字符");
     ErrorCode MEETING_SENDER_INVALID = new ErrorCode(1_007_000_013, "发送者凭据无效，请重新入会");
 
+    // ========== AI 数字人（后续二，见 docs/17） 1_007_000_014 起 ==========
+    ErrorCode DIGITAL_DISABLED = new ErrorCode(1_007_000_014, "数字人未启用");
+    ErrorCode DIGITAL_WORKER_UNREACHABLE = new ErrorCode(1_007_000_015,
+            "数字人服务未就绪：请先启动 digital-human-worker");
+    ErrorCode DIGITAL_TEXT_EMPTY = new ErrorCode(1_007_000_016, "请填写要播报的内容");
+    ErrorCode DIGITAL_TEXT_TOO_LONG = new ErrorCode(1_007_000_017, "播报内容长度不能超过 {} 个字符");
+    ErrorCode DIGITAL_TTS_FAILED = new ErrorCode(1_007_000_018, "语音合成失败：{}");
+    ErrorCode DIGITAL_LIVEKIT_NOT_CONFIGURED = new ErrorCode(1_007_000_019,
+            "数字人需要 LiveKit 房间，请先配置 LIVEKIT_API_KEY / LIVEKIT_API_SECRET");
+
 }

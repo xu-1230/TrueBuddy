@@ -23,6 +23,10 @@ export const MEETING_REST_API = {
   leave: '/meeting/leave',
   /** 结束会议：{ meetingNo, hostToken } */
   close: '/meeting/close',
+  /** 数字人可用性（query：meetingNo）→ { enabled, workerReachable, available, room, identity } */
+  digitalStatus: '/meeting/digital/status',
+  /** 数字人播报：{ meetingNo, hostToken, text } → { requestId, firstChunkMs, bytes, durationMs, message } */
+  digitalSay: '/meeting/digital/say',
 }
 
 /**
@@ -87,6 +91,26 @@ export function getMeetingState(meetingNo, attendeeToken) {
  */
 export function closeMeeting(meetingNo, hostToken) {
   return service.post(MEETING_REST_API.close, { meetingNo, hostToken })
+}
+
+/**
+ * 数字人可用性（老师控制台与学生会议室都用它决定是否显示「数字人不可用」）。
+ *
+ * @param {string} meetingNo 会议号
+ */
+export function getDigitalStatus(meetingNo) {
+  return service.get(MEETING_REST_API.digitalStatus, { params: { meetingNo } })
+}
+
+/**
+ * 让数字人在会议里播报一段文本（老师侧动作）。
+ *
+ * 同步语义：接口返回即代表音频已完整交给 worker，不代表已经播完。
+ *
+ * @param {{ meetingNo: string, hostToken: string, text: string }} payload 播报请求
+ */
+export function sayDigital(payload) {
+  return service.post(MEETING_REST_API.digitalSay, payload)
 }
 
 /**

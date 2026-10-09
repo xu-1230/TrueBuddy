@@ -45,6 +45,28 @@
             <artifactId>spring-ai-starter-model-openai</artifactId>
             <version>2.0.0-M3</version>
         </dependency>
+        <!-- 数字人语音：CosyVoice 流式 TTS（后续二，见 docs/17）。
+             三项排除都是必需的：victools 两项与 spring-ai 在用版本冲突；
+             slf4j-simple 在该 SDK 里是 compile 作用域，不排会与 Logback 抢 SLF4J provider。 -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>dashscope-sdk-java</artifactId>
+            <version>2.22.7</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.github.victools</groupId>
+                    <artifactId>jsonschema-generator</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.github.victools</groupId>
+                    <artifactId>jsonschema-module-jackson</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <!-- 测试：LiveKit 访问令牌签发的回归锁定（本模块唯一有纯逻辑、值得锁的部分） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

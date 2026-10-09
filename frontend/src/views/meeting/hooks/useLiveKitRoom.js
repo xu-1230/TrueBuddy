@@ -10,6 +10,8 @@
  *   `POST /meeting/message` 写历史（失败只影响历史，不影响实时）
  * - 成员与在线数：以房间内的 participant 事件为准（`lecture_meeting_attendee` 只是累计入会台账，
  *   没有 online 列，也不得有代码把它的行当成在线——见 docs/adr/0002 与 `utils/attendees.js`）
+ * - 数字人音频轨：按 `identity === 'digital-human'` 识别，只取响度驱动口型（`utils/agentAudio.js`），
+ *   声音本身由 LiveKit 直接播，本钩子不 attach 到任何元素、也不自己建第二条 AudioContext
  *
  * 对外事件名沿用旧自建 WebSocket 通道的那一套（`chat.message` / `attendee.joined` / `attendee.left` /
  * `screen.start` / `screen.stop`），由 `stores/meeting.js` 的 `applyEvent` 落到 `roomAttendees`。
@@ -18,6 +20,7 @@ import { ref, shallowRef } from 'vue'
 import { Room, RoomEvent, Track } from 'livekit-client'
 import { sendMeetingMessage } from '@/api/meeting'
 import { fromRoomParticipants, roleOfParticipant } from '@/views/meeting/utils/attendees'
+import { AGENT_IDENTITY, createAgentAudioMeter } from '@/views/meeting/utils/agentAudio'
 
 /** 角色：学生（聊天回显里拿不到角色时的兜底） */
 const ROLE_STUDENT = 2
@@ -37,6 +40,45 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
   const room = shallowRef(null)
   /** 本端是否正在共享屏幕（浏览器共享栏点「停止」也会回到 false） */
   const sharing = ref(false)
+  /**
+   * 数字人此刻是否在房间里（它的音频轨已订阅）。
+   *
+   * <p>注意这<b>不等于</b>「正在说话」：worker 一次进房后轨是常驻的，静音也在。
+   * 是否在说话只能看 {@link mouthLevel}。
+   */
+  const digitalPresent = ref(false)
+  /** 数字人口型开合度 0–1，由音频轨的逐帧响度算出 */
+  const mouthLevel = ref(0)
+
+  /**
+   * 响度表：AudioContext 在整页里只建一次并复用（实测每次订阅都新建时，第一次订阅会长时间拿不到帧）。
+   * 懒建，避免没连房间就创建 AudioContext 被浏览器判为未授权。
+   */
+  let meter = null
+  /**
+   * 隐藏播放元素：远端音频轨必须 attach 到媒体元素才会真的出声，
+   * 只拿 `mediaStream` 去接 AnalyserNode 的话，浏览器既不播、分析器也一直是静音帧。
+   */
+  let agentAudioEl = null
+  function ensureAgentAudioElement() {
+    if (agentAudioEl) return agentAudioEl
+    agentAudioEl = document.createElement('audio')
+    agentAudioEl.autoplay = true
+    agentAudioEl.setAttribute('data-role', 'digital-human-audio')
+    agentAudioEl.style.display = 'none'
+    document.body.appendChild(agentAudioEl)
+    return agentAudioEl
+  }
+
+  function ensureMeter() {
+    meter ??= createAgentAudioMeter({
+      createContext: () => new AudioContext(),
+      onLevel: (level) => {
+        mouthLevel.value = level
+      },
+    })
+    return meter
+  }
 
   /**
    * 当前房间成员：本端 + 所有远端（顺序稳定，便于列表渲染）。
@@ -75,15 +117,26 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
     instance.on(RoomEvent.ParticipantConnected, () =>
       onEvent?.({ type: 'attendee.joined', attendees: attendeeList() }),
     )
-    instance.on(RoomEvent.ParticipantDisconnected, () =>
-      onEvent?.({ type: 'attendee.left', attendees: attendeeList() }),
-    )
+    instance.on(RoomEvent.ParticipantDisconnected, (participant) => {
+      // 数字人被踢出房间（结束会议删房间时也会走到这里）：口型必须归零
+      if (participant?.identity === AGENT_IDENTITY) {
+        meter?.stop()
+        digitalPresent.value = false
+      }
+      onEvent?.({ type: 'attendee.left', attendees: attendeeList() })
+    })
     instance.on(RoomEvent.ParticipantMetadataChanged, () =>
       onEvent?.({ type: 'attendee.joined', attendees: attendeeList() }),
     )
 
-    // 远端屏幕共享轨：订阅到就贴到画面上，取消订阅就摘掉
-    instance.on(RoomEvent.TrackSubscribed, (track, publication) => {
+    // 远端轨：屏幕共享贴到画面上；数字人音频轨只取响度（不显示画面，声音由 LiveKit 直接播）
+    instance.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      if (participant?.identity === AGENT_IDENTITY && track.kind === Track.Kind.Audio) {
+        track.attach(ensureAgentAudioElement())
+        ensureMeter().start(track.mediaStream)
+        digitalPresent.value = true
+        return
+      }
       if (publication.source !== Track.Source.ScreenShare || track.kind !== Track.Kind.Video) return
       const video = getVideoElement?.()
       if (video) {
@@ -92,7 +145,13 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
       }
       onEvent?.({ type: 'screen.start' })
     })
-    instance.on(RoomEvent.TrackUnsubscribed, (track, publication) => {
+    instance.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+      if (participant?.identity === AGENT_IDENTITY && track.kind === Track.Kind.Audio) {
+        track.detach()
+        meter?.stop()
+        digitalPresent.value = false
+        return
+      }
       if (publication.source !== Track.Source.ScreenShare) return
       track.detach()
       onEvent?.({ type: 'screen.stop' })
@@ -231,6 +290,13 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
     const instance = room.value
     room.value = null
     sharing.value = false
+    digitalPresent.value = false
+    mouthLevel.value = 0
+    // AudioContext 是页面级资源，随组件卸载彻底释放
+    await meter?.dispose()
+    meter = null
+    agentAudioEl?.remove()
+    agentAudioEl = null
     if (!instance) return
     instance.removeAllListeners()
     await instance.disconnect().catch(() => {})
@@ -239,6 +305,8 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
   return {
     room,
     sharing,
+    digitalPresent,
+    mouthLevel,
     connect,
     disconnect,
     sendChat,

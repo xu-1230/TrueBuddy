@@ -1,0 +1,17 @@
+{
+  "name": "digital-human-worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "数字人音频注入器：收后端推来的裸 PCM，发布成 LiveKit 音频轨（见 docs/17）",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@livekit/rtc-node": "1.1.0"
+  }
+}

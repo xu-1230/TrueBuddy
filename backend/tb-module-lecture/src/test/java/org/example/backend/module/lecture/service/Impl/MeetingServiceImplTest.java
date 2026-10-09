@@ -75,6 +75,10 @@ class MeetingServiceImplTest {
     private LiveKitTokenService liveKitTokenService;
     @Mock
     private LiveKitRoomServiceClient liveKitRoomServiceClient;
+    @Mock
+    private org.example.backend.module.lecture.config.DigitalHumanProperties digitalHumanProperties;
+    @Mock
+    private org.example.backend.module.lecture.digital.worker.DigitalHumanWorkerClient workerClient;
 
     @InjectMocks
     private MeetingServiceImpl meetingService;
@@ -232,11 +236,14 @@ class MeetingServiceImplTest {
         reqVO.setHostToken("host-token");
 
         when(meetingMapper.selectByMeetingNo(MEETING_NO)).thenReturn(runningMeeting());
+        when(digitalHumanProperties.getEnabled()).thenReturn(true);
 
         meetingService.close(reqVO);
 
         verify(attendeeMapper).markAllLeft(MEETING_ID);
         verify(liveKitRoomServiceClient).deleteRoom(MEETING_NO);
+        // 数字人占一个参会席位，删房间之外还要主动请它退会（见 docs/17 §12）
+        verify(workerClient).closeSession("meeting-" + MEETING_NO);
     }
 
 }

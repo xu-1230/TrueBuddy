@@ -2,6 +2,10 @@ package org.example.backend.module.lecture.controller;
 
 import jakarta.annotation.Resource;
 import org.example.backend.framework.common.pojo.CommonResult;
+import org.example.backend.module.lecture.digital.DigitalHumanService;
+import org.example.backend.module.lecture.model.vo.DigitalSayReqVO;
+import org.example.backend.module.lecture.model.vo.DigitalSayRespVO;
+import org.example.backend.module.lecture.model.vo.DigitalStatusVO;
 import org.example.backend.module.lecture.model.vo.MeetingCloseReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingCreateReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingCreateRespVO;
@@ -37,6 +41,8 @@ public class MeetingController {
 
     @Resource
     private MeetingService meetingService;
+    @Resource
+    private DigitalHumanService digitalHumanService;
 
     /** 创建会议：返回会议号、学生入会链接与主持人凭据（凭据仅返回一次） */
     @PostMapping("/create")
@@ -91,6 +97,18 @@ public class MeetingController {
     public CommonResult<Boolean> close(@RequestBody MeetingCloseReqVO reqVO) {
         meetingService.close(reqVO);
         return success(true);
+    }
+
+    /** 数字人可用性：前端据此显示「数字人不可用」，而不是点了播报却静默无声 */
+    @GetMapping("/digital/status")
+    public CommonResult<DigitalStatusVO> digitalStatus(@RequestParam("meetingNo") String meetingNo) {
+        return success(digitalHumanService.status(meetingNo));
+    }
+
+    /** 让数字人在会议里播报一段文本（老师侧动作，用 hostToken 鉴权） */
+    @PostMapping("/digital/say")
+    public CommonResult<DigitalSayRespVO> digitalSay(@RequestBody DigitalSayReqVO reqVO) {
+        return success(digitalHumanService.say(reqVO));
     }
 
 }

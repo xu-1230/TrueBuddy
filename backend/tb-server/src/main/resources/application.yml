@@ -154,6 +154,22 @@ tb:
       max-remark-chars: ${TB_PPT_MAX_REMARK_CHARS:1500}
       # 单页正文/备注送进 prompt 的字符上限
       max-page-input-chars: ${TB_PPT_MAX_PAGE_INPUT_CHARS:1200}
+    # AI 数字人（后续二阶段一，见 docs/17-AI数字人语音链路方案.md）：默认关闭
+    digital-human:
+      enabled: ${TB_DH_ENABLED:false}
+      # 数字人 worker（仓库根 digital-human-worker/）地址；只应指向环回，它能把声音灌进任意房间
+      worker-base-url: ${TB_DH_WORKER_URL:http://127.0.0.1:9090}
+      # 与 worker 侧 AGENT_SHARED_SECRET 同值的内部口令
+      agent-shared-secret: ${TB_AGENT_SHARED_SECRET:}
+      # CosyVoice 走 DashScope 原生 WebSocket（不吃 OpenAI 兼容层），可与 embedding 共用同一个 Key
+      dashscope-api-key: ${DASHSCOPE_API_KEY:}
+      tts-model: ${TB_DH_TTS_MODEL:cosyvoice-v3-flash}
+      tts-voice: ${TB_DH_TTS_VOICE:longanyang}
+      # 并发播报数（决定合成线程池大小）与单条文本长度上限
+      max-concurrent-say: ${TB_DH_MAX_SAY:2}
+      max-text-length: ${TB_DH_MAX_TEXT_LENGTH:1000}
+      # 前端轮询状态接口时探测 worker 的超时
+      worker-probe-timeout-ms: ${TB_DH_PROBE_TIMEOUT_MS:1500}
   # 知识库文档解析：阿里云文档智能（文档解析大模型版）
   # AK/SK 为必填项，一律通过环境变量注入（项目根目录 .env，模板见 .env.example），缺失时启动即失败
   docmind:
