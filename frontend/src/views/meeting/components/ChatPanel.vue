@@ -2,7 +2,7 @@
   <section class="chat-panel">
     <header class="chat-panel__head">
       <span class="chat-panel__title">会议聊天</span>
-      <el-tag v-if="disabled" size="small" type="warning" effect="plain">会议已结束</el-tag>
+      <span v-if="disabled" class="chat-panel__state">会议已结束</span>
     </header>
 
     <div ref="listRef" v-loading="loading" class="chat-panel__list">
@@ -10,17 +10,17 @@
         v-for="item in messages"
         :key="item.id"
         class="chat-panel__item"
-        :class="{ 'is-self': item.attendeeId === selfId, 'is-host': item.role === 1 }"
+        :class="{ 'is-self': item.self === true, 'is-host': item.role === 1 }"
       >
         <div class="chat-panel__meta">
           <span class="chat-panel__name">{{ item.nickname }}</span>
-          <el-tag v-if="item.role === 1" size="small" effect="plain">老师</el-tag>
+          <span v-if="item.role === 1" class="chat-panel__tag">老师</span>
           <span class="chat-panel__time">{{ formatTime(item.createTime) }}</span>
         </div>
         <p class="chat-panel__content">{{ item.content }}</p>
       </div>
 
-      <el-empty v-if="!messages.length && !loading" description="还没有消息，发一条试试" :image-size="60" />
+      <p v-if="!messages.length && !loading" class="chat-panel__note">还没有消息，发一条试试。</p>
     </div>
 
     <footer class="chat-panel__foot">
@@ -40,8 +40,8 @@
 import { nextTick, ref, watch } from 'vue'
 
 const props = defineProps({
+  /** 消息列表：`self` 标记由 store 注入（判定见 utils/chat.js，不在这里比 id） */
   messages: { type: Array, default: () => [] },
-  selfId: { type: [Number, String], default: null },
   disabled: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
 })
@@ -82,31 +82,40 @@ function formatTime(value) {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  /* 高度由父侧栏分配（flex:1），不在组件里写死 100%，否则与名单区加起来会溢出面板 */
   min-height: 0;
-  height: 100%;
 }
 
 .chat-panel__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  font-size: var(--tb-text-sm);
 }
 
 .chat-panel__title {
-  font-weight: 700;
-  color: var(--tb-text-primary);
+  color: var(--tb-text-secondary);
+  font-weight: 600;
+}
+
+.chat-panel__state {
+  padding: 0.125rem 0.5rem;
+  background: var(--tb-warning-soft);
+  border-radius: var(--tb-radius-xs);
+  color: var(--tb-warning);
+  font-size: var(--tb-text-xs);
 }
 
 .chat-panel__list {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
   padding: 0.75rem;
-  min-height: 200px;
+  min-height: 0;
   overflow-y: auto;
   background: var(--tb-bg-sunken);
-  border-radius: var(--tb-radius-lg);
+  border-radius: var(--tb-radius-md);
 }
 
 .chat-panel__item {
@@ -114,12 +123,15 @@ function formatTime(value) {
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.5rem 0.75rem;
+  max-width: 92%;
   background: var(--tb-bg-surface);
   border-radius: var(--tb-radius-md);
   box-shadow: var(--tb-shadow-1);
 }
 
+/* 自己发的靠右：聊天流的通用读法，只换个底色时左右同列很难分辨谁说的 */
 .chat-panel__item.is-self {
+  margin-left: auto;
   background: var(--tb-primary-soft);
 }
 
@@ -132,25 +144,40 @@ function formatTime(value) {
 }
 
 .chat-panel__name {
-  font-weight: 700;
   color: var(--tb-text-primary);
+  font-weight: 700;
+}
+
+.chat-panel__tag {
+  padding: 0 0.375rem;
+  background: var(--tb-accent-soft);
+  border-radius: var(--tb-radius-xs);
+  color: var(--tb-accent);
 }
 
 .chat-panel__time {
   margin-left: auto;
+  color: var(--tb-text-tertiary);
 }
 
 .chat-panel__content {
   margin: 0;
   color: var(--tb-text-primary);
   font-size: var(--tb-text-md);
-  line-height: 1.5;
+  line-height: var(--tb-leading-normal);
   word-break: break-word;
   white-space: pre-wrap;
 }
 
+.chat-panel__note {
+  margin: 0;
+  color: var(--tb-text-tertiary);
+  font-size: var(--tb-text-sm);
+}
+
 .chat-panel__foot {
   display: flex;
+  flex: none;
   gap: 0.5rem;
 }
 </style>

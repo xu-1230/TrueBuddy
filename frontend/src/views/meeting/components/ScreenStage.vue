@@ -89,9 +89,10 @@ defineExpose({ videoRef })
   top: 0.75rem;
   left: 0.75rem;
   padding: 0.25rem 0.625rem;
-  background: var(--tb-danger);
+  /* 共享进行中是「正常运作」，不是危险：红色在本项目里表示 danger/删除 */
+  background: var(--tb-success);
   border-radius: var(--tb-radius-full);
-  color: #ffffff;
+  color: var(--tb-text-inverse);
   font-size: var(--tb-text-xs);
 }
 </style>

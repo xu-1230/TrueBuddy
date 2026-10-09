@@ -167,7 +167,7 @@ graph TB
 | 表 | 关键字段 | 说明 |
 | --- | --- | --- |
 | `lecture_meeting` | `id` / `meeting_no`(6 位，唯一) / `title` / `host_token` / `status`(1 进行中 / 2 已结束) / `start_time` / `end_time` / `planned_minutes`(空列) / `document_id`(空列) / 公共列 | 后两列为后续演讲稿阶段预留 |
-| `lecture_meeting_attendee` | `id` / `meeting_id` / `nickname` / `attendee_token` / `role` / `online` / `join_time` / `leave_time` / 公共列 | `online` 已退化为历史口径（实时在线以 LiveKit 房间为准） |
+| `lecture_meeting_attendee` | `id` / `meeting_id` / `nickname` / `attendee_token` / `role` / `join_time` / `leave_time` / 公共列 | **累计入会台账**，`online` 列已删；`leave_time IS NULL` 只表示「尚未显式离开」，不得当作在线（ADR-0002、CONTEXT.md） |
 | `lecture_meeting_message` | `id` / `meeting_id` / `attendee_id` / `nickname` / `role` / `content` / `kind`(1 文字) / 公共列 | `kind` 为后续语音转写 / 数字人发言预留 |
 
 脚本：`sql/lecture_meeting.sql`、`sql/lecture_meeting_attendee.sql`、`sql/lecture_meeting_message.sql`（需手工执行）。
@@ -225,7 +225,7 @@ graph TB
 | 屏幕共享（老师） | `localParticipant.setScreenShareEnabled(true, { audio: false, selfBrowserSurface: 'exclude', surfaceSwitching: 'include' })`；本端预览由 `LocalTrackPublished` attach。候选里排除控制台自身，使共享目标收敛到自动打开的放映页（见 §5.6） |
 | 观看（学生） | `TrackSubscribed`（source = ScreenShare）→ `track.attach(videoEl)`；`TrackUnsubscribed` → `detach()` |
 | 聊天 | `publishData(bytes, { reliable: true })`；接收 `DataReceived` → 归一化事件；**发送方本地先渲染**（DataChannel 不回包给自己） |
-| 成员与在线 | `ParticipantConnected/Disconnected/MetadataChanged` → 由 `remoteParticipants` 重建名单 |
+| 成员与在线 | `ParticipantConnected/Disconnected/MetadataChanged` → 由 `remoteParticipants` 重建名单；**控制台带 `omitHost`**，老师自己不进名单也不计入人数（Q22） |
 | 事件契约 | **与旧自建通道同名**（`chat.message` / `attendee.joined` / `attendee.left` / `screen.start` / `screen.stop`），因此 `stores/meeting.js` 的 `applyEvent` 与展示组件未改动 |
 
 聊天**双写**：`sendChat()` 对两条路**各自记账**，返回 `{ delivered, persisted }`；DataChannel 广播失败（房间没连上 / 数据通道未就绪）**不再吞成静默失败**，照旧尝试 `POST /meeting/message` 落库（失败重试一次），由两页共用的 `describeChatSend()` 译成一句提示。历史落库失败只提示「未写入历史」，不影响实时。
@@ -242,7 +242,7 @@ graph TB
 | --- | --- |
 | 老师端 | **不轮询**：会议是老师自己结束的；万一被别处结束，房间被删后客户端会收到 `Disconnected`，此时 `syncEndedState()` 调一次 `/meeting/detail` 确认 |
 | 学生端 / 实时通道在线 | 轮询只读 `meeting.status` 兜底「已结束」；**不**用返回值覆盖成员与消息（那是 LiveKit 的事实），也不触发 `loading`（否则聊天面板每 10s 闪一次骨架） |
-| 学生端 / 实时通道不在线 | 轮询降级成聊天与成员的通道：把库里的最近消息铺回来。宁可晚 10s 看到，也不要「什么都不更新」 |
+| 学生端 / 实时通道不在线 | 轮询只降级成**聊天**通道：把库里的最近消息铺回来。宁可晚 10s 看到，也不要「什么都不更新」。**成员名单不铺**——台账含「尚未显式离开」的崩溃残留，列出来就是谎报，改为直接说明「暂时拿不到在线成员」 |
 | 学生端 / 轮询失败 | **不静默**：页面顶部给出「会议状态同步失败」提示（静默失败会让现象变成「聊天不更新且没有结束提示」，无从排查） |
 
 ### 5.6 共享动线：建会 → 自动打开放映页 → 自动尝试共享
@@ -333,6 +333,7 @@ graph TB
 | M3 | 前端房间客户端、屏幕共享、聊天 DataChannel、成员取自房间事件 | 已落地，**待真实浏览器联调** |
 | M4 | 删除自建 WS / MSE 链路与过时测试 | 已完成（14 模块编译通过、后端 9/9 测试通过、前端 ESLint 干净） |
 | M5 | 生命周期修复：入会上限作废、`/meeting/leave`、删 `online` 列、在线只认房间事件、预留列清理 | 已落地（`./mvnw -pl tb-module-lecture -am test` **35/35**、前端 `attendees.test.js` 5/5、oxlint + eslint 干净、`vite build` 通过）；**在线名单实时性仍需真实浏览器联调** |
+| M6 | 会议两页 UI 与错误修复：抽 `MeetingTopBar`、连接态色调统一、控制台名单不含老师、降级不列名单、会议室 `100dvh` + 小屏分段切换、Token 违规清零 | 已落地（`attendees.test.js` **6/6**、oxlint + eslint 干净、`vite build` 通过）；**小屏与共享态仍需真机/真实浏览器验收** |
 
 ### 9.2 后端测试
 
@@ -343,7 +344,7 @@ graph TB
 
 ```bash
 cd backend && ./mvnw.cmd -o -pl tb-module-lecture -am test   # 35/35
-cd frontend && node --test tests/attendees.test.js            # 5/5（在线名单 vs 台账的裁决）
+cd frontend && node --test tests/attendees.test.js            # 6/6（在线名单取值：不含老师、降级不列）
 cd frontend && npm test                                       # 159/160（1 条既有 workflow 用例失败，与本期无关）
 ```
 
@@ -404,6 +405,10 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 | 12 | **（M5）** 学生用 SPA 内导航离开会议室（非刷新） | `lecture_meeting_attendee` 该行 `leave_time` 被写入；刷新**不会**写（否则会记下"已离开但其实还在"的假事实） |
 | 13 | **（M5）** 清掉浏览器存储后带着 `?meetid=` 打开控制台 | 显示「本浏览器没有会议 X 的主持人凭据」与「新建会议」出口，不白屏、无未捕获异常（ADR-0003） |
 | 14 | **（M5）** 新建一场会 | 凭据提示条出现，含完整 `hostToken` 与「复制凭据」按钮，并写明"丢失无法找回" |
+| 15 | **（M6）** 老师控制台看着 2 个学生进出 | 人数是 **2**（不是把自己算进去的 3），名单里没有「老师」这一格 |
+| 16 | **（M6）** 关掉 LiveKit 再进会议室 | 顶栏只有「连接已断开」红色 chip，**没有**在线人数、**没有**成员名单；名单区显示「暂时拿不到在线成员」 |
+| 17 | **（M6）** 老师结束会议 | 学生端顶栏 chip 变「会议已结束」（灰色中性），**不再**叠加显示"连接已断开"；结束页盖在内容之上但不压住弹层 |
+| 18 | **（M6）** 手机（宽 ≤820px）打开入会链接 | 顶栏下方出现「画面 / 成员与聊天」分段切换；切到聊天后**输入框贴在屏幕底部**，键盘弹出不被顶出可视区 |
 
 ### 11.3 回归重点
 

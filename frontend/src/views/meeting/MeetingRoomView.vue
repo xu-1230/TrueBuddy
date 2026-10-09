@@ -1,21 +1,15 @@
 <template>
   <div class="meeting-room">
-    <header class="room-bar">
-      <div class="room-bar__info">
-        <p class="room-bar__title">{{ store.meeting?.title || '模拟会议' }}</p>
-        <p class="room-bar__sub">
-          会议号 <strong>{{ meetingNo }}</strong>
-          <span v-if="store.ended"> · 已结束</span>
-        </p>
-      </div>
-
-      <div class="room-bar__actions">
-        <el-tag v-if="!store.degraded" size="small" effect="plain" type="info">{{ store.onlineCount }} 人在线</el-tag>
-        <!-- 房间连不上时只剩台账，而台账行数是「尚未显式离开」，不能当成人数展示出去：只说不可用 -->
-        <el-tag v-else size="small" effect="plain" type="warning">实时连接不可用</el-tag>
-        <el-tag size="small" effect="plain" :type="connectionTagType">{{ connectionText }}</el-tag>
-      </div>
-    </header>
+    <MeetingTopBar
+      :title="store.meeting?.title || '模拟会议'"
+      :meeting-no="meetingNo"
+      sub-note="学生会议室"
+      :icon="Monitor"
+      :online-count="store.onlineCount"
+      :connected="store.connected"
+      :ended="store.ended"
+      :connection="store.connection"
+    />
 
     <!-- 状态同步失败不能静默：否则表现为「聊天没更新 / 会议结束没提示」 -->
     <el-alert
@@ -27,21 +21,16 @@
       :description="`${stateError}；聊天仍可继续，但「会议已结束」的兜底检测会失效，刷新页面可重试。`"
     />
 
-    <main class="room-body">
+    <main class="room-body" :data-panel="activePanel">
       <div class="room-body__stage">
         <ScreenStage ref="stageRef" :sharing="store.sharing" :hint="stageHint" />
       </div>
 
       <aside class="room-body__side">
-        <AttendeeList
-          :attendees="store.displayAttendees"
-          :online-count="store.onlineCount"
-          :degraded="store.degraded"
-        />
-        <el-divider class="room-body__divider" />
+        <AttendeeList :attendees="store.displayAttendees" :degraded="store.degraded" />
         <ChatPanel
+          class="room-body__chat"
           :messages="store.messages"
-          :self-id="selfId"
           :disabled="store.ended"
           :loading="loading"
           @send="handleSend"
@@ -49,8 +38,17 @@
       </aside>
     </main>
 
+    <!--
+      小屏只留一块面板：画面与「名单+聊天」切换。
+      以前窄屏是两块竖排（舞台 320px + 名单 220px + 聊天 200px ≈ 820px 以上），
+      而容器写死 height:100vh —— 手机真实可视区比 100vh 还矮，键盘一弹聊天输入框直接被顶出去。
+    -->
+    <nav class="room-switcher">
+      <el-segmented v-model="activePanel" :options="panelOptions" />
+    </nav>
+
     <div v-if="store.ended" class="room-ended">
-      <el-result icon="info" title="会议已结束" sub-title="感谢参与，可以关闭本页面了" />
+      <el-result icon="info" title="会议已结束" :sub-title="`会议号 ${meetingNo} · 感谢参与，可以关闭本页面了`" />
     </div>
 
     <NicknameDialog
@@ -66,10 +64,12 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { Monitor } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getMeetingState, joinMeeting, leaveMeeting } from '@/api/meeting'
 import AttendeeList from './components/AttendeeList.vue'
 import ChatPanel from './components/ChatPanel.vue'
+import MeetingTopBar from './components/MeetingTopBar.vue'
 import NicknameDialog from './components/NicknameDialog.vue'
 import ScreenStage from './components/ScreenStage.vue'
 import { useMeetingStore } from './stores/meeting'
@@ -86,6 +86,13 @@ const stageRef = ref(null)
 const dialogVisible = ref(false)
 const joining = ref(false)
 const loading = ref(false)
+/** 小屏分段切换的面板；宽屏两块同时显示，此项不起作用 */
+const activePanel = ref('stage')
+
+const panelOptions = [
+  { label: '画面', value: 'stage' },
+  { label: '成员与聊天', value: 'chat' },
+]
 
 const meetingNo = String(route.params.meetingNo ?? '')
 const selfId = ref(null)
@@ -98,23 +105,6 @@ const room = useLiveKitRoom({
   getVideoElement: () => stageRef.value?.videoRef,
   onEvent: (payload) => store.applyEvent(payload),
   onConnectionChange: (status) => store.setConnection(status),
-})
-
-const connectionText = computed(() => {
-  const map = {
-    idle: '未连接',
-    connecting: '连接中',
-    connected: '已连接',
-    reconnecting: '重连中',
-    disconnected: '连接已断开',
-  }
-  return map[store.connection] ?? '未知'
-})
-
-const connectionTagType = computed(() => {
-  if (store.connection === 'connected') return 'success'
-  if (store.connection === 'connecting' || store.connection === 'reconnecting') return 'warning'
-  return 'danger'
 })
 
 const stageHint = computed(() =>
@@ -141,21 +131,27 @@ function writeSession(session) {
   window.sessionStorage.setItem(sessionKey(), JSON.stringify(session))
 }
 
+/** 身份注入 store：聊天消息靠它判定「是不是我发的」，不在展示层比 id */
+function applySelf(session) {
+  selfId.value = session?.attendeeId ?? null
+  selfNickname.value = session?.nickname ?? ''
+  store.setSelf({ selfId: selfId.value })
+}
+
 async function handleJoin(nickname) {
   joining.value = true
   try {
     const result = await joinMeeting(meetingNo, nickname)
-    writeSession({ attendeeToken: result.attendeeToken, attendeeId: result.attendeeId, nickname })
-    selfId.value = result.attendeeId
-    selfNickname.value = nickname
+    const session = { attendeeToken: result.attendeeToken, attendeeId: result.attendeeId, nickname }
+    writeSession(session)
+    applySelf(session)
     store.setMeeting(result.meeting)
-    store.setJoinLedger(result.attendees)
     store.setMessages(result.messages)
     dialogVisible.value = false
     await connectRoom(result.realtime)
     startStatePoll()
   } catch (error) {
-    // 会议不存在 / 已结束 / 人数已满 / 实时通道未配置，错误码由全局拦截器抛出
+    // 会议不存在 / 已结束 / 实时通道未配置，错误码由全局拦截器抛出
     ElMessage.error(error?.message || '入会失败')
     dialogVisible.value = true
   } finally {
@@ -179,24 +175,22 @@ async function connectRoom(realtime) {
 /**
  * 拉会议状态：刷新、重连与轮询共用；返回体里带**新的访问令牌**，因此刷新后仍能连上房间。
  *
- * @param {{ seed?: boolean }} [options] seed=true 表示首次进入 / 刷新恢复，用库里的成员与消息铺底。
+ * @param {{ seed?: boolean }} [options] seed=true 表示首次进入 / 刷新恢复，用库里的消息铺底。
  * @returns {Promise<object|null>} 状态；失败返回 null（原因记进 stateError）
  */
 async function refreshState({ seed = false } = {}) {
   const session = readSession()
   if (!session) return null
-  if (session.nickname) selfNickname.value = session.nickname
-  if (session.attendeeId) selfId.value = session.attendeeId
+  applySelf(session)
   if (seed) loading.value = true
   try {
     const state = await getMeetingState(meetingNo, session.attendeeToken)
     store.setMeeting(state.meeting)
     // 铺底时机：首次进入 / 刷新恢复，或者**实时通道不在线**（此时轮询降级为聊天通道）。
-    // 通道在线时绝不覆盖 —— 每 10s 用库里的数据整体覆盖一次，会把刚收到的实时消息
-    // 与以 LiveKit 为准的成员状态打回旧值，页面表现就是「聊天不更新」。
+    // 通道在线时绝不覆盖 —— 整体覆盖会把刚收到的实时消息打回旧值，页面表现就是「聊天不更新」。
+    // 成员名单不在这里覆盖：它只认房间事件（docs/adr/0002），库里的 attendees 是台账、含崩溃残留。
     // 轮询同时不碰 loading，否则聊天面板每 10s 闪一次骨架。
     if (seed || store.connection !== 'connected') {
-      store.setJoinLedger(state.attendees)
       store.setMessages(state.messages)
     }
     stateError.value = ''
@@ -245,7 +239,7 @@ async function restore() {
     dialogVisible.value = true
     return
   }
-  // 刷新恢复：这一次要铺底（消息与成员来自库），此后的轮询只兜底会议结束
+  // 刷新恢复：这一次要铺底（消息来自库），此后的轮询只兜底会议结束
   const state = await refreshState({ seed: true })
   if (!state || store.ended) return
   await connectRoom(state.realtime)
@@ -272,57 +266,24 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  height: 100vh;
+  /* dvh 而不是 vh：移动端浏览器工具栏比 100vh 高出一截，用 vh 会把聊天输入框顶到可视区外 */
+  height: 100dvh;
   padding: 1rem;
+  overflow: hidden;
   background: var(--tb-bg-page);
-}
-
-.room-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  padding: 0.75rem 1rem;
-  background: var(--tb-bg-surface);
-  border-radius: var(--tb-radius-lg);
-  box-shadow: var(--tb-shadow-1);
-}
-
-.room-bar__title {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: var(--tb-text-primary);
-}
-
-.room-bar__sub {
-  margin: 0.125rem 0 0;
-  color: var(--tb-text-secondary);
-  font-size: var(--tb-text-sm);
-}
-
-.room-bar__sub strong {
-  color: var(--tb-text-primary);
-  letter-spacing: 0.08em;
-}
-
-.room-bar__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 }
 
 .room-body {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 1rem;
   min-height: 0;
 }
 
 .room-body__stage {
   min-width: 0;
+  min-height: 0;
 }
 
 .room-body__side {
@@ -331,27 +292,69 @@ onBeforeUnmount(() => {
   padding: 1rem;
   min-height: 0;
   background: var(--tb-bg-surface);
+  border: var(--tb-border-width) solid var(--tb-border);
   border-radius: var(--tb-radius-lg);
-  box-shadow: var(--tb-shadow-1);
+  box-shadow: var(--tb-shadow-2);
 }
 
-.room-body__divider {
-  margin: 0.75rem 0;
+/* 名单与聊天是同一面板里的两个子区：用 1px 分隔线分区（控制台与学生端同一套语言） */
+.room-body__chat {
+  flex: 1;
+  min-height: 0;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--tb-border);
+}
+
+/* 小屏切换器默认不占位（宽屏两块同时显示） */
+.room-switcher {
+  display: none;
 }
 
 .room-ended {
   position: fixed;
   inset: 0;
+  /* 只需盖住页面内容；刻意低于 Element Plus 浮层基准（2000），别把弹层压在下面 */
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in oklab, var(--tb-bg-page) 82%, transparent);
+  background: var(--tb-overlay);
   backdrop-filter: blur(6px);
 }
 
 @media (max-width: 1080px) {
   .room-body {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .meeting-room {
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .room-switcher {
+    display: block;
+    flex: none;
+  }
+
+  /* 一次只显示一块面板，两块各自都能占满剩余高度 */
+  .room-body {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .room-body > * {
+    display: none;
+  }
+
+  .room-body[data-panel='stage'] .room-body__stage {
+    display: block;
+  }
+
+  .room-body[data-panel='chat'] .room-body__side {
+    display: flex;
   }
 }
 </style>

@@ -30,8 +30,9 @@ const ROLE_STUDENT = 2
  * @param {() => HTMLVideoElement|undefined} [options.getLocalPreviewElement] 本地预览元素（老师端用）
  * @param {(payload: object) => void} [options.onEvent] 归一化事件回调（喂给 meeting store）
  * @param {(status: string) => void} [options.onConnectionChange] 连接状态变化
+ * @param {boolean} [options.omitHost=false] 名单里去掉老师自己（控制台专用：老师是控制台不是参会席位）
  */
-export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEvent, onConnectionChange } = {}) {
+export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEvent, onConnectionChange, omitHost = false } = {}) {
   /** LiveKit 的 Room 实例（不是响应式对象，用 shallowRef 避免被深度代理） */
   const room = shallowRef(null)
   /** 本端是否正在共享屏幕（浏览器共享栏点「停止」也会回到 false） */
@@ -44,7 +45,10 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
    */
   function attendeeList() {
     if (!room.value) return []
-    return fromRoomParticipants([room.value.localParticipant, ...room.value.remoteParticipants.values()])
+    return fromRoomParticipants(
+      [room.value.localParticipant, ...room.value.remoteParticipants.values()],
+      { omitHost },
+    )
   }
 
   /**
@@ -128,6 +132,8 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
         content: body.content,
         kind: 1,
         createTime: new Date().toISOString(),
+        // 收到的一定是别人的：DataChannel 不会把数据回发给发送端自己
+        self: false,
       })
     })
 
@@ -172,6 +178,8 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
           content: text,
           kind: 1,
           createTime: new Date().toISOString(),
+          // 本端回显：身份由此确定，不需要下游再猜
+          self: true,
         })
       } catch (error) {
         // 让调用方据此如实提示；这里不能抛，否则连落库的机会都没了

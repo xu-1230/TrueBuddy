@@ -1,28 +1,24 @@
 <template>
   <div class="meeting-console">
-    <header class="console-bar">
-      <div class="console-bar__info">
-        <el-icon class="console-bar__icon"><VideoCamera /></el-icon>
-        <div>
-          <p class="console-bar__title">{{ store.meeting?.title || '模拟会议' }}</p>
-          <p class="console-bar__sub">
-            会议号 <strong>{{ session?.meetingNo || '—' }}</strong>
-            <span v-if="session && !store.degraded"> · {{ store.onlineCount }} 人在线</span>
-            <span v-else-if="session && store.connection !== 'idle'"> · 实时连接不可用</span>
-          </p>
-        </div>
-      </div>
-
-      <div class="console-bar__actions">
-        <el-tag size="small" effect="plain" :type="connectionTagType">{{ connectionText }}</el-tag>
+    <MeetingTopBar
+      :title="store.meeting?.title || '模拟会议'"
+      :meeting-no="session?.meetingNo || ''"
+      sub-note="老师控制台"
+      :icon="VideoCamera"
+      :online-count="store.onlineCount"
+      :connected="store.connected"
+      :ended="store.ended"
+      :connection="store.connection"
+    >
+      <template #actions>
         <template v-if="session">
           <el-button @click="handleCopyLink">复制入会链接</el-button>
           <el-button v-if="!store.sharing" type="primary" @click="handleStartShare">开始共享</el-button>
           <el-button v-else @click="handleStopShare">停止共享</el-button>
           <el-button type="danger" :disabled="store.ended" @click="handleClose">结束会议</el-button>
         </template>
-      </div>
-    </header>
+      </template>
+    </MeetingTopBar>
 
     <el-alert
       v-if="store.ended"
@@ -96,16 +92,18 @@
       <!-- 本机还留着凭据的会议：不给入口的话，摘掉地址栏会议号后就再也回不去 -->
       <div v-if="knownMeetings.length" class="console-create__known">
         <p class="console-create__known-title">本机还能回到这些会议：</p>
-        <el-tag
-          v-for="item in knownMeetings"
-          :key="item.meetingNo"
-          class="console-create__known-item"
-          type="info"
-          effect="plain"
-          @click="handleEnterMeeting(item.meetingNo)"
-        >
-          {{ item.meetingNo }} · {{ item.title }}
-        </el-tag>
+        <div class="console-create__known-list">
+          <button
+            v-for="item in knownMeetings"
+            :key="item.meetingNo"
+            type="button"
+            class="console-create__known-item"
+            @click="handleEnterMeeting(item.meetingNo)"
+          >
+            <strong>{{ item.meetingNo }}</strong>
+            <span>{{ item.title }}</span>
+          </button>
+        </div>
       </div>
     </section>
 
@@ -120,13 +118,9 @@
       </div>
 
       <aside class="console-body__side">
-        <AttendeeList
-          :attendees="store.displayAttendees"
-          :online-count="store.onlineCount"
-          :degraded="store.degraded"
-        />
-        <el-divider class="console-body__divider" />
-        <ChatPanel :messages="store.messages" :disabled="store.ended" @send="handleSend" />
+        <AttendeeList :attendees="store.displayAttendees" :degraded="store.degraded" />
+        <!-- 分隔不用 el-divider：1px 分隔线由样式给（docs/09 §7「分隔线恒 1px」） -->
+        <ChatPanel class="console-body__chat" :messages="store.messages" :disabled="store.ended" @send="handleSend" />
       </aside>
     </section>
   </div>
@@ -140,6 +134,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { closeMeeting, createMeeting, getMeetingDetail } from '@/api/meeting'
 import AttendeeList from './components/AttendeeList.vue'
 import ChatPanel from './components/ChatPanel.vue'
+import MeetingTopBar from './components/MeetingTopBar.vue'
 import ScreenStage from './components/ScreenStage.vue'
 import { useMeetingStore } from './stores/meeting'
 import { useLiveKitRoom, describeChatSend } from './hooks/useLiveKitRoom'
@@ -192,7 +187,12 @@ const room = useLiveKitRoom({
   getLocalPreviewElement: () => stageRef.value?.videoRef,
   onEvent: (payload) => store.applyEvent(payload),
   onConnectionChange: handleConnectionChange,
+  // 老师是控制台、不是参会席位：名单与人数都不算自己（docs/16 Q22）
+  omitHost: true,
 })
+
+// 身份显式注入：老师发言在库里 attendeeId 恒为 null，靠比对 id 会「碰巧」判对自己
+store.setSelf({ isHost: true })
 
 /** 共享状态以房间为准（浏览器共享栏点「停止」也会同步过来），再镜像给展示层 */
 watch(
@@ -201,23 +201,6 @@ watch(
     store.sharing = sharing
   },
 )
-
-const connectionText = computed(() => {
-  const map = {
-    idle: '未连接',
-    connecting: '连接中',
-    connected: '已连接',
-    reconnecting: '重连中',
-    disconnected: '连接已断开',
-  }
-  return map[store.connection] ?? '未知'
-})
-
-const connectionTagType = computed(() => {
-  if (store.connection === 'connected') return 'success'
-  if (store.connection === 'connecting' || store.connection === 'reconnecting') return 'warning'
-  return 'info'
-})
 
 async function handleConnectionChange(status) {
   store.setConnection(status)
@@ -300,7 +283,6 @@ async function loadDetail() {
   if (!session.value) return null
   const detail = await getMeetingDetail(session.value.meetingNo, session.value.hostToken)
   store.setMeeting(detail.meeting)
-  store.setJoinLedger(detail.attendees)
   store.setMessages(detail.messages)
   if (detail.meeting?.status === 2) {
     store.ended = true
@@ -561,53 +543,6 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
-.console-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  padding: 0.75rem 1rem;
-  background: var(--tb-bg-surface);
-  border-radius: var(--tb-radius-lg);
-  box-shadow: var(--tb-shadow-1);
-}
-
-.console-bar__info {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.console-bar__icon {
-  font-size: 1.5rem;
-  color: var(--tb-primary);
-}
-
-.console-bar__title {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: var(--tb-text-primary);
-}
-
-.console-bar__sub {
-  margin: 0.125rem 0 0;
-  color: var(--tb-text-secondary);
-  font-size: var(--tb-text-sm);
-}
-
-.console-bar__sub strong {
-  color: var(--tb-text-primary);
-  letter-spacing: 0.08em;
-}
-
-.console-bar__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 .console-create {
   display: flex;
   flex-direction: column;
@@ -629,8 +564,8 @@ onBeforeUnmount(() => {
 
 .console-create__tip code {
   padding: 0 0.25rem;
-  background: light-dark(rgba(15, 23, 42, 0.06), rgba(148, 163, 184, 0.16));
-  border-radius: 4px;
+  background: var(--tb-bg-raised);
+  border-radius: var(--tb-radius-xs);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.9em;
 }
@@ -687,8 +622,36 @@ onBeforeUnmount(() => {
   font-size: var(--tb-text-sm);
 }
 
+.console-create__known-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* 可点击的会议入口必须是真按钮：el-tag 挂 click 拿不到 focus 与键盘可达性 */
 .console-create__known-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: var(--tb-bg-raised);
+  border: 1px solid var(--tb-border);
+  border-radius: var(--tb-radius-sm);
+  color: var(--tb-text-secondary);
+  font-size: var(--tb-text-sm);
   cursor: pointer;
+  transition: border-color var(--tb-dur-1) var(--tb-ease-out), background var(--tb-dur-1) var(--tb-ease-out);
+}
+
+.console-create__known-item:hover {
+  background: var(--tb-primary-soft);
+  border-color: var(--tb-primary-border);
+}
+
+.console-create__known-item strong {
+  color: var(--tb-text-primary);
+  font-size: var(--tb-text-md);
+  letter-spacing: 0.08em;
 }
 
 .console-body {
@@ -706,14 +669,22 @@ onBeforeUnmount(() => {
 .console-body__side {
   display: flex;
   flex-direction: column;
+  /* 没有这一行，聊天列表在矮窗口下会把面板撑破、内部滚动失效（学生端一直有，控制台漏了） */
+  min-height: 0;
   padding: 1rem;
   background: var(--tb-bg-surface);
+  border: var(--tb-border-width) solid var(--tb-border);
   border-radius: var(--tb-radius-lg);
-  box-shadow: var(--tb-shadow-1);
+  box-shadow: var(--tb-shadow-2);
 }
 
-.console-body__divider {
-  margin: 0.75rem 0;
+/* 名单与聊天是同一面板里的两个子区：用 1px 分隔线分区，不再靠 el-divider 撑出空隙 */
+.console-body__chat {
+  flex: 1;
+  min-height: 0;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--tb-border);
 }
 
 @media (max-width: 1080px) {

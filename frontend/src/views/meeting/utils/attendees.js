@@ -1,10 +1,10 @@
 /**
- * 在线名单与入会台账的裁决逻辑（纯函数，便于 `node --test` 覆盖）。
+ * 在线名单的取值逻辑（纯函数，便于 `node --test` 覆盖）。
  *
- * 为什么要单独成文件：房间事件与 10s 轮询的 REST 响应曾写**同一个** `attendees` 数组，
- * 谁后写谁赢——于是在线名单每 10 秒被台账脏数据覆盖一次。现在两者分家：
- * **在线成员的唯一真相源是 LiveKit 房间事件**（见 docs/adr/0002 与 CONTEXT.md），
- * REST 返回的 `attendees` 只是累计入会台账，不得冒充在线。
+ * 唯一真相源是 LiveKit 房间事件：`lecture_meeting_attendee` 只是累计入会台账，
+ * 它的行**不得**被当成在线名单（docs/adr/0002、CONTEXT.md）。
+ * 房间连不上时不再退回台账 —— 台账里「尚未显式离开」的行恰恰包含早就走掉的人，
+ * 列出来比不列更误导。
  */
 
 /** 角色：老师（与后端 role 口径一致） */
@@ -30,37 +30,38 @@ export function roleOfParticipant(participant) {
 /**
  * 房间 participant 列表 → 展示用成员项。
  *
- * 产物**不含 `online` 布尔**：能出现在这份列表里就意味着在房间里，再挂一个 online 字段
- * 只会等着被人误用成"这是在线状态的来源"。
+ * 产物**不含 `online` 布尔**：能出现在这份列表里就意味着此刻在房间里，再挂一个 online
+ * 字段只会等着被人误用成"这是在线状态的来源"。
  *
  * @param {Array<object>} participants 房间内的本端 + 远端 participant
+ * @param {object} [options]
+ * @param {boolean} [options.omitHost=false] 去掉老师自己 —— 控制台是主持人的操作台，
+ *   不是参会席位（docs/16 Q22），把自己列进「在线成员」并计入人数会与页面自述矛盾
  * @returns {Array<{id: string, nickname: string, role: number}>}
  */
-export function fromRoomParticipants(participants = []) {
-  return (participants ?? [])
+export function fromRoomParticipants(participants = [], { omitHost = false } = {}) {
+  const items = (participants ?? [])
     .filter(Boolean)
     .map((participant) => ({
       id: participant.identity,
       nickname: participant.name || participant.identity,
       role: roleOfParticipant(participant),
     }))
+  return omitHost ? items.filter((item) => item.role !== ROLE_HOST) : items
 }
 
 /**
- * 名单区该展示哪一份数据、是否处于降级态。
+ * 名单区要展示什么、能不能报人数。
  *
  * @param {object} state
- * @param {Array<object>} [state.roomAttendees] 房间事件得出的成员（在线真相）
- * @param {Array<object>} [state.joinLedger] REST 返回的累计入会台账
- * @param {string} [state.connection] 房间连接态（`connected` 才算拿到真相）
+ * @param {Array<object>} [state.attendees] 房间事件得出的成员
+ * @param {boolean} [state.connected] 房间是否已连接
  * @returns {{degraded: boolean, attendees: Array<object>, onlineCount: number|null}}
- *   降级时 `onlineCount` 为 **null**（不能拿台账行数谎称在线人数）
+ *   降级时名单为空、`onlineCount` 为 **null**：没有真相源就不列人名、也不编数字
  */
-export function pickDisplayAttendees({ roomAttendees = [], joinLedger = [], connection = 'idle' } = {}) {
-  if (connection === 'connected') {
-    return { degraded: false, attendees: roomAttendees, onlineCount: roomAttendees.length }
+export function selectMemberPanel({ attendees = [], connected = true } = {}) {
+  if (connected) {
+    return { degraded: false, attendees, onlineCount: attendees.length }
   }
-  // 降级：房间连不上，只能给出「尚未显式离开」的台账行，并明确标注它不是在线名单
-  const pending = joinLedger.filter((item) => item && !item.leaveTime)
-  return { degraded: true, attendees: pending, onlineCount: null }
+  return { degraded: true, attendees: [], onlineCount: null }
 }
