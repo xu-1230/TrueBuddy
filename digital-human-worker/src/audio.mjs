@@ -25,6 +25,22 @@ export function frameBytes(sampleRate, channels) {
 }
 
 /**
+ * Buffer 切片 → **独立拥有内存**的 Int16Array。
+ *
+ * 必须拷贝，不能返回 `new Int16Array(buf.buffer, byteOffset, n)` 这种视图：rtc-node 的
+ * `AudioFrame.protoInfo()` 取指针时用的是 `data.buffer`（整个底层 ArrayBuffer）而**忽略
+ * byteOffset**，视图会让原生层从内存池开头读，送出去的全是错位字节 —— 听感就是重电音。
+ * spike 里用的是独立数组（byteOffset 恰好为 0）所以没暴露，接成真链路才坏。
+ *
+ * @param frame 恰好一帧长的 PCM16 切片
+ * @returns {Int16Array} byteOffset 恒为 0、底层 ArrayBuffer 不含其它数据
+ */
+export function toInt16Frame(frame) {
+  const bytes = frame.subarray(0, frame.byteLength)
+  return new Int16Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+}
+
+/**
  * 把任意长度的 PCM 字节流切成定长帧，跨块的余数留到下一次。
  */
 export class FrameSlicer {

@@ -15,15 +15,9 @@ import {
   dispose,
 } from '@livekit/rtc-node'
 
-import { CHANNELS, FrameSlicer, SAMPLE_RATE, frameBytes } from './audio.mjs'
+import { CHANNELS, FrameSlicer, SAMPLE_RATE, frameBytes, toInt16Frame } from './audio.mjs'
 
 const FRAME_SIZE_BYTES = frameBytes(SAMPLE_RATE, CHANNELS)
-const SAMPLES_PER_FRAME = FRAME_SIZE_BYTES / 2
-
-/** Buffer 切片 → Int16Array：必须带 byteOffset，Node 的 Buffer 可能来自共享内存池 */
-function toInt16(frame) {
-  return new Int16Array(frame.buffer, frame.byteOffset, SAMPLES_PER_FRAME)
-}
 
 /** 一个房间一个数字人会话 */
 export class AgentSession {
@@ -63,7 +57,8 @@ export class AgentSession {
 
   /** 喂一帧（20ms）；AudioSource 自带队列与背压，await 即可 */
   async feed(frame) {
-    await this.source.captureFrame(new AudioFrame(toInt16(frame), SAMPLE_RATE, CHANNELS, SAMPLES_PER_FRAME))
+    const data = toInt16Frame(frame)
+    await this.source.captureFrame(new AudioFrame(data, SAMPLE_RATE, CHANNELS, data.length))
   }
 
   /** 当前排队未播的时长（毫秒），用于日志与「是否播完」判断 */
