@@ -48,12 +48,6 @@ const router = createRouter({
       component: () => import("../views/meeting/MeetingRoomView.vue"),
     },
     {
-      // 演讲台：老师的放映页 + 跟页播报（会议号在地址里，凭据从本机按会议号取，见 docs/18 §5.1）
-      path: "/meeting/:meetingNo/present",
-      name: "meeting-present",
-      component: () => import("../views/meeting/MeetingPresentView.vue"),
-    },
-    {
       path: "/test",
       name: "test",
       component: () => import("../views/TestView.vue"),

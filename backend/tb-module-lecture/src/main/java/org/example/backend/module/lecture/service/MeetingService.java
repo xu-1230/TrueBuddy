@@ -11,6 +11,7 @@ import org.example.backend.module.lecture.model.vo.MeetingJoinRespVO;
 import org.example.backend.module.lecture.model.vo.MeetingLeaveReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageVO;
+import org.example.backend.module.lecture.model.vo.MeetingRealtimeVO;
 
 /**
  * 模拟会议 Service

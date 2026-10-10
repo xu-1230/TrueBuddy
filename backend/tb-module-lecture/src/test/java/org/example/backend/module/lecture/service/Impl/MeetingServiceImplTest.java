@@ -16,6 +16,7 @@ import org.example.backend.module.lecture.model.vo.MeetingInfoVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinRespVO;
 import org.example.backend.module.lecture.model.vo.MeetingLeaveReqVO;
+import org.example.backend.module.lecture.model.vo.MeetingRealtimeVO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,8 @@ import java.util.stream.Collectors;
 
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.MEETING_ALREADY_CLOSED;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.MEETING_ATTENDEE_TOKEN_INVALID;
+import static org.example.backend.module.lecture.enums.ErrorCodeConstants.MEETING_HOST_TOKEN_INVALID;
+import static org.example.backend.module.lecture.enums.ErrorCodeConstants.MEETING_LIVEKIT_NOT_CONFIGURED;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -42,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -75,10 +79,6 @@ class MeetingServiceImplTest {
     private LiveKitTokenService liveKitTokenService;
     @Mock
     private LiveKitRoomServiceClient liveKitRoomServiceClient;
-    @Mock
-    private org.example.backend.module.lecture.config.DigitalHumanProperties digitalHumanProperties;
-    @Mock
-    private org.example.backend.module.lecture.digital.worker.DigitalHumanWorkerClient workerClient;
 
     @InjectMocks
     private MeetingServiceImpl meetingService;
@@ -236,14 +236,11 @@ class MeetingServiceImplTest {
         reqVO.setHostToken("host-token");
 
         when(meetingMapper.selectByMeetingNo(MEETING_NO)).thenReturn(runningMeeting());
-        when(digitalHumanProperties.getEnabled()).thenReturn(true);
 
         meetingService.close(reqVO);
 
         verify(attendeeMapper).markAllLeft(MEETING_ID);
         verify(liveKitRoomServiceClient).deleteRoom(MEETING_NO);
-        // 数字人占一个参会席位，删房间之外还要主动请它退会（见 docs/17 §12）
-        verify(workerClient).closeSession("meeting-" + MEETING_NO);
     }
 
 }

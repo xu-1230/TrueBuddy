@@ -16,7 +16,7 @@
 | 完整 URL 前缀 | `/api/{模块}/{资源}` |
 | 数据格式 | JSON（`application/json`）；文件上传 `multipart/form-data` |
 | 上传上限 | 单文件 `50MB`、单请求 `1024MB`（`spring.servlet.multipart`；整包上传靠请求上限放行） |
-| 统一返回 | `CommonResult<T>`（`code = 0` 成功）；三处例外：`POST /chat` 返回 `SseEmitter`、`GET /workflow/text` 返回 `void`、`POST /ppt/speech/speak` 直接写 `audio/wav` 字节流 |
+| 统一返回 | `CommonResult<T>`（`code = 0` 成功）；例外：`POST /chat` 返回 `SseEmitter`、`GET /workflow/text` 返回 `void` |
 | 认证 | 请求头 `Authorization: Bearer <token>`，或参数 `token`（`tb.security.token-parameter`） |
 | 跨域 | **未配置可用的 CORS 来源**：`SecurityConfig` 只有 `.cors(withDefaults())`，全仓无 `CorsConfigurationSource` / `@CrossOrigin`，前端开发一律走 Vite 代理 `/api` → `8086` |
 
@@ -70,7 +70,7 @@
 >
 > **仍待整改**：`application.yml` 里 `/workflow/**` 上方的注释仍写着「`/run`、`/resume` 为 SSE 流」，而这两个端点已合并为 `POST /chat`（且 `/chat/**` **故意不放行**，要求登录）；注释误导，需随代码修正。
 
-### 2.5 接口清单（共 15 个 `@RestController` / 45 个接口）
+### 2.5 接口清单（共 15 个 `@RestController` / 43 个接口）
 
 > 下表路径均省略上下文前缀 `/api`。
 
@@ -109,18 +109,16 @@
 | 31 | `HomeworkController` | POST | `/homework/upload` | 作业文件夹批量上传（multipart：`files` + 可选 `paths`（与 `files` 顺序一一对应的相对路径）+ 可选 `folderName`），落 `homework_task` / `homework_file` 并返回文件树 | `CommonResult<HomeworkUploadRespVO>` |
 | 32 | `HomeworkController` | POST | `/homework/grade` | 提交批改（`taskId` / `spaceIds` / `files` / `description` / `exportFormat` / `workflowId`），转交 workflow 执行链 | `CommonResult<Boolean>` |
 | 33 | `HomeworkFileTextController` | GET | `/test2/file-text` | 读取作业文件文本，逐条返回、单文件失败不影响整批（HTTP 恒 200）；内部用模拟批改请求，**是联调桩，不是业务接口** | `CommonResult<HomeworkFileTextRespVO>` |
-| 34 | `MeetingController` | POST | `/meeting/create` | 创建会议（老师控制台）：返回会议号、入会链接与主持人凭据 | `CommonResult<MeetingCreateRespVO>` |
+| 34 | `MeetingController` | POST | `/meeting/create` | 创建会议（**入口在 PPT 页**：建会后本页进放映、控制台另开标签页，见 [16](./16-PPT演讲与模拟会议方案.md) §5.6）：返回会议号、入会链接与主持人凭据 | `CommonResult<MeetingCreateRespVO>` |
 | 35 | `MeetingController` | POST | `/meeting/join` | 学生入会（会议号 + 昵称），返回参会凭据与会议初始数据；**不限人数**（上限闸门已作废，见 ADR-0001） | `CommonResult<MeetingJoinRespVO>` |
 | 36 | `MeetingController` | POST | `/meeting/leave` | 学生离会（`meetingNo` + `attendeeToken`）：只给入会台账补 `leave_time`，幂等；**不是**在线状态来源 | `CommonResult<Boolean>` |
 | 37 | `MeetingController` | GET | `/meeting/detail` | 会议详情（`meetingNo` + `hostToken`）：控制台初始化 / 刷新恢复；响应不含 `onlineCount`（在线只看房间事件，ADR-0002） | `CommonResult<MeetingDetailRespVO>` |
 | 38 | `MeetingController` | GET | `/meeting/state` | 学生侧会议状态（`meetingNo` + `attendeeToken`）：刷新 / 断线重连后补齐数据；同 `detail` 不下发 `onlineCount` | `CommonResult<MeetingDetailRespVO>` |
 | 39 | `MeetingController` | POST | `/meeting/close` | 结束会议（`meetingNo` + `hostToken`）：置为已结束、给台账补离会时间并**删除 LiveKit 房间**（房间内学生立即断开） | `CommonResult<Boolean>` |
 | 40 | `MeetingController` | POST | `/meeting/message` | 聊天落库（`meetingNo` + `attendeeToken` 或 `hostToken` + `content`）；实时由 LiveKit DataChannel 承担，本接口只写历史 | `CommonResult<MeetingMessageVO>` |
-| 41 | `MeetingController` | GET | `/meeting/digital/status` | 数字人可用性探测（`meetingNo`；后端会按 `worker-probe-timeout-ms` 探一次 worker 的 `/healthz`），前端据此显示「数字人不可用」而不是静默无声 | `CommonResult<DigitalStatusVO>` |
-| 42 | `MeetingController` | POST | `/meeting/digital/say` | 让数字人在会议里播报一段文本（`meetingNo` + `hostToken` + `text`，长度受 `tb.lecture.digital-human.max-text-length` 约束）；合成走 CosyVoice、发布走 Node worker。**`requestId` 可由客户端自带**（8–64 位 `[A-Za-z0-9_-]`，不合规则后端生成）——因为本接口同步返回即代表整段已交给 worker，前端要能在响应回来之前就打断它，见 [18](./18-放映与会议演讲体系方案.md) §5.4 | `CommonResult<DigitalSayRespVO>` |
-| 43 | `MeetingController` | POST | `/meeting/digital/say/cancel` | 掐断一条在途播报（`meetingNo` + `hostToken` + `requestId`）：后端转调 worker 的 `DELETE /say/{id}` 清未播队列。幂等，已播完时返回 `false` 不报错 | `CommonResult<Boolean>` |
-| 44 | `PptSpeechController` | POST | `/ppt/speech/speak` | 试听：把一段文本合成成 WAV 直接回给浏览器，**不进 LiveKit 房间、不依赖 worker**（放映形态自己听，见 [18](./18-放映与会议演讲体系方案.md) §5.3）。上限走 `tb.lecture.digital-human.max-speak-chars`（比会中播报宽松，整页 `remark` 要一次进来） | `void`（`audio/wav` 字节流；合成失败发生在写出首字节前，此时仍返回 `CommonResult` JSON） |
-| 45 | `PptSpeechController` | POST | `/ppt/speech/optimize` | PPT 讲稿生成（`pages` 长度 1 = 本页，长度 N = 全部）；无状态、不落库，内部按 `tb.lecture.ppt.batch-size` 分批调用模型，部分失败走 `failedIndexes` | `CommonResult<PptSpeechOptimizeRespVO>` |
+| 41 | `MeetingController` | GET | `/meeting/digital/status` | 语音可用性（**无参数**）：只看开关与 DashScope 合成配置是否齐备，**不探测任何进程**（worker 已删）。播报本身不在会议接口里，见 44 | `CommonResult<DigitalStatusVO>` |
+| 43 | `PptSpeechController` | POST | `/ppt/speech/optimize` | PPT 讲稿生成（`pages` 长度 1 = 本页，长度 N = 全部）；无状态、不落库，内部按 `tb.lecture.ppt.batch-size` 分批调用模型，部分失败走 `failedIndexes` | `CommonResult<PptSpeechOptimizeRespVO>` |
+| 44 | `PptSpeechController` | POST | `/ppt/speech/speak` | **讲稿流式播报**（SSE，`produces=text/event-stream`）：`{ text, meetingNo?, hostToken? }` → 事件 `status`（started / done）、`chunk`（base64 的 48kHz 单声道 16bit PCM）、`error`；**调用方断开即取消合成**。带齐会议号与凭据时以数字人身份落库（`kind=2`），否则是彩排试听。链路见 [16](./16-PPT演讲与模拟会议方案.md) §5.7 | `SseEmitter` |
 
 > 接口 24~30 属**自定义工作流模块**（包根 `org.example.textflow`），分两块：
 >
@@ -128,7 +126,7 @@
 > - **执行链路（接口 28~30）**：入口是 **`POST /chat`**（不再是 `POST /workflow/run`，也没有 `POST /workflow/resume`）。请求体 `{conversationId, workflowId?, message?}`：无 `conversationId` 时先建会话，**首轮与人工确认续跑共用同一端点**，靠「该会话最新一条执行记录的状态」分流（客户端不传状态）。事件帧为 `conversation.chat.in_progress` → `conversation.message.completed`\*（节点产出 / 表单卡片 / 正文）→ 终态帧 `conversation.chat.{completed,failed,requires_action}`，每轮都以 `done` 收尾（**终态看帧，不看流是否结束**）。会话与执行实例落 `workflow_conversation` / `workflow_run`；**中断点与图 checkpoint 仍是内存 Map**（`executeId` → `InterruptionMetadata`、`MemorySaver`），进程重启后续跑会退化为新执行。LLM 节点注入真实 `ChatClient`（知识库检索工具仍为占位）。
 >
 > 放行与鉴权的分工：`/workflow/**` 免登录（联调方便），**`/chat/**` 不在白名单内**——会话与执行实例要记 `creator` 并按用户隔离，因此要求登录（这也是它不挂在 `/workflow` 前缀下的原因）。
-> 前端接口层 `frontend/src/api/workflow.js`：`CHAT_API`（`chat` = `/api/chat`，**带** `/api` 前缀，因为 `fetch` 不走 axios 实例；`conversation` / `conversationList` **不带**前缀）与 `WORKFLOW_REST_API`（`save` / `detail` / `list`，走 axios，避免与 `baseURL` 重复拼接），导出 `buildChatBody` / `buildCardSubmitBody` / `buildRunDefinition` / `buildWorkflowSchema` / `saveWorkflow` / `getWorkflowDetail` / `listWorkflows` / `createConversation` / `listConversations`。SSE 读取封装在 `frontend/src/utils/workflow-sse.js` 的 `readWorkflowStream`（`fetch` + `ReadableStream`，因 `EventSource` 只支持 GET），事件到状态快照的归约在 `views/workflow2/utils/run-state.js`。消费方：画布页 `views/workflow2/WorkflowView.vue`（建会话 / 试运行 / 节点下方人工确认卡片）、批改页 `views/homework/HomeworkGradingView.vue`（工作流下拉 `listWorkflows`）与首页 `views/system/SystemHomeView.vue`（`listWorkflows` / `listConversations` 拉动态）。
+> 前端接口层 `frontend/src/api/workflow.js`：`CHAT_API`（`chat` = `/api/chat`，**带** `/api` 前缀，因为 `fetch` 不走 axios 实例；`conversation` / `conversationList` **不带**前缀）与 `WORKFLOW_REST_API`（`save` / `detail` / `list`，走 axios，避免与 `baseURL` 重复拼接），导出 `buildChatBody` / `buildCardSubmitBody` / `buildRunDefinition` / `buildWorkflowSchema` / `saveWorkflow` / `getWorkflowDetail` / `listWorkflows` / `createConversation` / `listConversations`。SSE 读取封装在 `frontend/src/utils/event-stream.js` 的 `readEventStream`（`fetch` + `ReadableStream`，因 `EventSource` 只支持 GET、也带不了请求体；讲稿播报 44 复用同一份），事件到状态快照的归约在 `views/workflow2/utils/run-state.js`。消费方：画布页 `views/workflow2/WorkflowView.vue`（建会话 / 试运行 / 节点下方人工确认卡片）、批改页 `views/homework/HomeworkGradingView.vue`（工作流下拉 `listWorkflows`）与首页 `views/system/SystemHomeView.vue`（`listWorkflows` / `listConversations` 拉动态）。
 
 ### 2.6 待整改（后端）
 
@@ -204,9 +202,9 @@ service.interceptors.response.use(
 | `file.js` | `uploadFile` | 接口 8 |
 | `knowledgebase.js` | `getSpaceList`、`createSpace`、`updateSpace`、`deleteSpace`、`getDocumentList`、`createDocument`、`deleteDocument`、`getChunkList`、`uploadDocument`、`vectorizeDocument` | 接口 12~21 |
 | `homework.js` | `uploadHomeworkFiles(files, paths, folderName, onUploadProgress)`、`submitGrading(payload)` | 接口 31~32：`views/homework/HomeworkGradingView.vue` 已接线（上传成功后串行提交批改，上传带进度回调）。历史的 `gradeHomework` / `getGradingHistory` / `getGradingDetail` / `exportGradingResult` 属演示态，已随页面改造移除；批改**历史与导出**目前仍走本地，无后端接口 |
-| `workflow.js` | `buildChatBody`、`buildCardSubmitBody`、`buildRunDefinition`、`buildWorkflowSchema`、`saveWorkflow`、`getWorkflowDetail`、`listWorkflows`、`createConversation`、`listConversations`；常量 `CHAT_API`（SSE / 会话地址，其中 `chat` **含** `/api` 前缀）与 `WORKFLOW_REST_API`（REST 路径，无前缀） | 接口 25~30：`views/workflow2/WorkflowView.vue`（画布编辑 + 保存对话框 + 按 `workflow_id` 打开 + 建会话 + 试运行 + 节点下方人工确认卡片）、`views/homework/HomeworkGradingView.vue` 与 `views/system/SystemHomeView.vue`（`listWorkflows` / `listConversations`）；SSE 读取封装见 `src/utils/workflow-sse.js`。**没有轮询兜底**：`GET /workflow/get_process` 从未实现，终态只认 SSE 帧 |
-| `meeting.js` | `createMeeting`、`joinMeeting`、`leaveMeeting`、`getMeetingDetail`、`getMeetingState`、`sendMeetingMessage`、`closeMeeting`、`getDigitalStatus`、`sayDigital`；常量 `MEETING_REST_API` | 接口 34~42：`views/meeting/MeetingConsoleView.vue`（老师控制台）、`views/meeting/MeetingRoomView.vue`（学生会议室）、`views/meeting/components/DigitalHumanAvatar.vue`（播报与可用性状态）。`leaveMeeting` 走 `navigator.sendBeacon`（组件卸载路径上普通请求会被浏览器掐掉），因此带 `/api` 前缀而非用 axios 实例。实时能力不在本文件内：LiveKit 房间客户端见 `views/meeting/hooks/useLiveKitRoom.js`，「在线成员 vs 入会台账」的裁决见 `views/meeting/utils/attendees.js`，数字人 PCM 播放见 `views/meeting/utils/agentAudio.js` |
-| `ppt.js` | `optimizeSpeech(payload, signal)`；常量 `PPT_REST_API` | 接口 43：`views/ppt/index.vue`（备注区星形按钮 = 本页、工具栏按钮 = 全部）+ 两个对比弹窗（`views/ppt/components/ai/`）。整篇是**一次长请求**，离开页面用 `AbortController` 中止 |
+| `workflow.js` | `buildChatBody`、`buildCardSubmitBody`、`buildRunDefinition`、`buildWorkflowSchema`、`saveWorkflow`、`getWorkflowDetail`、`listWorkflows`、`createConversation`、`listConversations`；常量 `CHAT_API`（SSE / 会话地址，其中 `chat` **含** `/api` 前缀）与 `WORKFLOW_REST_API`（REST 路径，无前缀） | 接口 25~30：`views/workflow2/WorkflowView.vue`（画布编辑 + 保存对话框 + 按 `workflow_id` 打开 + 建会话 + 试运行 + 节点下方人工确认卡片）、`views/homework/HomeworkGradingView.vue` 与 `views/system/SystemHomeView.vue`（`listWorkflows` / `listConversations`）；SSE 读取封装见 `src/utils/event-stream.js`。**没有轮询兜底**：`GET /workflow/get_process` 从未实现，终态只认 SSE 帧 |
+| `meeting.js` | `createMeeting`、`joinMeeting`、`leaveMeeting`、`getMeetingDetail`、`getMeetingState`、`sendMeetingMessage`、`closeMeeting`、`getDigitalStatus`；常量 `MEETING_REST_API` | 接口 34~41：`createMeeting` 由 **`views/ppt/index.vue`**（PPT 页的「创建会议」入口）调用，其余在 `views/meeting/MeetingConsoleView.vue`（老师控制台）与 `views/meeting/MeetingRoomView.vue`（学生会议室）。`leaveMeeting` 走 `navigator.sendBeacon`（组件卸载路径上普通请求会被浏览器掐掉），因此带 `/api` 前缀而非用 axios 实例。实时能力不在本文件内：LiveKit 房间客户端见 `views/meeting/hooks/useLiveKitRoom.js`（屏幕共享带 `audio: true`，学生端 attach `screen_share_audio`），「在线成员 vs 入会台账」的裁决见 `views/meeting/utils/attendees.js`，主持人凭据的本地存取见 `src/utils/hostSession.js`（PPT 页写、控制台读） |
+| `ppt.js` | `optimizeSpeech(payload, signal)`；常量 `PPT_REST_API` | 接口 43：`views/ppt/index.vue`（备注区星形按钮 = 本页、工具栏按钮 = 全部）+ 两个对比弹窗（`views/ppt/components/ai/`）。整篇是**一次长请求**，离开页面用 `AbortController` 中止。**播报不走本文件**：放映页用 `@/utils/event-stream` 直接读接口 44 的 SSE，播放与口型在 `views/ppt/utils/speech-player.js`（见 docs/16 §5.7） |
 
 ### 3.4 调用约定
 
@@ -235,7 +233,7 @@ async function load() {
 | 认证 | 登录态 `Authorization: Bearer <token>`（Cookie，`utils/auth.js`）；会议凭据另走 `hostToken` / `attendeeToken`（localStorage / sessionStorage，不进 `auth.js`） | `TokenAuthenticationFilter` 解析 Bearer，白名单见 §2.4 |
 | 返回 | 拦截器解包 `code === 0` | 统一 `CommonResult<T>`（SSE / `void` 例外） |
 | 上传 | `FormData` + 不设 Content-Type | `MultipartFile` + 单文件 50MB / 单请求 1024MB |
-| 实时 | **SSE 已实现**：`fetch` + `ReadableStream`（`utils/workflow-sse.js`），未用 `EventSource`（只支持 GET，且无法带请求体）；会议走 `livekit-client` 直连 7880 | `POST /chat` 返回 `SseEmitter`（异步不超时，ASYNC 已放行）；数字人音频轨由 `digital-human-worker/` 发布 |
+| 实时 | **SSE 已实现**：`fetch` + `ReadableStream`（`utils/event-stream.js`），未用 `EventSource`（只支持 GET，且无法带请求体）；会议走 `livekit-client` 直连 7880 | `POST /chat` 与 `POST /ppt/speech/speak` 都返回 `SseEmitter`（异步不超时，ASYNC 已放行）；讲稿的声音随**屏幕共享轨**到学生端，后端不发布任何音频轨（见 docs/16 §5.7） |
 
 ---
 

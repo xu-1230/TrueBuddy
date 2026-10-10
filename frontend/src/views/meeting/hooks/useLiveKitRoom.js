@@ -5,13 +5,14 @@
  * （能共享屏幕），给学生签发**只读**令牌（只能订阅画面），权限由 LiveKit 服务端强制。
  *
  * 职责边界：
- * - 屏幕共享：老师 `setScreenShareEnabled(true)`（内部走 `getDisplayMedia`）；学生订阅到共享轨后 attach 到 `<video>`
+ * - 屏幕共享：老师 `setScreenShareEnabled(true, { audio: true })`（内部走 `getDisplayMedia`）；
+ *   学生订阅到共享轨后画面 attach 到 `<video>`、**共享里的声音** attach 到隐藏的 `<audio>`
  * - 聊天：走 DataChannel（RELIABLE，保证送达与顺序），**LiveKit 不落库**，所以发送方额外调一次
  *   `POST /meeting/message` 写历史（失败只影响历史，不影响实时）
  * - 成员与在线数：以房间内的 participant 事件为准（`lecture_meeting_attendee` 只是累计入会台账，
  *   没有 online 列，也不得有代码把它的行当成在线——见 docs/adr/0002 与 `utils/attendees.js`）
- * - 数字人音频轨：按 `identity === 'digital-human'` 识别，只取响度驱动口型（`utils/agentAudio.js`），
- *   声音本身由 LiveKit 直接播，本钩子不 attach 到任何元素、也不自己建第二条 AudioContext
+ * - 讲稿播报的声音：**走屏幕共享的音轨**。它由放映页自己播（那一页正是被共享的一屏），
+ *   本钩子既不需要「数字人参与者」，也不经手任何音频解码（见 docs/16 §5.7）
  *
  * 对外事件名沿用旧自建 WebSocket 通道的那一套（`chat.message` / `attendee.joined` / `attendee.left` /
  * `screen.start` / `screen.stop`），由 `stores/meeting.js` 的 `applyEvent` 落到 `roomAttendees`。
@@ -20,7 +21,6 @@ import { ref, shallowRef } from 'vue'
 import { Room, RoomEvent, Track } from 'livekit-client'
 import { sendMeetingMessage } from '@/api/meeting'
 import { fromRoomParticipants, roleOfParticipant } from '@/views/meeting/utils/attendees'
-import { AGENT_IDENTITY, createAgentAudioMeter } from '@/views/meeting/utils/agentAudio'
 
 /** 角色：学生（聊天回显里拿不到角色时的兜底） */
 const ROLE_STUDENT = 2
@@ -41,43 +41,21 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
   /** 本端是否正在共享屏幕（浏览器共享栏点「停止」也会回到 false） */
   const sharing = ref(false)
   /**
-   * 数字人此刻是否在房间里（它的音频轨已订阅）。
+   * 隐藏播放元素：远端的音频轨必须 attach 到媒体元素才会真的出声，
+   * 只拿 `mediaStream` 去接 AnalyserNode 的话浏览器既不播、也拿不到有效帧。
    *
-   * <p>注意这<b>不等于</b>「正在说话」：worker 一次进房后轨是常驻的，静音也在。
-   * 是否在说话只能看 {@link mouthLevel}。
+   * <p>学生端用它放**屏幕共享里的声音**；老师本机收不到自己发布的轨，
+   * 那一路声音由放映页自己播（它就是被共享的那一屏）。
    */
-  const digitalPresent = ref(false)
-  /** 数字人口型开合度 0–1，由音频轨的逐帧响度算出 */
-  const mouthLevel = ref(0)
-
-  /**
-   * 响度表：AudioContext 在整页里只建一次并复用（实测每次订阅都新建时，第一次订阅会长时间拿不到帧）。
-   * 懒建，避免没连房间就创建 AudioContext 被浏览器判为未授权。
-   */
-  let meter = null
-  /**
-   * 隐藏播放元素：远端音频轨必须 attach 到媒体元素才会真的出声，
-   * 只拿 `mediaStream` 去接 AnalyserNode 的话，浏览器既不播、分析器也一直是静音帧。
-   */
-  let agentAudioEl = null
-  function ensureAgentAudioElement() {
-    if (agentAudioEl) return agentAudioEl
-    agentAudioEl = document.createElement('audio')
-    agentAudioEl.autoplay = true
-    agentAudioEl.setAttribute('data-role', 'digital-human-audio')
-    agentAudioEl.style.display = 'none'
-    document.body.appendChild(agentAudioEl)
-    return agentAudioEl
-  }
-
-  function ensureMeter() {
-    meter ??= createAgentAudioMeter({
-      createContext: () => new AudioContext(),
-      onLevel: (level) => {
-        mouthLevel.value = level
-      },
-    })
-    return meter
+  let screenAudioEl = null
+  function ensureScreenAudioElement() {
+    if (screenAudioEl) return screenAudioEl
+    screenAudioEl = document.createElement('audio')
+    screenAudioEl.autoplay = true
+    screenAudioEl.setAttribute('data-role', 'screen-share-audio')
+    screenAudioEl.style.display = 'none'
+    document.body.appendChild(screenAudioEl)
+    return screenAudioEl
   }
 
   /**
@@ -117,24 +95,17 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
     instance.on(RoomEvent.ParticipantConnected, () =>
       onEvent?.({ type: 'attendee.joined', attendees: attendeeList() }),
     )
-    instance.on(RoomEvent.ParticipantDisconnected, (participant) => {
-      // 数字人被踢出房间（结束会议删房间时也会走到这里）：口型必须归零
-      if (participant?.identity === AGENT_IDENTITY) {
-        meter?.stop()
-        digitalPresent.value = false
-      }
+    instance.on(RoomEvent.ParticipantDisconnected, () => {
       onEvent?.({ type: 'attendee.left', attendees: attendeeList() })
     })
     instance.on(RoomEvent.ParticipantMetadataChanged, () =>
       onEvent?.({ type: 'attendee.joined', attendees: attendeeList() }),
     )
 
-    // 远端轨：屏幕共享贴到画面上；数字人音频轨只取响度（不显示画面，声音由 LiveKit 直接播）
-    instance.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-      if (participant?.identity === AGENT_IDENTITY && track.kind === Track.Kind.Audio) {
-        track.attach(ensureAgentAudioElement())
-        ensureMeter().start(track.mediaStream)
-        digitalPresent.value = true
+    // 远端轨：画面贴到 `<video>`；共享里的声音贴到隐藏的 `<audio>`（老师本机收不到自己的轨，那一份由放映页自己播）
+    instance.on(RoomEvent.TrackSubscribed, (track, publication) => {
+      if (publication.source === Track.Source.ScreenShareAudio && track.kind === Track.Kind.Audio) {
+        track.attach(ensureScreenAudioElement())
         return
       }
       if (publication.source !== Track.Source.ScreenShare || track.kind !== Track.Kind.Video) return
@@ -145,11 +116,9 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
       }
       onEvent?.({ type: 'screen.start' })
     })
-    instance.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-      if (participant?.identity === AGENT_IDENTITY && track.kind === Track.Kind.Audio) {
-        track.detach()
-        meter?.stop()
-        digitalPresent.value = false
+    instance.on(RoomEvent.TrackUnsubscribed, (track, publication) => {
+      if (publication.source === Track.Source.ScreenShareAudio && track.kind === Track.Kind.Audio) {
+        track.detach(ensureScreenAudioElement())
         return
       }
       if (publication.source !== Track.Source.ScreenShare) return
@@ -264,16 +233,18 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
   /**
    * 老师端：开始共享屏幕（内部走 getDisplayMedia；用户取消会抛错）。
    *
-   * <p>共享目标固定为「建会时自动打开的那个放映页」：
+   * <p>共享目标固定为「PPT 放映页」（老师创建会议时进入放映的那个 PPT 标签页）：
    * - `selfBrowserSurface: 'exclude'` 把**当前标签页（控制台）**从候选列表里去掉，避免老师误共享控制台
    * - `surfaceSwitching: 'include'` 让浏览器共享栏留一个「切换共享内容」的退路（选错了能换）
+   * - `audio: true` 连**这一页的声音**一起共享：讲稿播报是在放映页里播出来的，
+   *   这是学生能听到它的唯一通路（共享框里的音频勾选被取消时，学生只看到画面，得重新共享一次）
    *
    * @param {object} [options] 额外的 DisplayMediaStreamOptions（会被合并覆盖）
    */
   async function startScreenShare(options = {}) {
     if (!room.value) throw new Error('房间未连接')
     await room.value.localParticipant.setScreenShareEnabled(true, {
-      audio: false,
+      audio: true,
       selfBrowserSurface: 'exclude',
       surfaceSwitching: 'include',
       ...options,
@@ -290,13 +261,8 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
     const instance = room.value
     room.value = null
     sharing.value = false
-    digitalPresent.value = false
-    mouthLevel.value = 0
-    // AudioContext 是页面级资源，随组件卸载彻底释放
-    await meter?.dispose()
-    meter = null
-    agentAudioEl?.remove()
-    agentAudioEl = null
+    screenAudioEl?.remove()
+    screenAudioEl = null
     if (!instance) return
     instance.removeAllListeners()
     await instance.disconnect().catch(() => {})
@@ -305,8 +271,6 @@ export function useLiveKitRoom({ getVideoElement, getLocalPreviewElement, onEven
   return {
     room,
     sharing,
-    digitalPresent,
-    mouthLevel,
     connect,
     disconnect,
     sendChat,

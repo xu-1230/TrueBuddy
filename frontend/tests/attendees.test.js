@@ -33,6 +33,18 @@ test('控制台把自己摘出去：omitHost 去掉老师，人数不再虚高 1
   assert.equal(selectMemberPanel({ attendees: forConsole, connected: true }).onlineCount, 2)
 })
 
+test('名单只按 omitHost 过滤：房间里的人全部列出，少一个都不行', () => {
+  // 「数字人 / 放映页」这两个不是人的身份已随 worker 删除（讲稿的声音改走屏幕共享音轨，见 docs/16 §5.7），
+  // 因此这里钉的是新口径：房间里还在的人就必须出现在名单里。
+  const second = { identity: 'attendee-9', name: '小红', metadata: '{"role":2,"nickname":"小红"}' }
+  const room = [host, studentA, second]
+
+  assert.deepEqual(fromRoomParticipants(room).map((item) => item.id), ['host', 'attendee-7', 'attendee-9'])
+  assert.equal(selectMemberPanel({ attendees: fromRoomParticipants(room), connected: true }).onlineCount, 3)
+  // 控制台仍然只摘掉老师自己：摘多了就是「人不见了」
+  assert.deepEqual(fromRoomParticipants(room, { omitHost: true }).map((item) => item.id), ['attendee-7', 'attendee-9'])
+})
+
 test('participant 没有 name 时回落到 identity，metadata 非法按学生处理', () => {
   const anonymous = { identity: 'attendee-9', metadata: 'not-json' }
 

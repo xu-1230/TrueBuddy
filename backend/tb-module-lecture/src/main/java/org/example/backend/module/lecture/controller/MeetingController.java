@@ -3,9 +3,6 @@ package org.example.backend.module.lecture.controller;
 import jakarta.annotation.Resource;
 import org.example.backend.framework.common.pojo.CommonResult;
 import org.example.backend.module.lecture.digital.DigitalHumanService;
-import org.example.backend.module.lecture.model.vo.DigitalCancelReqVO;
-import org.example.backend.module.lecture.model.vo.DigitalSayReqVO;
-import org.example.backend.module.lecture.model.vo.DigitalSayRespVO;
 import org.example.backend.module.lecture.model.vo.DigitalStatusVO;
 import org.example.backend.module.lecture.model.vo.MeetingCloseReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingCreateReqVO;
@@ -100,26 +97,15 @@ public class MeetingController {
         return success(true);
     }
 
-    /** 数字人可用性：前端据此显示「数字人不可用」，而不是点了播报却静默无声 */
-    @GetMapping("/digital/status")
-    public CommonResult<DigitalStatusVO> digitalStatus(@RequestParam("meetingNo") String meetingNo) {
-        return success(digitalHumanService.status(meetingNo));
-    }
-
-    /** 让数字人在会议里播报一段文本（老师侧动作，用 hostToken 鉴权） */
-    @PostMapping("/digital/say")
-    public CommonResult<DigitalSayRespVO> digitalSay(@RequestBody DigitalSayReqVO reqVO) {
-        return success(digitalHumanService.say(reqVO));
-    }
-
     /**
-     * 掐断一条在途播报（跟页播报的「停止 / 翻页先断」都靠它，见 docs/18 §6）。
+     * 数字人可用性：前端据此显示「语音不可用」，而不是点了播报却静默无声。
      *
-     * <p>幂等：worker 侧那段已经播完时返回 false，不报错，编排层照样可以把状态收敛到 idle。
+     * <p>播报本身不在这里：它由放映页（{@code /index/ppt}）直接向 {@code POST /ppt/speech/speak}
+     * 取流播放（声音随共享轨到学生端），见 docs/16 §5.7。
      */
-    @PostMapping("/digital/say/cancel")
-    public CommonResult<Boolean> digitalSayCancel(@RequestBody DigitalCancelReqVO reqVO) {
-        return success(digitalHumanService.cancelSay(reqVO));
+    @GetMapping("/digital/status")
+    public CommonResult<DigitalStatusVO> digitalStatus() {
+        return success(digitalHumanService.status());
     }
 
 }

@@ -12,9 +12,17 @@
     >
       <template #actions>
         <template v-if="session">
+          <!-- 开始演讲 = 开始信号：让「PPT 放映页」念一段（声音只能在被共享的那一屏出声，见 speakDigital） -->
+          <el-button type="primary" :disabled="store.ended" @click="startLecture">
+            <el-icon class="btn-icon"><VideoPlay /></el-icon>
+            开始演讲
+          </el-button>
+          <!-- 停止真的停得下来：掐断请求即取消后端合成（旧口径要等它念完） -->
+          <el-button :disabled="store.ended" @click="stopDigital">停止演讲</el-button>
           <el-button @click="handleCopyLink">复制入会链接</el-button>
           <el-button v-if="!store.sharing" type="primary" @click="handleStartShare">开始共享</el-button>
           <el-button v-else @click="handleStopShare">停止共享</el-button>
+          <!-- 手输播报：多源 / 长文本的调试入口，与「开始演讲」信号并存 -->
           <el-button :disabled="store.ended" @click="openDigitalDialog">数字人播报</el-button>
           <el-button type="danger" :disabled="store.ended" @click="handleClose">结束会议</el-button>
         </template>
@@ -30,7 +38,7 @@
       description="学生端已收到结束提示，实时通道已断开。"
     >
       <div class="console-missing__action">
-        <el-button size="small" type="primary" @click="handleForgetMeetId">新建会议</el-button>
+        <el-button size="small" type="primary" @click="goCreateInPpt">去 PPT 页创建会议</el-button>
       </div>
     </el-alert>
 
@@ -67,38 +75,29 @@
     >
       <p>主持人凭据只存在创建这场会议的浏览器里：可能换了机器、清了存储，或这场会议已经结束。</p>
       <div class="console-missing__action">
-        <el-button size="small" type="primary" @click="handleForgetMeetId">新建会议</el-button>
+        <el-button size="small" type="primary" @click="goCreateInPpt">去 PPT 页创建会议</el-button>
       </div>
     </el-alert>
 
-    <section v-else-if="!session" class="console-create">
-      <el-form :model="form" label-width="80px" @submit.prevent>
-        <el-form-item label="会议标题">
-          <el-input
-            v-model="form.title"
-            placeholder="如：企业级应用开发综合实践 第 3 讲"
-            maxlength="100"
-            show-word-limit
-            @keyup.enter="handleCreate"
-          />
-        </el-form-item>
-      </el-form>
-      <el-button type="primary" :loading="creating" @click="handleCreate">创建会议</el-button>
-      <p class="console-create__tip">
-        创建后地址栏会带上会议号（<code>?meetid=</code>）：刷新、复制、另开标签页都回到这一场。
-        把入会链接发给学生，学生打开链接输入名字即可参会（免登录）。
-        老师端是控制台，不作为参会成员出现在名单里。
+    <!-- 控制台不再自己建会：它随会议一起打开（会议在 PPT 页创建，见 docs/16 §5.6） -->
+    <section v-else-if="!session" class="console-empty">
+      <h3 class="console-empty__title">会议在 PPT 页创建</h3>
+      <p class="console-empty__tip">
+        本页是老师控制台，地址栏带 <code>?meetid={会议号}</code> 时管理这一场。
+        开会请到「PPT 演示」页：导入 PPT → 写好讲稿 → 点「创建会议」，
+        控制台会自动带着这场会的凭据开在这里。
       </p>
+      <el-button type="primary" @click="goCreateInPpt">去 PPT 页创建会议</el-button>
 
       <!-- 本机还留着凭据的会议：不给入口的话，摘掉地址栏会议号后就再也回不去 -->
-      <div v-if="knownMeetings.length" class="console-create__known">
-        <p class="console-create__known-title">本机还能回到这些会议：</p>
-        <div class="console-create__known-list">
+      <div v-if="knownMeetings.length" class="console-empty__known">
+        <p class="console-empty__known-title">本机还能回到这些会议：</p>
+        <div class="console-empty__known-list">
           <button
             v-for="item in knownMeetings"
             :key="item.meetingNo"
             type="button"
-            class="console-create__known-item"
+            class="console-empty__known-item"
             @click="handleEnterMeeting(item.meetingNo)"
           >
             <strong>{{ item.meetingNo }}</strong>
@@ -114,7 +113,7 @@
           ref="stageRef"
           :sharing="store.sharing"
           placeholder="尚未共享画面"
-          hint="点击右上角「开始共享」，选中自动打开的「PPT 放映页」标签页"
+          hint="点击右上角「开始共享」，在选择框里选中「PPT 放映页」标签页（就是你创建会议的那个 PPT 页）"
         />
       </div>
 
@@ -129,7 +128,7 @@
         <el-tag v-if="!digitalStatus" type="info" size="small">状态未知</el-tag>
         <el-tag v-else-if="!digitalStatus.enabled" type="info" size="small">未启用</el-tag>
         <el-tag v-else-if="!digitalStatus.available" type="warning" size="small">
-          已启用但音频服务未就绪
+          已启用但语音未配置
         </el-tag>
         <el-tag v-else type="success" size="small">可用</el-tag>
         <span class="digital-dialog__hint">{{ digitalHint }}</span>
@@ -141,16 +140,11 @@
         :rows="4"
         maxlength="1000"
         show-word-limit
-        placeholder="要播报的内容（会由数字人在会议室里读出来）"
+        placeholder="要播报的内容（由「PPT 放映页」念出来，声音随屏幕共享到学生端）"
       />
       <template #footer>
         <el-button @click="digitalVisible = false">关闭</el-button>
-        <el-button
-          type="primary"
-          :loading="saying"
-          :disabled="!digitalText.trim() || !digitalStatus?.available"
-          @click="handleDigitalSay"
-        >
+        <el-button type="primary" :disabled="!digitalText.trim()" @click="handleDigitalSay">
           播报
         </el-button>
       </template>
@@ -159,65 +153,52 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Loading, VideoCamera } from '@element-plus/icons-vue'
+import { Loading, VideoCamera, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { closeMeeting, createMeeting, getDigitalStatus, getMeetingDetail, sayDigital } from '@/api/meeting'
+import { closeMeeting, getDigitalStatus, getMeetingDetail } from '@/api/meeting'
 import AttendeeList from './components/AttendeeList.vue'
 import ChatPanel from './components/ChatPanel.vue'
 import MeetingTopBar from './components/MeetingTopBar.vue'
 import ScreenStage from './components/ScreenStage.vue'
 import { useMeetingStore } from './stores/meeting'
 import { useLiveKitRoom, describeChatSend } from './hooks/useLiveKitRoom'
-// 键名与读写只有一份实现：演讲台（/meeting/:meetingNo/present）也要按会议号读同一份凭据
 import {
-  LEGACY_SESSION_KEY, SESSION_PREFIX, clearHostSession, readHostSession, writeHostSession,
-} from './utils/host-session'
+  clearHostSession,
+  listKnownMeetings,
+  migrateLegacyHostSession,
+  readHostSession,
+} from '@/utils/hostSession'
 
+/** 老师发言时的昵称与角色（与后端落库口径一致） */
 const HOST_NICKNAME = '老师'
 const ROLE_HOST = 1
-/**
- * 演讲台路由：`/meeting/{会议号}/present`。
- *
- * 相对路径自动跟随当前 origin（localhost 或热点下的局域网 IP 都能打开）；
- * 会议号进地址后，那一页能自己按会议号取出本机的主持人凭据，不需要靠查询串传凭据
- * （凭据绝不能进 URL，见 utils/host-session.js 与 docs/adr/0003）。
- */
-function presentPathOf(meetingNo) {
-  return `/meeting/${meetingNo}/present`
-}
 
 const store = useMeetingStore()
 const route = useRoute()
 const router = useRouter()
 const stageRef = ref(null)
-const creating = ref(false)
-const form = reactive({ title: '' })
 
 /** 主持人会话：{ meetingId, meetingNo, joinUrl, hostToken, title } */
 const session = ref(null)
-/** 放映页标签页句柄：同一浏览器会话内复用，避免每建一次会就多开一个页签 */
-let screeningTab = null
 
-// ===== 数字人播报（后续二阶段一，见 docs/17）=====
+// ===== 数字人播报（讲稿由「PPT 放映页」念，见 docs/16 §5.7）=====
 const digitalVisible = ref(false)
 const digitalText = ref('')
 const digitalStatus = ref(null)
-const saying = ref(false)
 
 const digitalHint = computed(() => {
   const status = digitalStatus.value
   if (!status) return '点「刷新状态」重新探测。'
-  if (!status.enabled) return '后端未开启数字人（tb.lecture.digital-human.enabled=false）。'
-  if (!status.workerReachable) return '请启动音频服务：cd digital-human-worker && npm start，然后刷新状态。'
-  return `音频服务在线，将在房间 ${status.room} 内播报。`
+  if (!status.enabled) return '后端未开启语音（tb.lecture.digital-human.enabled=false）。'
+  if (!status.available) return '后端未配置语音合成（DashScope Key 为空），配好并重启后再刷新。'
+  return '声音在「PPT 放映页」播放，随屏幕共享到学生端。'
 })
 
 async function refreshDigitalStatus() {
-  if (!session.value?.meetingNo) return
   try {
-    digitalStatus.value = await getDigitalStatus(session.value.meetingNo)
+    digitalStatus.value = await getDigitalStatus()
   } catch {
     digitalStatus.value = null
   }
@@ -228,35 +209,79 @@ function openDigitalDialog() {
   refreshDigitalStatus()
 }
 
-async function handleDigitalSay() {
+/** 播报总线：一个会议一条频道，与主持人凭据的存储键同形（`tb-meeting-host:{会议号}`） */
+const CHANNEL_PREFIX = 'tb-meeting:'
+
+/**
+ * 给放映页发一条指令。
+ *
+ * <p>为什么不是接口：声音必须在**被共享的那一屏**（放映页）播出来，学生才听得到，
+ * 而那一页也是唯一能顺手驱动口型的地方（口型跟的是它正在播的音频）。总线只做单向
+ * （控制台 → 放映页）：翻页与「现在第几页」仍由放映页自己说了算。
+ * 每条指令开一个短命频道：控制台不需要长期订阅，也就没有要清理的连接。
+ *
+ * @param {{ action: 'speak'|'stop', text?: string }} message 指令
+ * @returns {boolean} 是否已发出（没有会议号或浏览器不支持时为 false）
+ */
+function postToPresenter(message) {
+  if (!session.value?.meetingNo || typeof BroadcastChannel === 'undefined') return false
+  const channel = new BroadcastChannel(`${CHANNEL_PREFIX}${session.value.meetingNo}`)
+  channel.postMessage(message)
+  channel.close()
+  return true
+}
+
+/**
+ * 把一段文本交给放映页播报。
+ *
+ * <p>本端先回显一条「数字人发言」：放映页收到后会以数字人身份落库（彩排试听不落库），
+ * 这里只是让老师当场看见自己说了什么，与聊天的本端回显同一口径。
+ *
+ * @param {string} text 要播报的文本
+ * @returns {boolean} 是否已发出指令
+ */
+function speakDigital(text) {
+  const content = (text ?? '').trim()
+  if (!content || !postToPresenter({ action: 'speak', text: content })) return false
+  store.applyEvent({
+    type: 'chat.message',
+    id: globalThis.crypto?.randomUUID?.() ?? `local-${Date.now()}`,
+    attendeeId: null,
+    nickname: '数字人',
+    role: 3,
+    content,
+    kind: 2,
+    createTime: new Date().toISOString(),
+    self: false,
+  })
+  ElMessage.success('已交给「PPT 放映页」播报：声音从那一页出去，随屏幕共享到学生端')
+  return true
+}
+
+/** 停止播报：掐断放映页那条请求，后端合成随即取消（旧口径只能等它念完） */
+function stopDigital() {
+  if (!postToPresenter({ action: 'stop' })) return
+  ElMessage.info('已让「PPT 放映页」停止播报')
+}
+
+/** 本轮「开始演讲」的固定内容：真正的「讲什么」要等当前页讲稿 / AI 现场讲词落地（docs/18 A/B 段） */
+const MOCK_LECTURE_TEXT = '你好'
+
+/**
+ * 「开始演讲」：一个**开始信号** —— 表示数字人可以从这里开始讲了。
+ *
+ * <p>它不是"把文本框里的字发出去"：本轮还没有按页取讲稿，所以内容固定为 {@link MOCK_LECTURE_TEXT}。
+ * 下一轮把取文本那一步换成「放映页念当前页 `remark` / AI 现场讲词」时，**信号本身不变**（docs/18 §5.2）。
+ */
+function startLecture() {
+  speakDigital(MOCK_LECTURE_TEXT)
+}
+
+/** 【数字人播报】手输框：多源 / 长文本的调试入口，与「开始演讲」信号并存 */
+function handleDigitalSay() {
   const text = digitalText.value.trim()
-  if (!text || !session.value) return
-  saying.value = true
-  try {
-    const result = await sayDigital({
-      meetingNo: session.value.meetingNo,
-      hostToken: session.value.hostToken,
-      text,
-    })
-    ElMessage.success(`数字人已开始播报（约 ${(result.durationMs / 1000).toFixed(1)} 秒，首包 ${result.firstChunkMs}ms）`)
-    // 本端回显：后端已以数字人身份落库，但 DataChannel 不会把这条广播出去
-    store.applyEvent({
-      type: 'chat.message',
-      id: result.requestId,
-      attendeeId: null,
-      nickname: '数字人',
-      role: 3,
-      content: text,
-      kind: 2,
-      createTime: result.message?.createTime ?? new Date().toISOString(),
-      self: false,
-    })
-    digitalText.value = ''
-  } catch (error) {
-    ElMessage.error(error?.message ?? '数字人播报失败')
-  } finally {
-    saying.value = false
-  }
+  if (!text) return
+  if (speakDigital(text)) digitalText.value = ''
 }
 
 /**
@@ -310,66 +335,6 @@ async function syncEndedState() {
   }
 }
 
-/**
- * 同步占位一个空白标签页。
- *
- * <p>必须在**点击的同步流程里**打开：`await` 之后再 `window.open` 会被浏览器弹窗拦截器拦掉。
- * 已存在放映页时直接复用，避免每建一次会就多开一个页签。
- */
-function reserveScreeningTab() {
-  if (screeningTab && !screeningTab.closed) return screeningTab
-  screeningTab = window.open('about:blank', '_blank')
-  return screeningTab
-}
-
-/** 把演讲台地址交给已占位的标签页；演讲台自己进入放映状态 */
-function openScreeningTab(tab, meetingNo) {
-  const url = presentPathOf(meetingNo)
-  if (!tab) {
-    ElMessage.warning(`浏览器拦截了新标签页：请允许本站弹出窗口，或手动打开 ${url}`)
-    return
-  }
-  tab.location.replace(url)
-  tab.focus?.()
-}
-
-async function handleCreate() {
-  const title = form.title.trim()
-  if (!title) {
-    ElMessage.warning('请先填写会议标题')
-    return
-  }
-  // 先占位再请求：见 reserveScreeningTab 的注释（弹窗拦截）
-  const tab = reserveScreeningTab()
-  creating.value = true
-  try {
-    const created = await createMeeting(title)
-    // 上一场会议的数据不要串到这一场（`ended` 尤其要清，否则新会议一上来就是「已结束」态）
-    clearCurrentMeeting()
-    // 标题随会话一起存：create 响应不含 title，刷新恢复时先用本地值顶上，再以详情接口为准
-    session.value = { ...created, title }
-    writeHostSession(session.value)
-    // 地址栏立刻带上会议号：刷新 / 复制到新标签页都指向这一场（watch 认出同一场会直接跳过，不会重复拉详情）
-    await router.replace({ query: { meetid: created.meetingNo } })
-    store.setMeeting({ title, meetingNo: created.meetingNo, status: 1 })
-    ElMessage.success(`会议已创建，会议号 ${created.meetingNo}`)
-    // 这是本场会唯一一次能看到凭据，错过就得重开（ADR-0003 决定不提供找回）
-    credentialVisible.value = true
-    // 详情接口才会下发可发布的访问令牌（create 只返回会议号与主持人凭据）
-    await loadDetail()
-    // 控制台负责「讲与管」，演讲台负责「放与念」：建会成功后把演讲台打开成放映状态
-    openScreeningTab(tab, created.meetingNo)
-    // 顺手把放映页共享出去（浏览器要求用户手势，被拒绝会退化成提示）
-    await tryAutoShare()
-  } catch (error) {
-    // 建会失败就别留一个空白页签
-    tab?.close()
-    ElMessage.error(error?.message || '创建会议失败')
-  } finally {
-    creating.value = false
-  }
-}
-
 /** 拉详情：补齐成员与历史，并用其中的 realtime 连接房间 */
 async function loadDetail() {
   if (!session.value) return null
@@ -418,24 +383,6 @@ async function handleCopyCredential() {
   }
 }
 
-/**
- * 建会后自动把放映页共享出去。
- *
- * <p>浏览器规定 `getDisplayMedia` 必须由**用户手势**直接触发，而建会流程已经用掉一次手势
- * （`window.open` 占位放映页），所以这次自动尝试多半会被拒绝：成功则老师零操作，
- * 失败就退化为提示，由老师点「开始共享」补一次真实手势。
- * 无论哪条路径，共享目标都是那个放映页标签页（见 `startScreenShare` 的候选排除）。
- */
-async function tryAutoShare() {
-  try {
-    await room.startScreenShare()
-    ElMessage.success('已开始共享放映页，学生端能看到画面')
-  } catch {
-    // 被浏览器拒绝（无用户手势）或老师在共享选择框里点了取消，都引导到手动按钮
-    ElMessage.info('请在右上角点「开始共享」，在弹出的选择框里选中「PPT 放映页」标签页')
-  }
-}
-
 async function handleStartShare() {
   try {
     await room.startScreenShare()
@@ -463,12 +410,12 @@ async function handleClose() {
   try {
     // 后端会把 LiveKit 房间删掉：房间内所有学生立刻收到 Disconnected，这就是「会议已结束」的通知
     await closeMeeting(session.value.meetingNo, session.value.hostToken)
-    // 这一场到此为止：删掉本机凭据、摘掉地址栏会议号（watch 会清掉界面状态），控制台回到建会态
+    // 这一场到此为止：删掉本机凭据、摘掉地址栏会议号（watch 会清掉界面状态），控制台回到空态
     clearHostSession(session.value.meetingNo)
     credentialVisible.value = false
     await router.replace({ query: {} })
     await room.disconnect()
-    ElMessage.success('会议已结束，学生端已断开，可以创建下一场')
+    ElMessage.success('会议已结束，学生端已断开；回到「PPT 放映页」标签页按 ESC 退出放映即可开下一场')
   } catch (error) {
     ElMessage.error(error?.message || '结束会议失败')
   }
@@ -485,22 +432,6 @@ async function handleSend(content) {
   if (tip) ElMessage.warning(tip)
 }
 
-// ========== 主持人会话的本地存取（实现见 utils/host-session.js） ==========
-
-/** 扫一遍本机存着的会议会话（先收键名再读，避免读的过程中删键导致漏项） */
-function loadKnownMeetings() {
-  const keys = []
-  for (let i = 0; i < window.localStorage.length; i += 1) {
-    const key = window.localStorage.key(i)
-    if (key?.startsWith(SESSION_PREFIX)) keys.push(key)
-  }
-  const list = keys
-    .map((key) => readHostSession(key.slice(SESSION_PREFIX.length)))
-    .filter(Boolean)
-    .map((saved) => ({ meetingNo: saved.meetingNo, title: saved.title || '未命名会议' }))
-  knownMeetings.value = list.sort((a, b) => a.meetingNo.localeCompare(b.meetingNo))
-}
-
 /** 清掉当前这一场的界面状态（换会议号时用：数据串场比多点一次更糟） */
 function clearCurrentMeeting() {
   session.value = null
@@ -508,40 +439,25 @@ function clearCurrentMeeting() {
 }
 
 /**
- * 兼容改造前的会话形态（单个 `sessionStorage` 键）→ 按会议号切分的 `localStorage` 键，一次性迁移。
- *
- * @returns {string|null} 迁移后的会议号（调用方据此补地址栏），没有可迁移的会话时返回 null
- */
-function migrateLegacySession() {
-  const raw = window.sessionStorage.getItem(LEGACY_SESSION_KEY)
-  if (!raw) return null
-  window.sessionStorage.removeItem(LEGACY_SESSION_KEY)
-  try {
-    const saved = JSON.parse(raw)
-    if (!saved?.meetingNo || !saved?.hostToken) return null
-    writeHostSession(saved)
-    return saved.meetingNo
-  } catch {
-    return null
-  }
-}
-
-/**
  * 按地址栏恢复：`?meetid={会议号}` 指向哪一场就恢复哪一场。
  *
  * <p>主持人凭据只存在创建会议的那个浏览器里，因此「地址栏带会议号但本地没凭据」是正常情况
- * （换机器 / 清了存储 / 会议已结束）：不报错，只提示并给「新建会议」这个出口。
+ * （换机器 / 清了存储 / 会议已结束）：不报错，只提示并给「去 PPT 页创建会议」这个出口。
+ *
+ * <p>`?credential=1` 由 PPT 页建会后写入：控制台是老师第一个看到「凭据只此一次」的地方
+ * （PPT 页建会即进放映，全屏覆盖层会把弹窗挡住），提示一次后立刻从地址栏摘掉，刷新不再重复。
  */
 async function restoreFromQuery() {
   const meetingNo = meetId.value
   if (!meetingNo) {
     clearCurrentMeeting()
     missingCredential.value = false
-    // 回到建会态：顺手列出本机还能回到的会议
-    loadKnownMeetings()
+    credentialVisible.value = false
+    // 没有会议号 = 空态（会议在 PPT 页创建）：顺手列出本机还能回到的会议
+    knownMeetings.value = listKnownMeetings()
     return
   }
-  // 地址栏刚由本页写入（建会成功后 `router.replace`）：这一场已拉过详情、也连上房间，不必再恢复一遍
+  // 地址栏刚由本页写入（`handleEnterMeeting`）：这一场已拉过详情、也连上房间，不必再恢复一遍
   if (session.value?.meetingNo === meetingNo) return
 
   const saved = readHostSession(meetingNo)
@@ -551,13 +467,15 @@ async function restoreFromQuery() {
     return
   }
 
+  const justCreated = route.query.credential === '1'
   missingCredential.value = false
   restoring.value = true
   clearCurrentMeeting()
   session.value = saved
-  form.title = saved.title ?? ''
+  credentialVisible.value = justCreated
   try {
     await loadDetail()
+    if (justCreated) await router.replace({ query: { meetid: meetingNo } })
   } catch {
     // 凭据失效（会议被删 / 换了库）或详情接口报错：清掉本地凭据，落到提示态
     clearHostSession(meetingNo)
@@ -575,21 +493,24 @@ watch(meetId, restoreFromQuery, { immediate: true })
 onMounted(async () => {
   if (meetId.value) return
   // 改造期兼容：把旧键里的会话搬进新键，并把会议号补进地址栏（上面的 watch 会接着恢复）
-  const adopted = migrateLegacySession()
+  const adopted = migrateLegacyHostSession()
   if (adopted) await router.replace({ query: { meetid: adopted } })
 })
 
-/** 从建会态回到某一已存在的会议（地址栏带上会议号，`watch` 接手恢复） */
+/** 从空态回到某一已存在的会议（地址栏带上会议号，`watch` 接手恢复） */
 function handleEnterMeeting(meetingNo) {
   router.push({ query: { meetid: meetingNo } })
 }
 
-/** 「新建会议」出口：摘掉地址栏会议号、断开当前房间，回到建会态 */
-async function handleForgetMeetId() {
-  missingCredential.value = false
-  credentialVisible.value = false
-  await router.replace({ query: {} })
+/**
+ * 「去 PPT 页创建会议」出口。
+ *
+ * <p>控制台自己不能建会：甲方案里被共享的那一屏是 PPT 页，建会必须发生在那儿
+ * （见 docs/16 §5.6）。这里只负责断开当前房间并把老师送过去。
+ */
+async function goCreateInPpt() {
   await room.disconnect()
+  router.push('/index/ppt')
 }
 
 onBeforeUnmount(() => {
@@ -618,7 +539,7 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
-.console-create {
+.console-empty {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -630,14 +551,20 @@ onBeforeUnmount(() => {
   box-shadow: var(--tb-shadow-1);
 }
 
-.console-create__tip {
+.console-empty__title {
+  margin: 0;
+  color: var(--tb-text-primary);
+  font-size: var(--tb-text-lg);
+}
+
+.console-empty__tip {
   margin: 0;
   color: var(--tb-text-secondary);
   font-size: var(--tb-text-sm);
   line-height: 1.6;
 }
 
-.console-create__tip code {
+.console-empty__tip code {
   padding: 0 0.25rem;
   background: var(--tb-bg-raised);
   border-radius: var(--tb-radius-xs);
@@ -645,7 +572,7 @@ onBeforeUnmount(() => {
   font-size: 0.9em;
 }
 
-/* 按地址栏恢复中的占位：顶掉建会表单，避免先闪一下「创建会议」 */
+/* 按地址栏恢复中的占位：顶掉空态，避免先闪一下「会议在 PPT 页创建」 */
 .console-loading {
   display: flex;
   align-items: center;
@@ -680,8 +607,8 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-/* 建会态下列出的「本机还能回到的会议」 */
-.console-create__known {
+/* 空态下列出的「本机还能回到的会议」 */
+.console-empty__known {
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
@@ -691,20 +618,20 @@ onBeforeUnmount(() => {
   border-top: 1px dashed var(--tb-border-strong);
 }
 
-.console-create__known-title {
+.console-empty__known-title {
   margin: 0;
   color: var(--tb-text-secondary);
   font-size: var(--tb-text-sm);
 }
 
-.console-create__known-list {
+.console-empty__known-list {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
 /* 可点击的会议入口必须是真按钮：el-tag 挂 click 拿不到 focus 与键盘可达性 */
-.console-create__known-item {
+.console-empty__known-item {
   display: inline-flex;
   align-items: baseline;
   gap: 0.375rem;
@@ -718,12 +645,12 @@ onBeforeUnmount(() => {
   transition: border-color var(--tb-dur-1) var(--tb-ease-out), background var(--tb-dur-1) var(--tb-ease-out);
 }
 
-.console-create__known-item:hover {
+.console-empty__known-item:hover {
   background: var(--tb-primary-soft);
   border-color: var(--tb-primary-border);
 }
 
-.console-create__known-item strong {
+.console-empty__known-item strong {
   color: var(--tb-text-primary);
   font-size: var(--tb-text-md);
   letter-spacing: 0.08em;

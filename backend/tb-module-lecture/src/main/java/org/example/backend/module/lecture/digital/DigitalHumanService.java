@@ -1,63 +1,37 @@
 package org.example.backend.module.lecture.digital;
 
-import org.example.backend.module.lecture.model.vo.DigitalCancelReqVO;
-import org.example.backend.module.lecture.model.vo.DigitalSayReqVO;
-import org.example.backend.module.lecture.model.vo.DigitalSayRespVO;
+import org.example.backend.module.lecture.model.vo.DigitalSpeakReqVO;
 import org.example.backend.module.lecture.model.vo.DigitalStatusVO;
-
-import java.io.OutputStream;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * AI 数字人 Service（后续二阶段一，见 {@code docs/17-AI数字人语音链路方案.md}）。
+ * AI 数字人播报 Service。
  *
- * <p>阶段一只做「固定文本 → CosyVoice 流式合成 → worker → LiveKit 音频轨」，不含 LLM 决策与 ASR。
+ * <p>声音**不经过任何中间进程**：后端把 CosyVoice 的 PCM 边合成边以 SSE 推给**发起请求的那个浏览器**
+ * （老师放映 PPT 的那一页），由该页播放；那一页正被屏幕共享，声音因此随共享轨一起到学生端。
+ * 旧的两段式中继（Node worker 进房间、发一条数字人音频轨）已删除，原因见 {@code docs/16} §5.7。
  */
 public interface DigitalHumanService {
 
     /**
-     * 数字人可用性：前端据此决定是显示「数字人不可用」还是照常播报。
+     * 数字人可用性：前端据此显示「语音不可用」，而不是点了播报却静默无声。
      *
-     * @param meetingNo 会议号
-     * @return 开关、worker 可达性与房间信息
+     * <p>不再探测任何进程（worker 已删）：只看开关与 DashScope 合成配置是否齐备。
+     *
+     * @return 开关、是否可用
      */
-    DigitalStatusVO status(String meetingNo);
+    DigitalStatusVO status();
 
     /**
-     * 让数字人在会议房间里播报一段文本。
+     * 流式播报：把文本合成为 48kHz / 单声道 / 16bit PCM，边产出边以 SSE 事件推给调用方。
      *
-     * <p>同步语义：方法返回即代表音频已完整交给 worker（不代表已播完）。播报内容以数字人身份落消息表。
+     * <p>事件协议（{@code docs/16} §5.7）：{@code status}（started，含采样率）→ 若干 {@code chunk}
+     * （base64 PCM）→ {@code status}（done，含字节数与首包耗时）；合成失败发 {@code error}。
+     * 调用方断开连接即取消合成——底层把「写不出去」映射成 IOException，合成实现据此停止继续取音频。
      *
-     * @param reqVO 会议号、主持人凭据与文本
-     * @return 播报统计与已落库的消息
+     * @param reqVO 文本与（可空的）会议信息
+     * @return SSE 事件流；校验不通过时同步抛业务异常（此时返回的是 JSON 错误体，不是事件流）
      */
-    DigitalSayRespVO say(DigitalSayReqVO reqVO);
-
-    /**
-     * 结束会议时请 worker 离开房间（best-effort，失败不抛）。
-     *
-     * @param meetingNo 会议号
-     */
-    void leaveRoom(String meetingNo);
-
-    /**
-     * 取消一条在途播报（老师侧动作，用 {@code hostToken} 鉴权）。
-     *
-     * <p>语义是「让 worker 停止推送这段并清空未播队列」，对应那次阻塞中的 {@code say} 会很快返回。
-     * 幂等：worker 侧没有该 requestId（已播完）时返回 false，不报错。
-     *
-     * @param reqVO 会议号、主持人凭据与要取消的 requestId
-     * @return 是否真的取消到了一段在途播报
-     */
-    boolean cancelSay(DigitalCancelReqVO reqVO);
-
-    /**
-     * 试听：把一段文本合成成 WAV 写进出参流，<b>不进房间、不依赖 worker</b>（见 {@code docs/18} §5.3）。
-     *
-     * <p>放映形态（彩排）用这条路，好处是 worker 没起来、LiveKit 没配也能听效果，且不占参会席位。
-     *
-     * @param text 要合成的文本，上限 {@code tb.lecture.digital-human.max-speak-chars}
-     * @param out  目标流（44 字节 WAV 头 + 48kHz/单声道/16bit PCM；本方法不关闭该流）
-     */
-    void speak(String text, OutputStream out);
+    SseEmitter speak(DigitalSpeakReqVO reqVO);
 
 }

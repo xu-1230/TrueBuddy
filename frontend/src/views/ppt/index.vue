@@ -19,21 +19,16 @@
           <el-icon class="btn-icon"><VideoPlay /></el-icon>
           从当前页放映
         </el-button>
-        <!-- 本场时长：AI 按「总时长 ÷ 页数 × 4.0 字/秒」给每页定篇幅（换算在后端，只此一处） -->
-        <span class="ppt-toolbar-field">
-          本场时长
-          <el-input-number
-            v-model="aiTargetMinutes"
-            class="ppt-target-minutes"
-            :min="1"
-            :max="300"
-            :step="1"
-            size="small"
-            :disabled="aiRunning"
-            controls-position="right"
-          />
-          分钟
-        </span>
+        <!-- 创建会议：本页就是被共享的那一屏，控制台随后自动开成另一个标签页（docs/16 §5.6） -->
+        <el-button type="primary" :disabled="screening" @click="openMeetingDialog">
+          <el-icon class="btn-icon"><VideoCamera /></el-icon>
+          创建会议
+        </el-button>
+        <!-- 试听本页：彩排时没有控制台，播报入口就在这一页（声音从这一页出去，共享后学生才听得到） -->
+        <el-button :type="speaking ? 'danger' : 'default'" @click="speaking ? stopSpeaking() : speakCurrentPage()">
+          <el-icon class="btn-icon"><Microphone /></el-icon>
+          {{ speaking ? '停止' : '试听本页' }}
+        </el-button>
         <el-tooltip content="用 AI 把全部页的备注改写成演讲稿" placement="bottom" :show-after="300">
           <el-button type="warning" plain :loading="aiRunning" @click="optimizeAllRemarks">
             <AiSparkIcon class="btn-icon" :size="14" />
@@ -228,6 +223,31 @@
       @apply="applyBatchRemarks"
       @retry-failed="retryFailedRemarks"
     />
+
+    <!-- 创建会议：确认后本页立刻进放映（被共享的就是这一屏），控制台另开一个标签页 -->
+    <el-dialog v-model="meeting.visible" title="创建会议" width="480px">
+      <el-form label-width="80px" @submit.prevent>
+        <el-form-item label="会议标题">
+          <el-input
+            v-model="meeting.title"
+            placeholder="如：企业级应用开发综合实践 第 3 讲"
+            maxlength="100"
+            show-word-limit
+            @keyup.enter="handleCreateMeeting"
+          />
+        </el-form-item>
+      </el-form>
+      <!-- 没有讲稿不阻断建会（无闸门），只把页码列出来：讲稿就是备注，会议的画面是这份 PPT 本身 -->
+      <p v-if="pagesWithoutRemark.length" class="meeting-dialog__hint">
+        第 {{ pagesWithoutRemark.slice(0, 8).join('、') }} 页还没有讲稿（备注）<template v-if="pagesWithoutRemark.length > 8">等 {{ pagesWithoutRemark.length }} 页</template>：不影响开会，建议先补上。
+      </p>
+      <template #footer>
+        <el-button @click="meeting.visible = false">取消</el-button>
+        <el-button type="primary" :loading="meeting.creating" @click="handleCreateMeeting">
+          创建并开始
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -236,14 +256,14 @@ import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUnmounted
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  CaretLeft, CaretRight, DocumentChecked, FullScreen, Minus, Monitor, Plus, UploadFilled, VideoPlay,
+  CaretLeft, CaretRight, DocumentChecked, FullScreen, Microphone, Minus, Monitor, Plus, UploadFilled, VideoCamera, VideoPlay,
 } from '@element-plus/icons-vue'
 import * as PIXI from 'pixi.js'
 import { Live2DModel } from 'pixi-live2d-display/cubism4'
 import { convertPPTXToPPTist } from 'pptx-to-pptist'
 import { useSlidesStore } from './stores/slides'
 import { useScreenStore } from './stores/screen'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { VIEWPORT_SIZE } from './configs/canvas'
 import useScreening from './hooks/useScreening'
 
@@ -251,6 +271,10 @@ import './styles/prosemirror.css'
 import './styles/animation.css'
 
 import { optimizeSpeech } from '@/api/ppt'
+import { createMeeting } from '@/api/meeting'
+import { readHostSession, writeHostSession } from '@/utils/hostSession'
+import { readEventStream } from '@/utils/event-stream'
+import { createSpeechPlayer } from './utils/speech-player'
 import { buildSpeechPages, extractSlideTitle, htmlToPlainText } from './utils/slide-text'
 import ThumbnailSlide from './components/thumbnail/ThumbnailSlide.vue'
 import ScreenSlide from './components/screen/ScreenSlide.vue'
@@ -269,6 +293,7 @@ const { slides, slideIndex, viewportRatio, currentSlide } = storeToRefs(slidesSt
 const { screening } = storeToRefs(screenStore)
 const { enterScreening, enterScreeningFromStart } = useScreening()
 const route = useRoute()
+const router = useRouter()
 
 /**
  * 由路由参数进入放映：`/index/ppt?screen=1`
@@ -285,8 +310,189 @@ const enterScreeningByQuery = () => {
 }
 
 onMounted(enterScreeningByQuery)
-// 命中已存在的放映页签时（window.open 复用同名窗口）组件不会重新挂载，因此同时监听参数变化
+// 同一个标签页被再次导航到 `?screen=1` 时组件不会重新挂载，因此同时监听参数变化
 watch(() => route.query.screen, enterScreeningByQuery)
+
+// ===== 讲稿播报（本页出声，声音随共享轨到学生端）=====
+// 声音的终点就是这一页：它正被屏幕共享，学生听到的就是这里放出来的 PCM（docs/16 §5.7）。
+// 因此播报能力长在放映页，触发有两条路：
+// ① 控制台点「开始演讲」→ 经 BroadcastChannel 把文本送过来（按钮在另一个标签页，中间必须有条通道）；
+// ② 本页「试听本页」：彩排时没有控制台，直接念当前页的讲稿。
+// 「停止」= 掐断请求：后端合成随之取消（写不出去即停），播放器也立刻安静。
+
+/** 播报接口：与讲稿生成同口径（`/ppt/**` 免登录，故带 `/api` 前缀走 Vite 代理） */
+const SPEAK_PATH = '/api/ppt/speech/speak'
+/** 播报总线：一个会议一条频道，与主持人凭据的存储键同形（`tb-meeting-host:{会议号}`） */
+const CHANNEL_PREFIX = 'tb-meeting:'
+
+/** 本页是否正在念讲稿（按钮文案与防重复点击用） */
+const speaking = ref(false)
+/** 数字人口型开合度 0–1：由**本页正在播的音频**算出（不是远端哪条轨） */
+const mouthLevel = ref(0)
+
+const speechPlayer = createSpeechPlayer({
+  onLevel: (level) => {
+    mouthLevel.value = level
+  },
+})
+
+/** 当前播报的中断句柄：停止演讲 / 念下一段 / 离开页面都靠它取消合成 */
+let speakAbort = null
+/** 正在监听的总线（换会议号要换频道） */
+let bus = null
+
+/** 本页所属的会议号：由创建会议或 `?meetid=` 带进来；没有就是纯彩排 */
+const presentingMeetingNo = computed(() => String(route.query.meetid ?? '').trim())
+
+/** 停止播报：掐请求 + 立刻安静（播放器会把已排期与队列里的音频一起丢掉） */
+function stopSpeaking() {
+  speakAbort?.abort()
+  speakAbort = null
+  speechPlayer.stop()
+  speaking.value = false
+}
+
+/**
+ * 念一段讲稿。
+ *
+ * <p>顺序不能变：先停掉上一段（否则两段声音会叠在一起），再建新的中断句柄。
+ * 会议号与主持人凭据都给齐时才落库成「数字人发言」——彩排试听不该出现在会议记录里。
+ *
+ * @param {string} text 要念的文本
+ */
+async function speak(text) {
+  const content = (text ?? '').trim()
+  if (!content) {
+    ElMessage.warning('这一页还没有讲稿：先写备注，或用备注区右上角的 AI 生成')
+    return
+  }
+  stopSpeaking()
+  const controller = new AbortController()
+  speakAbort = controller
+  speaking.value = true
+
+  const meetingNo = presentingMeetingNo.value
+  const hostToken = meetingNo ? readHostSession(meetingNo)?.hostToken : ''
+  try {
+    await readEventStream(SPEAK_PATH, {
+      body: { text: content, meetingNo: meetingNo || undefined, hostToken: hostToken || undefined },
+      signal: controller.signal,
+      onEvent: (event, payload) => {
+        if (event === 'chunk') {
+          speechPlayer.feed(payload)
+          return
+        }
+        if (event === 'error') {
+          ElMessage.error(payload?.message || '语音合成失败')
+        }
+      },
+    })
+  } catch (error) {
+    // 自己取消的（停止演讲 / 换一段 / 关页面）不是错误，别报给老师
+    if (!controller.signal.aborted) ElMessage.error(error?.message || '播报失败')
+  } finally {
+    if (speakAbort === controller) {
+      speakAbort = null
+      speaking.value = false
+    }
+  }
+}
+
+/** 试听本页（彩排用，不需要会议）：读的是备注区草稿，未保存的改动也能先听一遍 */
+function speakCurrentPage() {
+  speak(remarkDraft.value)
+}
+
+/**
+ * 接住控制台的播报指令。
+ *
+ * <p>为什么用总线而不是接口：声音只能在**这一页**播（只有它被共享），而按钮在控制台那个标签页。
+ * 只做单向（控制台 → 本页）：翻页与「现在第几页」仍由本页自己说了算（页面真相只有一个）。
+ * 换会议号就换频道，上一场会的指令打不进来。
+ */
+function watchConsole() {
+  bus?.close()
+  bus = null
+  const meetingNo = presentingMeetingNo.value
+  if (!meetingNo || typeof BroadcastChannel === 'undefined') return
+  bus = new BroadcastChannel(`${CHANNEL_PREFIX}${meetingNo}`)
+  bus.onmessage = (event) => {
+    const message = event?.data ?? {}
+    if (message.action === 'speak') speak(message.text)
+    if (message.action === 'stop') stopSpeaking()
+  }
+}
+
+// `immediate` 让「带着 ?meetid= 刷新」也能挂上这一场的总线
+watch(presentingMeetingNo, watchConsole, { immediate: true })
+
+// ===== 创建会议 =====
+// 建会后**本页就是被共享的那一屏**：控制台是「名单 + 聊天」，而 `.ppt-screen-view` 是
+// `z-index:9999` 的全屏覆盖层，侧栏放在这里一定会被学生看到，所以控制台只能另开一个标签页。
+
+/** 控制台路由：相对路径，自动跟随当前 origin（localhost 或热点下的局域网 IP 都能打开） */
+const CONSOLE_PATH = '/index/meeting'
+
+const meeting = reactive({ visible: false, title: '', creating: false })
+/** 控制台标签页句柄：同一浏览器会话内复用，避免每建一次会就多开一个页签 */
+let consoleTab = null
+
+/** 还没有讲稿（备注）的页码，1 基；只作建会前的提示，**不阻断**（见 docs/16 §5.6） */
+const pagesWithoutRemark = computed(() => slides.value
+  .map((slide, index) => (htmlToPlainText(slide.remark ?? '').trim() ? 0 : index + 1))
+  .filter(Boolean))
+
+function openMeetingDialog() {
+  meeting.visible = true
+}
+
+/** 控制台地址：`credential=1` 让控制台提示一次「凭据只此一次」，提示完它自己会把参数摘掉 */
+function consoleUrl(meetingNo) {
+  return `${CONSOLE_PATH}?meetid=${meetingNo}&credential=1`
+}
+
+/**
+ * 创建会议并开始讲。
+ *
+ * <p>顺序不能变：`window.open` 必须在**点击的同步流程里**执行（过了 `await` 会被弹窗拦截器拦掉）。
+ * 拿不到控制台标签页就整件事失败，**绝不能先进放映**——否则老师已经全屏讲义，
+ * 而提示被那个覆盖层压在下面，什么也看不到。
+ *
+ * <p>共享仍由控制台点「开始共享」发起（`selfBrowserSurface: 'exclude'` 会把控制台自己排除在候选外，
+ * 老师只能选到本页）。这里只把本页切进放映、并把标题改成「PPT 放映页」——共享选择框里靠它认页面。
+ */
+async function handleCreateMeeting() {
+  const title = meeting.title.trim()
+  if (!title) {
+    ElMessage.warning('请先填写会议标题')
+    return
+  }
+  if (!consoleTab || consoleTab.closed) consoleTab = window.open('about:blank', '_blank')
+  meeting.creating = true
+  try {
+    const created = await createMeeting(title)
+    // 凭据只随 create 下发一次（ADR-0003）：先落本机，控制台标签页靠它恢复这一场
+    writeHostSession({ ...created, title })
+    const url = consoleUrl(created.meetingNo)
+    if (!consoleTab || consoleTab.closed) {
+      throw new Error(`浏览器拦截了新标签页：请允许本站弹出窗口，或手动打开 ${url}`)
+    }
+    meeting.visible = false
+    // 地址带上会议号：刷新 / 重新打开这条链接时，放映页才知道自己在哪一场（会议号不是秘密，凭据不进 URL）。
+    // 这次 replace 会命中 `enterScreeningByQuery`（进放映 + 把标题改成「PPT 放映页」，共享选择框里靠它认页面），
+    // 同时让本页挂上这一场的播报总线（见 `watchConsole`）。
+    await router.replace({ query: { screen: '1', meetid: created.meetingNo } })
+    consoleTab.location.replace(url)
+    consoleTab.focus?.()
+    ElMessage.success(`会议已创建：${created.meetingNo}。到控制台点「开始共享」并选中「PPT 放映页」`)
+  } catch (error) {
+    // 建会失败（或标签页没开出来）就别留一个空白页签
+    consoleTab?.close?.()
+    ElMessage.error(error?.message || '创建会议失败')
+  } finally {
+    meeting.creating = false
+  }
+}
 
 const fileInputRef = ref(null)
 
@@ -349,6 +555,10 @@ onMounted(() => {
 // 放在 beforeUnmount：此时 canvas 仍在 DOM 中，PIXI 可安全释放渲染器与 WebGL 上下文
 onBeforeUnmount(() => {
   destroyLive2D()
+  // 离开 PPT 页就别再念了：掐断请求即取消后端合成，随后收掉播放器与总线
+  stopSpeaking()
+  bus?.close()
+  speechPlayer.destroy()
   // 离开 PPT 页就别再等讲稿了（后端仍会把当前批次跑完，这是无状态接口的固有代价）
   aiAbortController?.abort()
 })
@@ -439,8 +649,8 @@ const resizeRemark = (e) => {
 }
 
 // ===== AI 讲稿优化（备注区星形按钮 = 本页；工具栏按钮 = 全部）=====
-/** 本场默认时长（分钟）：用于把总时长均摊成每页目标字数（后端按 4.0 字/秒换算） */
-const aiTargetMinutes = ref(8)
+/** 本场时长（分钟）：不再做成输入项，按此固定值均摊成每页目标字数（后端按 4.0 字/秒换算） */
+const AI_TARGET_MINUTES = 8
 /** 跑批中：两个按钮 disabled（并发跑批在演示里只会有害） */
 const aiRunning = ref(false)
 /** 最近一次 AI 应用的可撤销快照：采纳前把原备注留在内存，采纳后可一键还原 */
@@ -455,7 +665,7 @@ let aiAbortController = null
 
 /** 目标总时长（秒）：非法或非正数就不传，后端按「不约束篇幅」处理 */
 const aiTargetSeconds = () => {
-  const minutes = Number(aiTargetMinutes.value)
+  const minutes = Number(AI_TARGET_MINUTES)
   return Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : undefined
 }
 
@@ -767,6 +977,21 @@ let app = null // PIXI.Application 单实例
 let model = null // Live2DModel 单实例
 let live2dDisposed = false // 卸载标记：阻断「组件已卸载后才 resolve」的异步回调写入已销毁实例
 
+/**
+ * 把口型开合度写给本页这份 Live2D（本页唯一会动嘴的入口）。
+ *
+ * <p>Cubism 4 才有 `setParameterValueById`；缺了就静默不动，不能让渲染循环抛错。
+ *
+ * @param {number} level 开合度 0–1，来自**本页正在播的音频**的逐帧响度
+ */
+const writeMouthOpen = (level) => {
+  const coreModel = model?.internalModel?.coreModel
+  coreModel?.setParameterValueById?.('ParamMouthOpenY', Math.max(0, Math.min(1, level)))
+}
+
+/** 数字人一开口，这一屏的嘴就要跟着动 —— 学生看到的就是这一屏，听到的声音也从这里出去 */
+watch(mouthLevel, writeMouthOpen)
+
 // 完整释放：停渲染循环 → 销毁模型 → 销毁渲染器
 // 路由 /index/ppt 每次进入都是新实例，若此处不销毁，旧 Ticker 会持续对已被浏览器回收的
 // WebGL 上下文发起 bindBuffer/bindTexture，产生 INVALID_OPERATION 刷屏
@@ -864,24 +1089,19 @@ const initLive2D = async () => {
 .btn-icon {
   margin-right: 4px;
 }
-/* 工具栏里的「本场时长」输入（AI 按总时长 ÷ 页数给每页定篇幅） */
-.ppt-toolbar-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--tb-text-secondary);
-  font-size: var(--tb-text-sm);
-  white-space: nowrap;
-}
-.ppt-target-minutes {
-  width: 96px;
-}
 /* AI 应用后的撤销入口（关掉即放弃撤销） */
 .ppt-ai-undo {
   margin: 0 0 0.5rem;
 }
 .ppt-ai-undo__actions {
   margin-top: 0.25rem;
+}
+/* 创建会议弹窗里「哪些页还没有讲稿」的提示：只列页码、不阻断建会 */
+.meeting-dialog__hint {
+  margin: 0;
+  color: var(--tb-text-secondary);
+  font-size: var(--tb-text-sm);
+  line-height: 1.6;
 }
 .file-input {
   display: none;

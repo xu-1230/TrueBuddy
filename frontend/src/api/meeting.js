@@ -23,12 +23,8 @@ export const MEETING_REST_API = {
   leave: '/meeting/leave',
   /** 结束会议：{ meetingNo, hostToken } */
   close: '/meeting/close',
-  /** 数字人可用性（query：meetingNo）→ { enabled, workerReachable, available, room, identity } */
+  /** 语音可用性 → { enabled, available }（播报本身走 SSE，见 `@/utils/event-stream`） */
   digitalStatus: '/meeting/digital/status',
-  /** 数字人播报：{ meetingNo, hostToken, text, requestId? } → { requestId, firstChunkMs, bytes, durationMs, message } */
-  digitalSay: '/meeting/digital/say',
-  /** 掐断在途播报：{ meetingNo, hostToken, requestId } → boolean */
-  digitalSayCancel: '/meeting/digital/say/cancel',
 }
 
 /**
@@ -96,38 +92,15 @@ export function closeMeeting(meetingNo, hostToken) {
 }
 
 /**
- * 数字人可用性（老师控制台与学生会议室都用它决定是否显示「数字人不可用」）。
+ * 语音可用性（老师控制台用它决定是否显示「语音不可用」）。
  *
- * @param {string} meetingNo 会议号
+ * <p>播报不在本文件里：它由放映页向 `POST /ppt/speech/speak` 取流播放（SSE，
+ * 见 `@/utils/event-stream`），控制台只通过总线让那一页开口。
+ *
+ * @returns {Promise<{ enabled: boolean, available: boolean }>} 开关与合成配置是否齐备
  */
-export function getDigitalStatus(meetingNo) {
-  return service.get(MEETING_REST_API.digitalStatus, { params: { meetingNo } })
-}
-
-/**
- * 让数字人在会议里播报一段文本（老师侧动作）。
- *
- * 同步语义：接口返回即代表音频已完整交给 worker，**不代表已经播完**。
- *
- * `requestId` 由调用方生成并传入：跟页播报需要在响应回来之前就有办法掐断正在播的这段
- * （只靠后端生成的 id 会拿不到，见 docs/18 §5.4）。留空时后端自己生成一个。
- *
- * @param {{ meetingNo: string, hostToken: string, text: string, requestId?: string }} payload 播报请求
- */
-export function sayDigital(payload) {
-  return service.post(MEETING_REST_API.digitalSay, payload)
-}
-
-/**
- * 掐断一条在途播报（翻页先断、停止播报都走这里）。
- *
- * 幂等：worker 侧那段已经播完时后端返回 false，不报错，调用方照样把状态收敛掉。
- *
- * @param {{ meetingNo: string, hostToken: string, requestId: string }} payload 要取消的播报标识
- * @returns {Promise<boolean>} 是否真的取消到了一段在途播报
- */
-export function cancelDigitalSay(payload) {
-  return service.post(MEETING_REST_API.digitalSayCancel, payload)
+export function getDigitalStatus() {
+  return service.get(MEETING_REST_API.digitalStatus)
 }
 
 /**

@@ -29,21 +29,10 @@ public interface ErrorCodeConstants {
 
     // ========== AI 数字人（后续二，见 docs/17） 1_007_000_014 起 ==========
     ErrorCode DIGITAL_DISABLED = new ErrorCode(1_007_000_014, "数字人未启用");
-    ErrorCode DIGITAL_WORKER_UNREACHABLE = new ErrorCode(1_007_000_015,
-            "数字人服务未就绪：请先启动 digital-human-worker");
     ErrorCode DIGITAL_TEXT_EMPTY = new ErrorCode(1_007_000_016, "请填写要播报的内容");
     ErrorCode DIGITAL_TEXT_TOO_LONG = new ErrorCode(1_007_000_017, "播报内容长度不能超过 {} 个字符");
-    ErrorCode DIGITAL_TTS_FAILED = new ErrorCode(1_007_000_018, "语音合成失败：{}");
-    ErrorCode DIGITAL_LIVEKIT_NOT_CONFIGURED = new ErrorCode(1_007_000_019,
-            "数字人需要 LiveKit 房间，请先配置 LIVEKIT_API_KEY / LIVEKIT_API_SECRET");
-    ErrorCode DIGITAL_SPEAK_BUSY = new ErrorCode(1_007_000_020,
-            "本场已有一段播报在进行，请先停止或等它念完");
-    ErrorCode DIGITAL_CANCEL_REQUEST_REQUIRED = new ErrorCode(1_007_000_021, "缺少要取消的播报标识 requestId");
 
-    // ========== 放映试听（见 docs/18 §5.3） 1_007_000_022 起 ==========
-    ErrorCode SPEAK_DISABLED = new ErrorCode(1_007_000_022, "语音合成未启用，无法试听");
-    ErrorCode SPEAK_TEXT_EMPTY = new ErrorCode(1_007_000_023, "请填写要试听的内容");
-    ErrorCode SPEAK_TEXT_TOO_LONG = new ErrorCode(1_007_000_024, "试听内容长度不能超过 {} 个字符");
-    ErrorCode SPEAK_SYNTH_FAILED = new ErrorCode(1_007_000_025, "试听合成失败：{}");
+    // 1_007_000_015（worker 不可达）、1_007_000_018（合成失败）、1_007_000_019（数字人需要 LiveKit）
+    // 随 worker 一起删除：合成现在直接回给放映页浏览器，失败以 SSE `error` 事件下发（见 docs/16 §5.7）。
 
 }

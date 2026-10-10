@@ -1,27 +1,30 @@
 package org.example.backend.module.lecture.ppt.controller;
 
 import jakarta.annotation.Resource;
-import jakarta.servlet.http.HttpServletResponse;
 import org.example.backend.framework.common.pojo.CommonResult;
 import org.example.backend.module.lecture.digital.DigitalHumanService;
+import org.example.backend.module.lecture.model.vo.DigitalSpeakReqVO;
 import org.example.backend.module.lecture.ppt.model.vo.PptSpeechOptimizeReqVO;
 import org.example.backend.module.lecture.ppt.model.vo.PptSpeechOptimizeRespVO;
-import org.example.backend.module.lecture.ppt.model.vo.PptSpeechSpeakReqVO;
 import org.example.backend.module.lecture.ppt.service.PptSpeechService;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.io.IOException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import static org.example.backend.framework.common.pojo.CommonResult.success;
 
 /**
- * PPT 讲稿生成接口（前端 `/index/ppt` 的两个 AI 按钮都打到这里）。
+ * PPT 讲稿接口（前端 `/index/ppt` 都打到这里）。
  *
- * <p>一个接口覆盖两个按钮：请求里 {@code pages} 长度 1 是「优化本页」，长度 N 是「优化全部」。
- * 整篇是**一次请求**（后端内部按批调用模型），前端因此不需要为「全部」写一套循环。
+ * <ul>
+ *   <li>{@code /optimize}：讲稿生成。一个接口覆盖两个按钮——请求里 {@code pages} 长度 1 是「优化本页」，
+ *       长度 N 是「优化全部」；整篇是**一次请求**（后端内部按批调用模型），前端因此不需要为「全部」写一套循环。</li>
+ *   <li>{@code /speak}：讲稿播报。PCM 边合成边以 SSE 事件下发，**由放映页本页播放**——这一页正被屏幕共享，
+ *       声音因此随共享轨一起到学生端（见 docs/16 §5.7）。</li>
+ * </ul>
  *
  * <p>放行：{@code /ppt/**} 已在 {@code tb.security.permit-all-urls} 中，与 {@code /meeting/**} 同理
  * （PPT 页目前不依赖登录态）。
@@ -32,7 +35,6 @@ public class PptSpeechController {
 
     @Resource
     private PptSpeechService pptSpeechService;
-    /** 试听走的是合成通路（{@code digital} 包），与「发进房间的播报」共用同一个 TTS 接缝 */
     @Resource
     private DigitalHumanService digitalHumanService;
 
@@ -47,17 +49,19 @@ public class PptSpeechController {
     }
 
     /**
-     * 试听：把这页讲稿合成成 WAV 直接回给浏览器，<b>不进 LiveKit 房间、不依赖 worker</b>。
+     * 流式播报一段讲稿（老师点「开始演讲」或放映页的「试听本页」时调用）。
      *
-     * <p>返回的是音频字节而非 {@code CommonResult}，与 {@code POST /chat} 同属已记录的例外
-     * （见 {@code docs/05} §2.1）。合成失败发生在写出第一个字节<b>之前</b>，所以错误照常走 JSON；
-     * 一旦开始写流就只有客户端断开这一条退路（前端用 {@code AbortController}）。
+     * <p>返回的是事件流而不是 {@code CommonResult}：{@code status}（started / done）、若干 {@code chunk}
+     * （base64 的 48kHz 单声道 16bit PCM）、失败时的 {@code error}。调用方断开即取消合成。
+     * 若在事件流建立前就校验失败（未启用 / 文本为空或过长 / 会议凭据无效），返回的是普通 JSON 错误体——
+     * 前端读取器按 content-type 分辨这两种情况。
+     *
+     * @param reqVO 文本与（可空的）会议信息
+     * @return SSE 事件流
      */
-    @PostMapping("/speak")
-    public void speak(@RequestBody PptSpeechSpeakReqVO reqVO, HttpServletResponse response) throws IOException {
-        response.setContentType("audio/wav");
-        response.setHeader("Cache-Control", "no-store");
-        digitalHumanService.speak(reqVO.getText(), response.getOutputStream());
+    @PostMapping(value = "/speak", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter speak(@RequestBody DigitalSpeakReqVO reqVO) {
+        return digitalHumanService.speak(reqVO);
     }
 
 }

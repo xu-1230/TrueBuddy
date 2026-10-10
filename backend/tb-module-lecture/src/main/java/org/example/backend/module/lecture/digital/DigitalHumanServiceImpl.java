@@ -1,96 +1,69 @@
 package org.example.backend.module.lecture.digital;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.example.backend.module.lecture.config.DigitalHumanProperties;
 import org.example.backend.module.lecture.digital.tts.TtsSynthPort;
-import org.example.backend.module.lecture.digital.tts.WavHeader;
-import org.example.backend.module.lecture.digital.worker.DigitalHumanWorkerClient;
-import org.example.backend.module.lecture.livekit.LiveKitTokenService;
 import org.example.backend.module.lecture.model.LectureMeetingDO;
-import org.example.backend.module.lecture.model.vo.DigitalCancelReqVO;
-import org.example.backend.module.lecture.model.vo.DigitalSayReqVO;
-import org.example.backend.module.lecture.model.vo.DigitalSayRespVO;
+import org.example.backend.module.lecture.model.vo.DigitalSpeakReqVO;
 import org.example.backend.module.lecture.model.vo.DigitalStatusVO;
-import org.example.backend.module.lecture.model.vo.MeetingMessageVO;
 import org.example.backend.module.lecture.service.MeetingService;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import static org.example.backend.framework.common.exception.util.ServiceExceptionUtil.exception;
-import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_CANCEL_REQUEST_REQUIRED;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_DISABLED;
-import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_LIVEKIT_NOT_CONFIGURED;
-import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_SPEAK_BUSY;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_TEXT_EMPTY;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_TEXT_TOO_LONG;
-import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_TTS_FAILED;
-import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_WORKER_UNREACHABLE;
-import static org.example.backend.module.lecture.enums.ErrorCodeConstants.SPEAK_DISABLED;
-import static org.example.backend.module.lecture.enums.ErrorCodeConstants.SPEAK_SYNTH_FAILED;
-import static org.example.backend.module.lecture.enums.ErrorCodeConstants.SPEAK_TEXT_EMPTY;
-import static org.example.backend.module.lecture.enums.ErrorCodeConstants.SPEAK_TEXT_TOO_LONG;
 
 /**
- * 播报的编排者：合成在本地线程里跑，PCM 一边产出就一边推给 worker。
+ * 播报的编排者：合成在本地线程里跑，PCM 一边产出就一边以 SSE 推给**发起请求的那个浏览器**。
  *
- * <p>用 {@link PipedOutputStream} 把「回调式合成」接成「流式请求体」，是为了<b>不等整段合成完</b>：
- * 实测 CosyVoice 首包约 1.8s、一段 5s 音频总耗时约 5s，等完再推会让学生多空等约 3s。
+ * <p>为什么不再中继给 worker 进程：声音的终点本来就是老师放映的那一页——它正被屏幕共享，
+ * 声音随共享轨到学生端。中继一圈只会多一个进程、多一份要同步的配置、多一条会挂的链路（见 docs/16 §5.7）。
+ *
+ * <p>「停止」因此变成免费能力：浏览器一断，推事件就会失败，{@link TtsSynthPort} 的实现据此取消合成，
+ * 不再继续向厂商要音频。旧实现必须额外做一次 {@code DELETE /say/{id}} 才停得下来。
  */
 @Slf4j
 @Service
 public class DigitalHumanServiceImpl implements DigitalHumanService {
 
-    /** 角色：数字人（与 LiveKit 令牌 metadata.role 同口径） */
+    /** 数字人角色（1=老师，2=学生，3=数字人；与消息类型 kind=2 配套） */
     private static final int ROLE_AGENT = 3;
-    /** 消息类型：数字人播报（1=文字，3=语音转写预留，见 docs/16 §4） */
+    /** 消息类型：数字人播报 */
     private static final int KIND_DIGITAL = 2;
     /** 数字人发言时的昵称 */
     private static final String AGENT_NICKNAME = "数字人";
-    /** 管道缓冲：太小会让合成线程频繁阻塞 */
-    private static final int PIPE_BUFFER_BYTES = 64 * 1024;
-    /** 合成侧自身上限 60s，这里留余量兜底 */
-    private static final int SYNTH_WAIT_SECONDS = 75;
-    /** 客户端可自带的播报标识形状：worker 侧要把它拼进 {@code /say/{id}} 路径 */
-    private static final Pattern REQUEST_ID_PATTERN = Pattern.compile("[A-Za-z0-9_-]+");
+    /** 音频格式：与 {@code CosyVoiceTtsSynth} 的出口口径一致，前端播放器按它建 AudioContext */
+    private static final int PCM_SAMPLE_RATE = 48_000;
+    private static final int PCM_CHANNELS = 1;
+    private static final String PCM_ENCODING = "pcm_s16le";
 
     private final DigitalHumanProperties properties;
     private final TtsSynthPort ttsPort;
-    private final DigitalHumanWorkerClient workerClient;
-    private final LiveKitTokenService tokenService;
     private final MeetingService meetingService;
     private final ExecutorService synthExecutor;
 
-    /** 在途播报：房间名 → requestId。用于单飞闸门，进程内状态，重启即清 */
-    private final Map<String, String> inFlight = new ConcurrentHashMap<>();
-
     public DigitalHumanServiceImpl(DigitalHumanProperties properties,
                                    TtsSynthPort ttsPort,
-                                   DigitalHumanWorkerClient workerClient,
-                                   LiveKitTokenService tokenService,
                                    MeetingService meetingService) {
         this.properties = properties;
         this.ttsPort = ttsPort;
-        this.workerClient = workerClient;
-        this.tokenService = tokenService;
         this.meetingService = meetingService;
-        this.synthExecutor = Executors.newFixedThreadPool(Math.max(1, properties.getMaxConcurrentSay()), runnable -> {
+        this.synthExecutor = Executors.newFixedThreadPool(Math.max(1, properties.getMaxConcurrentSpeak()), runnable -> {
             Thread thread = new Thread(runnable, "digital-human-tts");
             thread.setDaemon(true);
             return thread;
@@ -102,26 +75,47 @@ public class DigitalHumanServiceImpl implements DigitalHumanService {
         synthExecutor.shutdownNow();
     }
 
+    /**
+     * 启动自检：把「能不能出声」这句话在启动日志里说清楚。
+     *
+     * <p>这条日志是为一次真实排查加的：`application.yml` 里明明填了 Key，`status` 却报「未配置」——
+     * 因为 IDE 的 EnvFile 插件把根目录 `.env` 注入成了环境变量，而那里是**空值**；
+     * Spring 的 `${VAR:默认值}` 只在 VAR 未定义时才用默认值，**空串照样顶掉默认值**。
+     */
+    @PostConstruct
+    void logSpeechReadiness() {
+        if (!Boolean.TRUE.equals(properties.getEnabled())) {
+            log.info("[digital][语音播报未启用：tb.lecture.digital-human.enabled=false]");
+            return;
+        }
+        String apiKey = properties.getDashscopeApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("[digital][未配置 DashScope Key：/ppt/speech/speak 会以 error 事件失败。"
+                    + "若 yml 里已填真值，检查是否有**空值**环境变量 DASHSCOPE_API_KEY（IDE 的 EnvFile 会注入 .env）把它顶掉了]");
+            return;
+        }
+        log.info("[digital][语音播报就绪：model={}, voice={}]",
+                properties.getTtsModel(), properties.getTtsVoice());
+    }
+
     @Override
-    public DigitalStatusVO status(String meetingNo) {
+    public DigitalStatusVO status() {
         boolean enabled = Boolean.TRUE.equals(properties.getEnabled());
-        boolean reachable = enabled && workerClient.healthy();
+        String apiKey = properties.getDashscopeApiKey();
 
         DigitalStatusVO vo = new DigitalStatusVO();
         vo.setEnabled(enabled);
-        vo.setWorkerReachable(reachable);
-        vo.setAvailable(reachable);
-        vo.setRoom(LiveKitTokenService.roomNameOf(meetingNo == null ? "" : meetingNo.trim()));
-        vo.setIdentity(LiveKitTokenService.AGENT_IDENTITY);
+        // 不再探测任何进程：开关打开且合成 Key 配好，就确实能出声
+        vo.setAvailable(enabled && apiKey != null && !apiKey.isBlank());
         return vo;
     }
 
     @Override
-    public DigitalSayRespVO say(DigitalSayReqVO reqVO) {
+    public SseEmitter speak(DigitalSpeakReqVO reqVO) {
         if (!Boolean.TRUE.equals(properties.getEnabled())) {
             throw exception(DIGITAL_DISABLED);
         }
-        String text = reqVO.getText() == null ? "" : reqVO.getText().trim();
+        String text = reqVO == null || reqVO.getText() == null ? "" : reqVO.getText().trim();
         if (text.isEmpty()) {
             throw exception(DIGITAL_TEXT_EMPTY);
         }
@@ -129,160 +123,80 @@ public class DigitalHumanServiceImpl implements DigitalHumanService {
         if (text.length() > maxLength) {
             throw exception(DIGITAL_TEXT_TOO_LONG, maxLength);
         }
-        LectureMeetingDO meeting = meetingService.requireRunningMeetingByHost(reqVO.getMeetingNo(), reqVO.getHostToken());
-        if (!tokenService.isConfigured()) {
-            throw exception(DIGITAL_LIVEKIT_NOT_CONFIGURED);
-        }
-        if (!workerClient.healthy()) {
-            throw exception(DIGITAL_WORKER_UNREACHABLE);
-        }
+        // 带齐会议号与凭据才落库；凭据不合法直接抛错（静默跳过会让老师以为播报进了聊天记录）
+        Long meetingId = resolveMeetingId(reqVO);
 
-        String room = LiveKitTokenService.roomNameOf(meeting.getMeetingNo());
-        String requestId = resolveRequestId(reqVO.getRequestId());
-
-        // 单飞闸门：一个房间只有一条常驻音频轨，两段同时推会在轨上交错混播（docs/18 §5.4）。
-        // 编排在前端，后端保持「一次 say = 一段文本」，所以这里只做明确拒绝，不排队。
-        if (inFlight.putIfAbsent(room, requestId) != null) {
-            throw exception(DIGITAL_SPEAK_BUSY);
-        }
-        TtsSynthPort.TtsStats stats;
-        try {
-            stats = streamToWorker(meeting.getMeetingNo(), room, requestId, text);
-        } catch (RuntimeException e) {
-            log.warn("[say][播报失败 meetingNo={}, requestId={}]: {}", meeting.getMeetingNo(), requestId, e.getMessage());
-            throw exception(DIGITAL_TTS_FAILED, rootMessage(e));
-        } finally {
-            inFlight.remove(room, requestId);
-        }
-
-        MeetingMessageVO message = meetingService.sendMessage(
-                meeting.getId(), null, AGENT_NICKNAME, ROLE_AGENT, text, KIND_DIGITAL);
-
-        DigitalSayRespVO vo = new DigitalSayRespVO();
-        vo.setRequestId(requestId);
-        vo.setFirstChunkMs(stats.firstChunkMs());
-        vo.setBytes(stats.bytes());
-        vo.setDurationMs(stats.durationMs());
-        vo.setMessage(message);
-        log.info("[say][数字人播报已交给 worker meetingNo={}, requestId={}, durationMs={}, firstChunkMs={}]",
-                meeting.getMeetingNo(), requestId, stats.durationMs(), stats.firstChunkMs());
-        return vo;
+        // 0 = 不超时：一条播报最长几十秒，超时判断交给合成侧自己的上限
+        SseEmitter emitter = new SseEmitter(0L);
+        PcmSseWriter writer = new PcmSseWriter(emitter);
+        // 先报格式再交给合成线程：老师点完按钮立刻有回音，采样率也不必写死在两个地方
+        writer.status("started", Map.of(
+                "sampleRate", PCM_SAMPLE_RATE,
+                "channels", PCM_CHANNELS,
+                "encoding", PCM_ENCODING));
+        synthExecutor.execute(() -> synthesize(emitter, writer, text, meetingId));
+        return emitter;
     }
 
-    @Override
-    public void leaveRoom(String meetingNo) {
-        if (!Boolean.TRUE.equals(properties.getEnabled())) {
+    /** 合成 → SSE。失败一律收尾成一条 {@code error} 事件，不让连接悬着。 */
+    private void synthesize(SseEmitter emitter, PcmSseWriter writer, String text, Long meetingId) {
+        try {
+            TtsSynthPort.TtsStats stats = ttsPort.synthesize(text, writer);
+            Map<String, Object> done = new LinkedHashMap<>();
+            done.put("state", "done");
+            done.put("bytes", stats.bytes());
+            done.put("firstChunkMs", stats.firstChunkMs());
+            done.put("durationMs", stats.durationMs());
+            writer.status("done", done);
+            log.info("[speak][播报完成 meetingId={}, bytes={}, firstChunkMs={}, durationMs={}]",
+                    meetingId, stats.bytes(), stats.firstChunkMs(), stats.durationMs());
+            persist(meetingId, text);
+        } catch (RuntimeException e) {
+            if (writer.isBroken()) {
+                // 调用方断开（老师点了「停止演讲」或关掉了放映页）：合成已被取消，属预期路径
+                log.debug("[speak][调用方断开，合成已取消 meetingId={}]", meetingId);
+            } else {
+                log.warn("[speak][播报失败 meetingId={}]: {}", meetingId, rootMessage(e));
+                writer.error(rootMessage(e));
+            }
+        } finally {
+            emitter.complete();
+        }
+    }
+
+    /** 播报内容以数字人身份落消息表：失败只记日志——音频已经播出去了，不能因为落库失败就当播报没发生 */
+    private void persist(Long meetingId, String text) {
+        if (meetingId == null) {
             return;
         }
-        workerClient.closeSession(LiveKitTokenService.roomNameOf(meetingNo));
-    }
-
-    @Override
-    public boolean cancelSay(DigitalCancelReqVO reqVO) {
-        String requestId = reqVO.getRequestId() == null ? "" : reqVO.getRequestId().trim();
-        if (requestId.isEmpty()) {
-            throw exception(DIGITAL_CANCEL_REQUEST_REQUIRED);
-        }
-        // 凭据校验与 say 同一条路径：不是主持人就不能掐断别人正在播的这段
-        LectureMeetingDO meeting = meetingService.requireRunningMeetingByHost(reqVO.getMeetingNo(), reqVO.getHostToken());
-        if (!Boolean.TRUE.equals(properties.getEnabled()) || !workerClient.healthy()) {
-            // worker 不在了意味着这段本来就没在响，按「已取消」返回让编排层把状态收敛掉
-            inFlight.remove(LiveKitTokenService.roomNameOf(meeting.getMeetingNo()), requestId);
-            return false;
-        }
-        boolean cancelled = workerClient.cancelSay(requestId);
-        inFlight.remove(LiveKitTokenService.roomNameOf(meeting.getMeetingNo()), requestId);
-        return cancelled;
-    }
-
-    @Override
-    public void speak(String text, OutputStream out) {
-        if (!Boolean.TRUE.equals(properties.getEnabled())) {
-            throw exception(SPEAK_DISABLED);
-        }
-        String spoken = text == null ? "" : text.trim();
-        if (spoken.isEmpty()) {
-            throw exception(SPEAK_TEXT_EMPTY);
-        }
-        int maxChars = properties.getMaxSpeakChars();
-        if (spoken.length() > maxChars) {
-            throw exception(SPEAK_TEXT_TOO_LONG, maxChars);
-        }
-
-        // 刻意先把 PCM 收满再写头：WAV 的 data 长度必须已知，而 chunked 响应没法回填。
-        // 上限由 maxSpeakBytes 兜住（合成侧本身 60s 超时，正常到不了）。
-        ByteArrayOutputStream pcm = new ByteArrayOutputStream();
-        TtsSynthPort.TtsStats stats;
         try {
-            stats = ttsPort.synthesize(spoken, pcm);
+            meetingService.sendMessage(meetingId, null, AGENT_NICKNAME, ROLE_AGENT, text, KIND_DIGITAL);
         } catch (RuntimeException e) {
-            throw exception(SPEAK_SYNTH_FAILED, rootMessage(e));
-        }
-        byte[] body = pcm.toByteArray();
-        if (body.length > properties.getMaxSpeakBytes()) {
-            throw exception(SPEAK_SYNTH_FAILED, "音频超出上限 " + properties.getMaxSpeakBytes() + " 字节");
-        }
-        try {
-            WavHeader.write(out, body.length);
-            out.write(body);
-            out.flush();
-        } catch (IOException e) {
-            // 客户端断开（前端 AbortController）会走到这里：不是故障，也不值得往上报错
-            log.info("[speak][试听写出中断: {}]", e.getMessage());
-        }
-        log.info("[speak][试听合成完成 firstChunkMs={}, bytes={}]", stats.firstChunkMs(), body.length);
-    }
-
-    /**
-     * 合成 → 管道 → worker。失败一律收敛成带原因的运行时异常，由调用方映射成业务错误码。
-     */
-    private TtsSynthPort.TtsStats streamToWorker(String meetingNo, String room, String requestId, String text) {
-        workerClient.openSession(room, tokenService.resolveSignallingUrl(), tokenService.createAgentToken(meetingNo));
-
-        PipedInputStream pcmIn;
-        final PipedOutputStream pcmOut;
-        try {
-            pcmIn = new PipedInputStream(PIPE_BUFFER_BYTES);
-            pcmOut = new PipedOutputStream(pcmIn);
-        } catch (IOException e) {
-            throw new IllegalStateException("音频管道初始化失败: " + e.getMessage(), e);
-        }
-
-        Future<TtsSynthPort.TtsStats> future = synthExecutor.submit(() -> {
-            try {
-                return ttsPort.synthesize(text, pcmOut);
-            } finally {
-                closeQuietly(pcmOut);
-            }
-        });
-        try {
-            workerClient.streamPcm(room, requestId, pcmIn);
-            return future.get(SYNTH_WAIT_SECONDS, TimeUnit.SECONDS);
-        } catch (ExecutionException e) {
-            future.cancel(true);
-            throw new IllegalStateException(rootMessage(e), e);
-        } catch (TimeoutException e) {
-            future.cancel(true);
-            throw new IllegalStateException("播报超时（" + SYNTH_WAIT_SECONDS + "s 未结束）", e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            future.cancel(true);
-            throw new IllegalStateException("播报被中断", e);
-        } finally {
-            closeQuietly(pcmIn);
+            log.warn("[speak][数字人发言落库失败 meetingId={}]: {}", meetingId, e.getMessage());
         }
     }
 
     /**
-     * 播报标识：优先用客户端带来的（前端要在响应回来之前就具备打断能力），
-     * 为空或形状不对就退回后端生成——不相信客户端的字符串形状，它会被拼进 worker 的 URL 路径。
+     * 只有会议号与主持人凭据都带齐才返回会议主键（用于落库）。
+     *
+     * <p>凭据无效时直接抛业务异常：这条播报是「替这场会说的」，落不了库就不该假装说过了。
      */
-    private static String resolveRequestId(String provided) {
-        String candidate = provided == null ? "" : provided.trim();
-        if (candidate.length() >= 8 && candidate.length() <= 64 && REQUEST_ID_PATTERN.matcher(candidate).matches()) {
-            return candidate;
+    private Long resolveMeetingId(DigitalSpeakReqVO reqVO) {
+        String meetingNo = trimToNull(reqVO.getMeetingNo());
+        String hostToken = trimToNull(reqVO.getHostToken());
+        if (meetingNo == null || hostToken == null) {
+            return null;
         }
-        return UUID.randomUUID().toString().replace("-", "");
+        LectureMeetingDO meeting = meetingService.requireRunningMeetingByHost(meetingNo, hostToken);
+        return meeting.getId();
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static String rootMessage(Throwable error) {
@@ -293,19 +207,72 @@ public class DigitalHumanServiceImpl implements DigitalHumanService {
         return cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
     }
 
-    private static void closeQuietly(OutputStream out) {
-        try {
-            out.close();
-        } catch (IOException ignored) {
-            // 关闭失败不影响结果：流已写完或早已断开
-        }
-    }
+    /**
+     * PCM → SSE {@code chunk} 事件的适配器（{@link OutputStream} 是 {@link TtsSynthPort} 唯一认的出口）。
+     *
+     * <p>断开后不再尝试发送，并把写入失败**抛回**给合成侧——合成实现正是靠这个 IOException
+     * 停止继续向厂商要音频（见 {@code CosyVoiceTtsSynth} 的回调）。
+     *
+     * <p>包级可见是为了让单测能直接钉住分帧（base64 不能被 JSON 包成带引号的字符串，见
+     * {@code DigitalHumanServiceImplTest}）。
+     */
+    static final class PcmSseWriter extends OutputStream {
 
-    private static void closeQuietly(InputStream in) {
-        try {
-            in.close();
-        } catch (IOException ignored) {
-            // 同上
+        /** 不带换行的 base64 编码器：SSE 的 data 行遇到换行会被拆成多个 data 行 */
+        private static final Base64.Encoder BASE64 = Base64.getEncoder();
+
+        private final SseEmitter emitter;
+        private boolean broken;
+
+        PcmSseWriter(SseEmitter emitter) {
+            this.emitter = emitter;
+        }
+
+        boolean isBroken() {
+            return broken;
+        }
+
+        @Override
+        public void write(int value) throws IOException {
+            write(new byte[]{(byte) value}, 0, 1);
+        }
+
+        @Override
+        public void write(byte[] bytes, int offset, int length) throws IOException {
+            if (broken) {
+                throw new IOException("调用方已断开");
+            }
+            try {
+                byte[] frame = Arrays.copyOfRange(bytes, offset, offset + length);
+                String base64 = new String(BASE64.encode(frame), StandardCharsets.US_ASCII);
+                emitter.send(SseEmitter.event().name("chunk").data(base64, MediaType.TEXT_PLAIN));
+            } catch (IOException | IllegalStateException e) {
+                broken = true;
+                throw new IOException("调用方已断开", e);
+            }
+        }
+
+        void status(String state, Map<String, Object> payload) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("state", state);
+            body.putAll(payload);
+            send("status", body);
+        }
+
+        void error(String message) {
+            send("error", Map.of("message", message));
+        }
+
+        private void send(String event, Object payload) {
+            if (broken) {
+                return;
+            }
+            try {
+                emitter.send(SseEmitter.event().name(event).data(payload, MediaType.APPLICATION_JSON));
+            } catch (IOException | IllegalStateException e) {
+                // 连接已断开：这里没有补救手段，交给下一次写入统一报出去
+                broken = true;
+            }
         }
     }
 }

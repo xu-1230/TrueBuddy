@@ -27,15 +27,14 @@
       type="warning"
       :closable="false"
       show-icon
-      title="数字人不可用"
-      description="已启用但音频服务未就绪：启动 digital-human-worker 后刷新本页即可恢复。"
+      title="语音未配置"
+      description="老师端的语音合成未配置（DashScope Key 为空），本场开会时可能没有讲解声音。"
     />
 
     <main class="room-body" :data-panel="activePanel">
       <div class="room-body__stage">
         <ScreenStage ref="stageRef" :sharing="store.sharing" :hint="stageHint" />
-        <!-- 数字人：它真的在房间里才挂形象（worker 一次进房后轨常驻，出现即表示正在播或刚播过） -->
-        <DigitalHumanAvatar v-if="digitalPresent" class="room-body__avatar" :level="mouthLevel" />
+        <!-- 数字人只存在于老师共享的画面里，学生端不再单独渲染一个形象（见 docs/16 §5.7） -->
       </div>
 
       <aside class="room-body__side">
@@ -81,7 +80,6 @@ import { ElMessage } from 'element-plus'
 import { getDigitalStatus, getMeetingState, joinMeeting, leaveMeeting } from '@/api/meeting'
 import AttendeeList from './components/AttendeeList.vue'
 import ChatPanel from './components/ChatPanel.vue'
-import DigitalHumanAvatar from './components/DigitalHumanAvatar.vue'
 import MeetingTopBar from './components/MeetingTopBar.vue'
 import NicknameDialog from './components/NicknameDialog.vue'
 import ScreenStage from './components/ScreenStage.vue'
@@ -119,17 +117,15 @@ const room = useLiveKitRoom({
   onEvent: (payload) => store.applyEvent(payload),
   onConnectionChange: (status) => store.setConnection(status),
 })
-/** 数字人是否在房间里 + 口型开合度（来自那条音频轨的逐帧响度） */
-const { digitalPresent, mouthLevel } = room
 
-/** 后端下发的数字人可用性：{ enabled, workerReachable, available, room, identity } */
+/** 后端下发的语音可用性：{ enabled, available } */
 const digital = ref(null)
-/** 开了数字人但 worker 不在：必须显式说出来，不能表现为「点了没声音」 */
+/** 开了语音但合成没配好：必须显式说出来，不能表现为「点了没声音」 */
 const digitalUnavailable = computed(() => Boolean(digital.value?.enabled) && !digital.value?.available)
 
 async function refreshDigitalStatus() {
   try {
-    digital.value = await getDigitalStatus(meetingNo)
+    digital.value = await getDigitalStatus()
   } catch {
     // 取不到状态就当不可用：宁可多提示一次，也不要静默
     digital.value = null

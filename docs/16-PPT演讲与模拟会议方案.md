@@ -22,7 +22,8 @@
 
 | 端 | 功能 |
 | --- | --- |
-| 老师控制台 | 创建会议（填标题）、结束会议、复制入会链接、在线学生名单、学生聊天、**共享屏幕** |
+| PPT 页（`/index/ppt`） | **创建会议（填标题）**：建会后本页进入放映——学生看到的就是这一屏，控制台另开一个标签页（见 §5.6） |
+| 老师控制台（`/index/meeting?meetid=`） | 结束会议、复制入会链接、在线学生名单、学生聊天、**共享屏幕**、数字人播报 |
 | 学生端 | 入会（点链接 → 弹窗输名字）、观看老师共享的画面、右侧聊天框、在线人数、会议结束提示 |
 | 实时能力 | 一条 **LiveKit 房间连接**同时承载「屏幕共享视频轨」与「聊天 DataChannel」；成员与在线数取自房间事件 |
 | 持久化 | 会议、参会人、消息落库；房间内的实时状态不落库（以 LiveKit 为准） |
@@ -86,6 +87,8 @@
 | ~~Q9（LiveKit）~~ | 成员/在线真相 | **已被 ADR-0002 取代**：原口径是「DB `online` 退化为历史但保留列」；实际它同时被入会闸门和 `onlineCount` 读，两处都在谎报。现已**删掉 `online` 列**，参会表退化为纯台账（`join_time` / `leave_time`），在线只认房间事件 |
 | Q1（生命周期修复） | 入会上限 | **作废** `max-attendees` 闸门与错误码 `1_007_000_005`（编号不复用），见 [ADR-0001](adr/0001-入会人数上限闸门作废.md)。不补心跳、不改问 LiveKit：单机演示场景收益低于其机制成本 |
 | Q2（生命周期修复） | 主持人凭据找回 | **不提供**重签接口，见 [ADR-0003](adr/0003-主持人凭据不提供重新签发路径.md)：`/meeting/**` 免登录，任何按会议号重签都等于开放会议接管。同理**不做** `GET /meeting/list` |
+| Q1（合并动线，2026-10-10） | 会议与 PPT 页的落点 | **合并在「动线层」，不是「页面层」**：建会入口搬到 PPT 页（工具栏「创建会议」），建会后**本页就是被共享的那一屏**（进会议总是从头讲）；控制台退化成「随会议一起打开的另一个标签页」，**自己不再建会**。依据：① 被共享的那个标签页装不下控制台——`.ppt-screen-view` 是 `z-index:9999` 的全屏覆盖层，同页的侧栏一定会被学生看到；② 改造前「控制台建会 → 新开放映页」这条路本身是坏的——`slides` 只活在当前标签页的内存里（`stores/slides.js` 初值 `mock/slides`，导入只 `setSlides` 到内存），新标签页放的是示例 PPT |
+| Q2（放映页联动，2026-10-10） | 放映页与会议怎么联动（数字人口型） | **放映页以独立的只读身份 `presenter` 进房间**（`GET /meeting/present` 用主持人凭据换令牌）：口型由**同一条**数字人音频轨驱动——学生的声音就来自那条轨，只有同源才可能同步；**不**让控制台把响度广播过来（那要求控制台标签页始终不被浏览器节流）。**本轮不做翻页遥控**（那要先把页码回传通道用起来）；「开始演讲」只是一个**开始信号**，本轮内容固定 mock，详见 §5.7 |
 
 ---
 
@@ -213,16 +216,17 @@ graph TB
 | `GET` | `/meeting/detail` | 新增 `realtime`（老师可发布令牌）；未配置时为 `null`（控制台仍可看历史） |
 | `GET` | `/meeting/state` | 新增 `realtime`（学生只读令牌）——刷新后仍能连上房间 |
 | `POST` | `/meeting/message` | **新增**：聊天落库（`meetingNo` + `attendeeToken`/`hostToken` + `content`） |
+| `GET` | `/meeting/present` | **新增**：放映页实时接入（`meetingNo` + `hostToken`）→ 只读的 `presenter` 令牌，供被共享的那一屏订阅数字人音频轨驱动口型（见 §5.7）；LiveKit 未配置时抛 `1_007_000_010` |
 | `POST` | `/meeting/close` | 行为扩展：置为已结束 → **删 LiveKit 房间**（best-effort，404 视为成功） |
 
 ### 5.4 前端房间客户端
 
-`views/meeting/hooks/useLiveKitRoom.js`（老师端与学生端共用，差异只在令牌）：
+`views/meeting/hooks/useLiveKitRoom.js`（控制台 / 学生会议室 / 放映页三处共用，差异在令牌与两个开关 `omitHost` / `muteAgentAudio`）：
 
 | 能力 | 实现 |
 | --- | --- |
 | 连接 | `connect(realtime)` → `new Room({adaptiveStream, dynacast})` + `room.connect(url, token)` |
-| 屏幕共享（老师） | `localParticipant.setScreenShareEnabled(true, { audio: false, selfBrowserSurface: 'exclude', surfaceSwitching: 'include' })`；本端预览由 `LocalTrackPublished` attach。候选里排除控制台自身，使共享目标收敛到自动打开的放映页（见 §5.6） |
+| 屏幕共享（老师） | `localParticipant.setScreenShareEnabled(true, { audio: false, selfBrowserSurface: 'exclude', surfaceSwitching: 'include' })`；本端预览由 `LocalTrackPublished` attach。共享由**控制台**发起，`selfBrowserSurface: 'exclude'` 把控制台自己从候选里去掉，共享目标收敛到老师创建会议的那个 PPT 放映页（见 §5.6） |
 | 观看（学生） | `TrackSubscribed`（source = ScreenShare）→ `track.attach(videoEl)`；`TrackUnsubscribed` → `detach()` |
 | 聊天 | `publishData(bytes, { reliable: true })`；接收 `DataReceived` → 归一化事件；**发送方本地先渲染**（DataChannel 不回包给自己） |
 | 成员与在线 | `ParticipantConnected/Disconnected/MetadataChanged` → 由 `remoteParticipants` 重建名单；**控制台带 `omitHost`**，老师自己不进名单也不计入人数（Q22） |
@@ -245,20 +249,65 @@ graph TB
 | 学生端 / 实时通道不在线 | 轮询只降级成**聊天**通道：把库里的最近消息铺回来。宁可晚 10s 看到，也不要「什么都不更新」。**成员名单不铺**——台账含「尚未显式离开」的崩溃残留，列出来就是谎报，改为直接说明「暂时拿不到在线成员」 |
 | 学生端 / 轮询失败 | **不静默**：页面顶部给出「会议状态同步失败」提示（静默失败会让现象变成「聊天不更新且没有结束提示」，无从排查） |
 
-### 5.6 共享动线：建会 → 自动打开放映页 → 自动尝试共享
+### 5.6 共享动线：PPT 页建会 → 本页进放映 → 控制台另开标签页 → 老师手点共享
 
-老师端的角色分工是「控制台讲 + 放映页放」，因此创建会议这一步把放映页的打开与共享一并串起来：
+老师端的角色分工是「PPT 页放 + 控制台讲」，因此**创建会议这一步发生在 PPT 页**：
 
-1. 点「创建会议」时，在**点击的同步流程里**先 `window.open('about:blank', '_blank')` 占位一个空闲页签（`await` 之后再 `window.open` 会被浏览器弹窗拦截器拦掉）；已存在的放映页签直接复用，避免每建一次会就多开一个页签；
-2. 建会 + 拉详情成功后，把占位页签导航到 `/index/ppt?screen=1`：PPT 页 `onMounted` 与 `watch(() => route.query.screen)` 命中即 `enterScreeningFromStart()` 进入放映（固定从第一页开始），同时把 `document.title` 改成「PPT 放映页」——共享选择框里靠它认页面；
-3. 紧接着自动调一次 `startScreenShare()`：`selfBrowserSurface: 'exclude'` 把**控制台自身**从候选去掉，共享目标收敛到放映页标签页；`surfaceSwitching: 'include'` 留一条中途换画面的退路。**这一步的成功率不由我们决定**（见下），失败只弹一条提示；
-4. 老师补一次真实手势：点右上角「开始共享」→ 在选择框里选「PPT 放映页」→ 学生端订阅到屏幕共享轨后 attach 到 `<video>`。
+1. 老师在 `/index/ppt` 导入 PPT、用 AI 优化好讲稿，点工具栏「创建会议」→ 弹窗填标题（这一步点击是整条动线里**唯一一次用户手势**）；
+2. 点「创建并开始」时，在**点击的同步流程里**先 `window.open('about:blank', '_blank')` 占位一个空闲页签（`await` 之后再 `window.open` 会被浏览器弹窗拦截器拦掉）；已存在的控制台页签直接复用；
+3. `POST /meeting/create` 成功后依次做三件事：把 `{ ...created, title }` 写进 `localStorage`（`tb-meeting-host:{会议号}`，见 `src/utils/hostSession.js`）→ 本页 `document.title` 改成「PPT 放映页」并 `enterScreeningFromStart()`（固定从第一页开始，与「进会议总是从头讲」一致）→ 把占位页签导航到 `/index/meeting?meetid={会议号}&credential=1`；
+4. 浏览器会把新开的控制台标签页切到前台：老师在那里看到**「请保存主持人凭据」提示条**（`credential=1` 只用于这一次提示，控制台读完参数即把它从地址栏摘掉）与「开始共享」按钮；
+5. 老师点「开始共享」→ 在选择框里选中「PPT 放映页」标签页 → 学生端订阅到屏幕共享轨后 attach 到 `<video>`。
+
+**为什么被共享的是 PPT 页，而不是控制台**：
+
+- 控制台要显示名单与聊天，而 `.ppt-screen-view` 是 `z-index:9999` 的全屏覆盖层 —— 两者放同一个标签页，学生一定会看到控制台 UI；
+- 反过来（改造前：控制台建会 → 新开 `/index/ppt?screen=1`）也不行：放映页是**另一个 JS 上下文**，`slides` 只活在当前标签页的内存里（`stores/slides.js` 初值是 `mock/slides`，导入只 `setSlides` 到内存、全仓无持久化），共享出去的其实是示例 PPT。
 
 **硬约束（不要试图绕过）**：
 
-- 浏览器规定 `getDisplayMedia` 必须由**用户手势**触发，而第 1 步的 `window.open` 已经用掉一次手势 → 第 3 步的自动尝试**多半会被拒绝**；且「选择共享源」这一步在任何浏览器里都不能由脚本代选，**共享必然包含一次用户点击**。
-- 放映页在首屏同样没有用户手势 → **自动全屏也会被拒绝**（`enterFullscreen` 已吞掉该 Promise 拒绝），需要真全屏时点放映工具条上的全屏按钮或按 F11。
-- 若共享的是**整个屏幕**而不是放映页标签页，学生看到的会带上控制台/桌面；因此控制台的占位提示与失败提示都写明「选中『PPT 放映页』标签页」。
+- 浏览器规定 `getDisplayMedia` 必须由**用户手势**触发，而第 2 步的 `window.open` 已经用掉一次手势 → 建会流程**不再尝试自动共享**（`tryAutoShare` 已删除），「开始共享」必然是一次真实点击；且「选择共享源」在任何浏览器里都不能由脚本代选。
+- 放映页进入放映时同样没有用户手势 → **自动全屏也会被拒绝**（`enterFullscreen` 已吞掉该 Promise 拒绝），需要真全屏时点放映工具条上的全屏按钮或按 F11。
+- 若共享的是**整个屏幕**而不是放映页标签页，学生看到的会带上控制台/桌面；因此控制台的占位提示写明「选中『PPT 放映页』标签页」。
+- `selfBrowserSurface: 'exclude'` **必须保留**（不要改成 `'include'` 或加 `preferCurrentTab`）：共享是从控制台发起的，这条正好把控制台自己从候选里去掉，让老师只能选到放映页。
+- 控制台标签页被浏览器拦掉时**整件事失败**（本页不进放映）：否则提示会压在覆盖层下面，老师什么也看不到。
+
+### 5.7 讲稿播报：声音随共享轨，口型由本页播放驱动
+
+**一句话**：后端把讲稿合成为 PCM，以 SSE 流回**放映页本页**；本页播放它，并用**正在播的这条音频**驱动口型。这一页正被屏幕共享，**学生听到的声音就是共享轨里的声音** —— 声画同源，不存在「两条独立链路对不齐」。
+
+```text
+PPT 页(放映态) --POST /ppt/speech/speak--> tb-module-lecture
+      ^                                        │ CosyVoice 流式合成（48kHz/单声道/16bit）
+      └── SSE: status / chunk(base64 PCM) / error ┘
+      │
+      ├─ 播放：WebAudio 逐片排期（views/ppt/utils/speech-player.js）
+      ├─ 口型：同一 AudioContext 上取逐帧响度 → ParamMouthOpenY
+      └─ 被屏幕共享（audio: true）──> 学生端 <audio>（screen_share_audio 轨）
+```
+
+| 项 | 口径 |
+| --- | --- |
+| 接口 | `POST /ppt/speech/speak`（与讲稿生成同控制器、同口径：`/ppt/**` 免登录）。事件 `status`（started/done）、`chunk`（base64 的 48kHz 单声道 16bit PCM）、`error`；事件流建立前校验失败时返回普通 JSON 错误体 |
+| 播放 | `views/ppt/utils/speech-player.js`：`AudioContext({ sampleRate: 48000 })` + 逐片排期的 `AudioBufferSourceNode`；分片切在采样中间时留一个字节进位；`stop()` 掐掉已排期与队列里的全部音源 |
+| 口型 | 同一个 AudioContext 上取**逐帧瞬时响度** → `mouthLevel` → `writeMouthOpen`。口型跟的就是学生正在听的那条音频，**不可能不同步** |
+| 声音怎么到学生端 | 屏幕共享开 `audio: true`（共享**这一页的声音**）；学生端把 `screen_share_audio` 轨 attach 到隐藏 `<audio>`。**共享框里音频勾选被取消 = 学生听不到**，只能重新共享一次 |
+| 触发 | ① 控制台「开始演讲 / 停止演讲」→ `BroadcastChannel('tb-meeting:{会议号}')` **单向**发指令（控制台 → 放映页）；② 本页工具栏「试听本页」（彩排用，不需要会议，念的是备注区草稿）。**翻页仍由本页自己说了算**（页面真相只有一个） |
+| 取消 | 「停止」= 前端 `AbortController.abort()`：请求一断，后端写入失败 → 合成侧 `streamingCancel()`，本页同时安静。**不需要** `say/cancel` 这类额外接口 |
+| 落库 | 请求带齐 `meetingNo + hostToken`（本页从 `?meetid=` 与 `localStorage` 取）时，内容以数字人身份落 `lecture_meeting_message`（`kind=2`）；彩排试听不落库 |
+| 名单 | 房间里**不再有**数字人 / 放映页这类非人身份，名单与人数就是房间成员（`utils/attendees.js` 只做 `omitHost`） |
+| 彩排 vs 开会 | 同一段代码、同一个接口，差别只在「那一页有没有被共享」：共享了，声音就到学生端 |
+
+**为什么删掉 worker 中继那一套**（此前版本：`presenter` 身份 + `GET /meeting/present` + Node `digital-human-worker/`）：
+
+1. **声音的终点本来就该是被共享的那一页**：中继一圈（后端 → worker → 房间音频轨）多一个进程、多一份要同步的配置、多一条会挂的链路 —— 而「进程没跟上配置」正是那条链路上最典型的一类故障。
+2. **口型与声音不可能对不上**：口型不再依赖「订到同一条远端轨」，而是直接量本页正在播的音频。
+3. **取消变得免费**：断流即取消合成，不再需要 `DELETE /say/{id}` 与 worker 的 `clearQueue`。
+4. **代价**：① 共享时必须带上「这一页的声音」（浏览器默认勾选，脚本不能代选）；② 学生端不再有一个独立的数字人形象 —— 形象只存在于老师共享的画面里；③ 后端同时活跃的播报数上限沿用 `max-concurrent-speak`（超出的排队）；④ **播放需要那一页被用户激活过**：浏览器规定 `AudioContext` 在页面拿到过用户手势前只能挂起，因此**刷新过放映页之后**要先在该页点一下任意处，否则控制台发来的播报会「念了但没声音」（本轮不加 UI 提示，看到学生没声音先想起来这一条）。
+
+**控制台的「开始演讲」仍是开始信号**：本轮内容固定为 mock（`MOCK_LECTURE_TEXT = '你好'`），下一轮换成「放映页念当前页 `remark`」（docs/18 A 段）或 AI 现场讲词（B 段）—— **信号本身不变**，只换取文本那一步。控制台的「数字人播报」手输框保留，作为多源 / 长文本入口。
+
+**放映页怎么知道会议号**：建会成功时把地址写成 `/index/ppt?screen=1&meetid={会议号}`（`router.replace`），刷新与重新打开这条链接都能恢复；本页据此挂上这一场的播报总线。会议号不是秘密；`hostToken` 仍只落在 `localStorage`（`src/utils/hostSession.js`），**永不进 URL**。
 
 ---
 
@@ -285,9 +334,12 @@ graph TB
 
 | 落点 | 说明 |
 | --- | --- |
-| `views/meeting/MeetingConsoleView.vue` | 老师控制台（`/index/meeting`）：建会、复制链接、成员、聊天、共享、结束会议。**地址栏会议号 `?meetid={会议号}` = 「管理这一场」**：建会成功后 `router.replace` 写入，刷新 / 复制 / 另开标签页都能恢复（`watch` + `restoreFromQuery`）；不带参数是建会态，并列出本机还留着主持人凭据的会议作为入口。主持人会话按会议号切分存 `localStorage`（`tb-meeting-host:{会议号}`，**结束会议即删**；旧键 `sessionStorage:tb-meeting-host` 会在首次进入时一次性迁移），代价是**同一场会议不要同时开两个控制台标签页**——LiveKit identity 相同，后连的会把前一个踢掉。**建会成功后自动打开 `/index/ppt?screen=1` 放映页并自动尝试共享它**（`reserveScreeningTab` / `openScreeningTab` / `tryAutoShare`，详见 §5.6） |
+| `views/ppt/index.vue` | PPT 编辑器 / 放映页，**也是会议入口**：工具栏「创建会议」（弹标题）→ 建会 → 地址写成 `?screen=1&meetid={会议号}` → **本页进入放映**（`document.title` 改成「PPT 放映页」）→ 控制台另开标签页（`handleCreateMeeting` / `consoleUrl`，详见 §5.6）。放映态下用 `usePresenterRoom` 进房间、把 `mouthLevel` 写进本页 Live2D（`writeMouthOpen`，见 §5.7）。同页还有 `?screen=1` 的一次性进放映入口与 AI 备注优化 |
+| `views/meeting/MeetingConsoleView.vue` | 老师控制台（`/index/meeting?meetid={会议号}`）：复制链接、成员、聊天、共享、数字人播报、结束会议。**它是「创建会议才有的」页面**：不带 `?meetid=` 是空态（提示去 PPT 页创建 + 列出本机还留着凭据的会议），**自己不建会、也不开放映页**。刷新 / 复制 / 另开标签页都能恢复（`watch` + `restoreFromQuery`）。代价是**同一场会议不要同时开两个控制台标签页**——LiveKit identity 相同，后连的会把前一个踢掉 |
+| `src/utils/hostSession.js` | 主持人会话的本地存取（`tb-meeting-host:{会议号}`，**结束会议即删**；旧键 `sessionStorage:tb-meeting-host` 在首次进入控制台时一次性迁移）。放在 `src/utils/` 而不是某个模块目录下，因为它是 **PPT 页（建会时写）与控制台（打开时读）共用**的 |
 | `views/meeting/MeetingRoomView.vue` | 学生会议室（`/meeting/:meetingNo`，独立路由、无布局、免登录）：弹窗输名字入会、看画面、右侧聊天；10s 轮询兜底会议结束 |
 | `views/meeting/hooks/useLiveKitRoom.js` | 房间客户端（见 §5.4） |
+| `views/meeting/hooks/usePresenterRoom.js` | 放映页的房间客户端：presenter 身份、静音订阅数字人音频轨、只暴露口型响度（见 §5.7） |
 | `views/meeting/components/` | `NicknameDialog`、`AttendeeList`、`ChatPanel`、`ScreenStage`（纯展示 + `defineExpose({videoRef})`，轨的 attach 由 hook 驱动） |
 | `views/meeting/stores/meeting.js` | Pinia store：会议信息、成员、消息、共享与连接状态、`applyEvent` |
 | `src/api/meeting.js` | REST 封装（含 `sendMeetingMessage`） |
@@ -334,6 +386,9 @@ graph TB
 | M4 | 删除自建 WS / MSE 链路与过时测试 | 已完成（14 模块编译通过、后端 9/9 测试通过、前端 ESLint 干净） |
 | M5 | 生命周期修复：入会上限作废、`/meeting/leave`、删 `online` 列、在线只认房间事件、预留列清理 | 已落地（`./mvnw -pl tb-module-lecture -am test` **35/35**、前端 `attendees.test.js` 5/5、oxlint + eslint 干净、`vite build` 通过）；**在线名单实时性仍需真实浏览器联调** |
 | M6 | 会议两页 UI 与错误修复：抽 `MeetingTopBar`、连接态色调统一、控制台名单不含老师、降级不列名单、会议室 `100dvh` + 小屏分段切换、Token 违规清零 | 已落地（`attendees.test.js` **6/6**、oxlint + eslint 干净、`vite build` 通过）；**小屏与共享态仍需真机/真实浏览器验收** |
+| M7 | **会议入口搬进 PPT 页**（§5.6）：`/index/ppt` 工具栏「创建会议」→ 建会后本页进放映（被共享的就是这一屏）→ 控制台另开一个标签页并带 `?meetid=&credential=1`；控制台交出建会权、删掉 `reserveScreeningTab` / `openScreeningTab` / `tryAutoShare`，空态改为「会议在 PPT 页创建」+ 本机还留着凭据的会议列表；主持人会话存取抽到 `src/utils/hostSession.js` | 已落地（前端 **174/174**、ESLint + oxlint 干净、`vite build` 通过）；**共享动线仍需真实浏览器验收**，见 §11.2 |
+| M8 | **放映页联动数字人口型**（原 §5.7）：后端 `presenter` 身份 + `GET /meeting/present`；前端 `hooks/usePresenterRoom.js` + `useLiveKitRoom` 的 `muteAgentAudio`；PPT 页放映态进房间并把 `mouthLevel` 写进本页 Live2D | **已被 M9 取代并回滚**：`presenter` 令牌、放映页进房间、订阅远端音频轨这一整套随 worker 一起删除 |
+| M9 | **讲稿播报改成「本页播放 + 共享带声音」**（§5.7）：后端新增 `POST /ppt/speech/speak`（SSE、`chunk` 为 base64 PCM、断连即取消合成），删除 Node `digital-human-worker/` 与 `say` / `present` / `status` 的 worker 探测；前端新增 `views/ppt/utils/speech-player.js`（WebAudio 排期播放 + 逐帧响度驱动口型），PPT 页接 `BroadcastChannel` 播报总线并加「试听本页」，控制台改为「开始/停止演讲」发指令，共享开 `audio: true`、学生端 attach `screen_share_audio`；`utils/agentAudio.js`、`hooks/usePresenterRoom.js`、`components/DigitalHumanAvatar.vue` 删除，`utils/workflow-sse.js` 收成通用 `utils/event-stream.js` | 已落地（后端 **47/47**、前端 **178/178**、ESLint + oxlint 干净、`vite build` 通过）；**声音与口型必须真机验收**，见 §11.2 |
 
 ### 9.2 后端测试
 
@@ -354,7 +409,7 @@ cd frontend && npm test                                       # 159/160（1 条�
 | --- | --- | --- |
 | ~~后续一~~ | ~~PPT 演讲稿优化~~ | **已落地，见 §12** |
 | 后续二 · 语音链路 | CosyVoice 流式合成 → Node worker 发布 LiveKit 音频轨（**不是**「Java 直接发轨」，见 §1.3 修正与 `docs/17`） | **已落地（2026-10-09，`docs/17` §9.1），默认关闭**：`tb.lecture.digital-human.enabled=false` |
-| 后续二 · 跟页播报 | 放映 / 会议两种形态 × 照读 / AI 现场讲词四种组合；演讲台路由、串行播报队列、可取消、试听通路 | **A 段已落地（2026-10-10）**：演讲台 `/meeting/:meetingNo/present` 跟页照读 + 本机试听 + 能取消；AI 现场讲词与形象口型统一见 [18-放映与会议演讲体系方案.md](./18-放映与会议演讲体系方案.md) B/C 段（本文 §1.4 的「共享音频」一项已按「画面走屏幕共享 + 数字人轨出声」实现） |
+| 后续二 · 跟页播报 | 放映 / 会议两种形态 × 照读 / AI 现场讲词四种组合；页码总线、串行播报队列、可取消、试听通路 | **规划中，工程化设计见 [18-放映与会议演讲体系方案.md](./18-放映与会议演讲体系方案.md)**（本文 §1.4 的「共享音频」一项已被它细化为「画面继续走屏幕共享 + 数字人轨出声」） |
 | 后续二 · `@Tool` 编排 | LLM 决定翻页 / 播报 / 开关答疑 | 规划（`docs/18` D 段，需先出 ADR） |
 
 ---
@@ -393,24 +448,28 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 | --- | --- | --- |
 | 0 | **（已建过库的机器先执行）** `ALTER TABLE lecture_meeting DROP COLUMN IF EXISTS planned_minutes, DROP COLUMN IF EXISTS document_id;` `ALTER TABLE lecture_meeting_attendee DROP COLUMN IF EXISTS online;` `DROP INDEX IF EXISTS idx_lecture_meeting_create_time;` —— 全仓无 flyway/liquibase，建表脚本只对新库生效 | 各条语句均返回 `DROP`/`NOTICE`，无报错 |
 | 0 | 执行三张建表脚本；启动 LiveKit（`D:\ctf\livekit\start.ps1`）；启动后端与前端（学生端需局域网可达，`npm run dev -- --host`） | LiveKit 日志显示 `nodeIP` 为本机 WLAN 地址 |
-| 1 | 老师登录 → 控制台创建会议 | 返回 6 位会议号与入会链接；`lecture_meeting` 落库；连接状态变「已连接」 |
-| 2 | 老师点「开始共享」并选 PPT 窗口 | 老师端有本地预览；日志提示已开始共享 |
+| 1 | 老师登录 → `/index/ppt` 导入 PPT → 点工具栏「创建会议」→ 填标题 → 「创建并开始」 | 返回 6 位会议号；`lecture_meeting` 落库；**本页进入放映**（标签页标题变「PPT 放映页」）；控制台在**另一个标签页**打开并显示「请保存主持人凭据」提示条；控制台顶栏连接状态变「已连接」 |
+| 2 | 在控制台点「开始共享」→ 选择框里选「PPT 放映页」 | 控制台有本地预览；学生端看到的是**老师导入并优化过的那份 PPT**，不是示例页 |
 | 3 | 手机打开入会链接 → 输名字 → 进入 | 左侧看到老师画面 |
 | 4 | 手机再开一个窗口用另一个名字入会 | 成员列表实时增加（**不再有人数上限**，见 ADR-0001） |
 | 5 | 双方各发一条消息 | 双向实时到达；刷新后从历史仍能看到（双写生效） |
 | 6 | 学生刷新页面 | 自动重新入会并看到画面（`state` 下发了新令牌） |
 | 7 | 老师停止共享 | 学生端回到「等待主持人开始共享」占位 |
-| 8 | 老师结束会议 | 学生端立即提示「会议已结束」；`lecture_meeting.status = 2`；房间被删除 |
+| 8 | 老师结束会议（控制台） | 学生端立即提示「会议已结束」；`lecture_meeting.status = 2`；房间被删除；控制台回到空态、本机凭据被删除。**放映页不会自动退出**：回到「PPT 放映页」按 ESC 即可（共享轨随 `room.disconnect()` 一并停止） |
 | 9 | 未配置 `LIVEKIT_API_KEY` 时启动后端再入会 | 返回可读错误（错误码 `1_007_000_010`），不是 500 |
 | 10 | **（M5）** 反复用同一入会链接进会议室、每次直接关标签页，累计 25 次后再开第 26 个 | 仍能入会；不再出现「人数已满」（`1_007_000_005` 已作废，ADR-0001） |
 | 11 | **（M5）** 老师控制台开着，学生进出会议室 | 在线人数**立即**跟着房间事件变化；静置 30s（跨过两次 10s 轮询）数字**不会被打回旧值**（ADR-0002） |
 | 12 | **（M5）** 学生用 SPA 内导航离开会议室（非刷新） | `lecture_meeting_attendee` 该行 `leave_time` 被写入；刷新**不会**写（否则会记下"已离开但其实还在"的假事实） |
-| 13 | **（M5）** 清掉浏览器存储后带着 `?meetid=` 打开控制台 | 显示「本浏览器没有会议 X 的主持人凭据」与「新建会议」出口，不白屏、无未捕获异常（ADR-0003） |
-| 14 | **（M5）** 新建一场会 | 凭据提示条出现，含完整 `hostToken` 与「复制凭据」按钮，并写明"丢失无法找回" |
+| 13 | **（M7）** 不带参数直接打开 `/index/meeting`；再清掉浏览器存储后带着 `?meetid=` 打开 | 前者显示空态「会议在 PPT 页创建」+「去 PPT 页创建会议」+ 本机会议列表；后者显示「本浏览器没有会议 X 的主持人凭据」与同一个出口。都不白屏、无未捕获异常（ADR-0003） |
+| 14 | **（M7）** 在 PPT 页点「创建会议」建一场 | 控制台标签页出现「请保存主持人凭据」提示条，含完整 `hostToken` 与「复制凭据」按钮，并写明「丢失无法找回」；刷新控制台后提示条不再出现（`credential=1` 已被摘掉） |
 | 15 | **（M6）** 老师控制台看着 2 个学生进出 | 人数是 **2**（不是把自己算进去的 3），名单里没有「老师」这一格 |
 | 16 | **（M6）** 关掉 LiveKit 再进会议室 | 顶栏只有「连接已断开」红色 chip，**没有**在线人数、**没有**成员名单；名单区显示「暂时拿不到在线成员」 |
 | 17 | **（M6）** 老师结束会议 | 学生端顶栏 chip 变「会议已结束」（灰色中性），**不再**叠加显示"连接已断开"；结束页盖在内容之上但不压住弹层 |
 | 18 | **（M6）** 手机（宽 ≤820px）打开入会链接 | 顶栏下方出现「画面 / 成员与聊天」分段切换；切到聊天后**输入框贴在屏幕底部**，键盘弹出不被顶出可视区 |
+| 19 | **（M9）** 建会进入放映（地址为 `?screen=1&meetid=`）后，控制台点「开始演讲」 | 声音**从放映页那一标签页**出来（不是控制台）；那一页的数字人张嘴；**学生端**听到同一段声音；控制台在线人数**不含**放映页 |
+| 20 | **（M9）** 播报中点「停止演讲」 | 声音立刻停（播放器清空已排期音频），后端日志显示合成被取消（不再向厂商要音频） |
+| 21 | **（M9）** 在 PPT 页点「试听本页」 | 不需要开会就能念出备注区当前内容（含未保存的改动）；备注为空时提示先写备注，不报错 |
+| 22 | **（M9）** 共享时**取消勾选**「分享标签页音频」（或共享整个屏幕而不是这一页） | 学生端看得到画面但听不到声音；重新共享并保留音频勾选后恢复。本轮**不检测**这件事，靠现象排查（见 §5.7 代价①） |
 
 ### 11.3 回归重点
 
@@ -492,7 +551,7 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 | `views/ppt/components/ai/AiRemarkDialog.vue` | 单页对比弹窗（原 / 新 + 采纳 / 放弃 / 重新生成） |
 | `views/ppt/components/ai/AiRemarkBatchDialog.vue` | 整篇对比弹窗（逐页勾选默认全选 + 失败页标红 + 只重试失败页） |
 | `views/ppt/stores/slides.js` | 新增 `updateSlideById`：整篇回填要写到**任意页**，而 `updateSlide` 只改当前页 |
-| `views/ppt/index.vue` | 两个按钮、本场时长输入、跑批状态机、采纳后的「撤销本次优化」提示 |
+| `views/ppt/index.vue` | 两个 AI 按钮、本场时长输入、跑批状态机、采纳后的「撤销本次优化」提示；**另有工具栏「创建会议」**（建会后本页进放映，见 §5.6） |
 
 | 状态 | 表现 |
 | --- | --- |

@@ -1,8 +1,16 @@
 /**
- * 工作流事件流读取（fetch + ReadableStream）。
+ * SSE 事件流读取（fetch + ReadableStream）。
  *
- * 为什么不用 EventSource：执行接口是 POST + JSON 请求体，EventSource 只能 GET、无法携带 body。
+ * 为什么不用 EventSource：这些接口都是 POST + JSON 请求体，EventSource 只能 GET、无法携带 body。
  * 因此按 SSE 协议手工切分：空行分隔事件，`event:` 给事件名，`data:` 给载荷（可多行，拼接后解析）。
+ *
+ * 两类使用方共用这一个读取器：
+ * - 工作流执行 / 人工确认恢复：事件 `run` / `node` / `interrupt`，载荷是 JSON；
+ * - 讲稿播报（`POST /ppt/speech/speak`）：事件 `status` / `chunk` / `error`，其中 `chunk` 的载荷是
+ *   base64 的 PCM，**原样**交给播放器（因此非 JSON 载荷必须按字符串返回，不能被解析掉）。
+ *
+ * `signal` 是唯一的取消手段，也是「停止演讲」的全部实现：请求一断，后端合成随即取消
+ * （写不出去 → 合成侧停止继续向厂商要音频，见 docs/16 §5.7）。
  */
 import { getToken } from '@/utils/auth'
 
@@ -38,7 +46,7 @@ const parseEventBlock = (block) => {
 const toStreamError = async (response) => {
   const isJson = (response.headers.get('content-type') ?? '').includes('json')
   const payload = isJson ? await response.json() : null
-  const error = new Error(payload?.message || `工作流请求失败（HTTP ${response.status}）`)
+  const error = new Error(payload?.message || `请求失败（HTTP ${response.status}）`)
   error.code = payload?.code
   return error
 }
@@ -72,16 +80,16 @@ const consume = async (stream, onEvent) => {
 }
 
 /**
- * 读取工作流执行 / 人工确认恢复的事件流。
+ * 读取一份 SSE 事件流。
  *
- * @param {string} url 接口地址，如 `/api/workflow/run`
+ * @param {string} url 接口地址，如 `/api/ppt/speech/speak`（带 `/api` 前缀走 Vite 代理）
  * @param {object} options 选项
- * @param {object} [options.body] 请求体；省略时不发送 body（`/workflow/resume` 用 query 传参）
- * @param {AbortSignal} [options.signal] 中断信号，用于重新运行或页面卸载时取消旧流
- * @param {(event: string, payload: object|string) => void} options.onEvent 事件回调（`run` / `node` / `interrupt`）
+ * @param {object} [options.body] 请求体；省略时不发送 body（用 query 传参的接口）
+ * @param {AbortSignal} [options.signal] 中断信号：停止当前播报 / 重跑 / 页面卸载都靠它
+ * @param {(event: string, payload: object|string) => void} options.onEvent 事件回调
  * @returns {Promise<void>} 流正常读完时 resolve；HTTP 失败或读取中断时 reject
  */
-export async function readWorkflowStream(url, options) {
+export async function readEventStream(url, options) {
   const { body, signal, onEvent } = options
   const headers = { Accept: 'text/event-stream' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'

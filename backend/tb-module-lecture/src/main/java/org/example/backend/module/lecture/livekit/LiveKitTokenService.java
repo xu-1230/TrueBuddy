@@ -38,14 +38,10 @@ public class LiveKitTokenService {
     public static final String HOST_IDENTITY = "host";
     /** 服务端身份（调用 RoomService 时使用） */
     public static final String SERVER_IDENTITY = "server";
-    /** 数字人身份：worker 用它进房间，前端按此 identity 识别哪条音频轨是数字人 */
-    public static final String AGENT_IDENTITY = "digital-human";
     /** 主持人角色（与 tb-module-lecture 的 role 口径一致） */
     private static final int ROLE_HOST = 1;
     /** 学生角色 */
     private static final int ROLE_STUDENT = 2;
-    /** 数字人角色 */
-    private static final int ROLE_AGENT = 3;
     /** 允许的时钟偏差（秒）：避免刚签发就被判「尚未生效」 */
     private static final long CLOCK_SKEW_SECONDS = 10;
 
@@ -89,13 +85,6 @@ public class LiveKitTokenService {
      */
     public String createAttendeeToken(String meetingNo, Long attendeeId, String nickname) {
         return createToken(roomNameOf(meetingNo), attendeeIdentityOf(attendeeId), nickname, ROLE_STUDENT, false, false, true);
-    }
-
-    /**
-     * 数字人令牌：可发布音频轨，但<b>不发 DataChannel</b>（聊天仍是师生两端的特权，数字人只出声音）。
-     */
-    public String createAgentToken(String meetingNo) {
-        return createToken(roomNameOf(meetingNo), AGENT_IDENTITY, "数字人", ROLE_AGENT, true, false, false);
     }
 
     /**

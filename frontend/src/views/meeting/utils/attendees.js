@@ -40,6 +40,8 @@ export function roleOfParticipant(participant) {
  * @returns {Array<{id: string, nickname: string, role: number}>}
  */
 export function fromRoomParticipants(participants = [], { omitHost = false } = {}) {
+  // 房间里的每一个 participant 都是人：数字人与放映页这两个「不是人」的身份已随 worker 一起删除
+  // （讲稿的声音改走屏幕共享的音轨，见 docs/16 §5.7），因此不再需要按身份排除谁
   const items = (participants ?? [])
     .filter(Boolean)
     .map((participant) => ({
