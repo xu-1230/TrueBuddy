@@ -170,22 +170,23 @@ import MeetingTopBar from './components/MeetingTopBar.vue'
 import ScreenStage from './components/ScreenStage.vue'
 import { useMeetingStore } from './stores/meeting'
 import { useLiveKitRoom, describeChatSend } from './hooks/useLiveKitRoom'
+// 键名与读写只有一份实现：演讲台（/meeting/:meetingNo/present）也要按会议号读同一份凭据
+import {
+  LEGACY_SESSION_KEY, SESSION_PREFIX, clearHostSession, readHostSession, writeHostSession,
+} from './utils/host-session'
 
-/**
- * 主持人会话存储：键按会议号切分，放在 `localStorage`。
- *
- * <p>为什么不用原来的「单个 `sessionStorage` 键」：地址栏的 `?meetid={会议号}` 必须能**在任意标签页**恢复
- * （复制链接到新标签页、多开两个控制台各管一场会），而 `sessionStorage` 逐标签隔离、单个键也区分不了会议。
- * 代价是主持人凭据会留在本机浏览器里，因此**结束会议时立刻删除该键**。
- */
-const SESSION_PREFIX = 'tb-meeting-host:'
-/** 改造前的会话键（单个 sessionStorage）：读到就迁移一次，迁移后不再使用 */
-const LEGACY_SESSION_KEY = 'tb-meeting-host'
-/** 老师发言时的昵称与角色（与后端落库口径一致） */
 const HOST_NICKNAME = '老师'
 const ROLE_HOST = 1
-/** 放映页路由：用相对路径，自动跟随当前 origin（localhost 或热点下的局域网 IP 都能打开） */
-const SCREENING_PATH = '/index/ppt'
+/**
+ * 演讲台路由：`/meeting/{会议号}/present`。
+ *
+ * 相对路径自动跟随当前 origin（localhost 或热点下的局域网 IP 都能打开）；
+ * 会议号进地址后，那一页能自己按会议号取出本机的主持人凭据，不需要靠查询串传凭据
+ * （凭据绝不能进 URL，见 utils/host-session.js 与 docs/adr/0003）。
+ */
+function presentPathOf(meetingNo) {
+  return `/meeting/${meetingNo}/present`
+}
 
 const store = useMeetingStore()
 const route = useRoute()
@@ -321,9 +322,9 @@ function reserveScreeningTab() {
   return screeningTab
 }
 
-/** 把放映页地址交给已占位的标签页；`?screen=1` 让 PPT 页加载后直接进入放映状态 */
-function openScreeningTab(tab) {
-  const url = `${SCREENING_PATH}?screen=1`
+/** 把演讲台地址交给已占位的标签页；演讲台自己进入放映状态 */
+function openScreeningTab(tab, meetingNo) {
+  const url = presentPathOf(meetingNo)
   if (!tab) {
     ElMessage.warning(`浏览器拦截了新标签页：请允许本站弹出窗口，或手动打开 ${url}`)
     return
@@ -356,8 +357,8 @@ async function handleCreate() {
     credentialVisible.value = true
     // 详情接口才会下发可发布的访问令牌（create 只返回会议号与主持人凭据）
     await loadDetail()
-    // 控制台负责「讲」，放映页负责「放」：建会成功后把放映页打开成放映状态
-    openScreeningTab(tab)
+    // 控制台负责「讲与管」，演讲台负责「放与念」：建会成功后把演讲台打开成放映状态
+    openScreeningTab(tab, created.meetingNo)
     // 顺手把放映页共享出去（浏览器要求用户手势，被拒绝会退化成提示）
     await tryAutoShare()
   } catch (error) {
@@ -484,36 +485,7 @@ async function handleSend(content) {
   if (tip) ElMessage.warning(tip)
 }
 
-// ========== 主持人会话的本地存取（按会议号切分） ==========
-
-function sessionKey(meetingNo) {
-  return `${SESSION_PREFIX}${meetingNo}`
-}
-
-function clearHostSession(meetingNo) {
-  window.localStorage.removeItem(sessionKey(meetingNo))
-}
-
-function writeHostSession(value) {
-  window.localStorage.setItem(sessionKey(value.meetingNo), JSON.stringify(value))
-}
-
-/** 解析会话 JSON；结构不完整就删掉坏值并返回 null */
-function parseHostSession(raw, meetingNo) {
-  try {
-    const saved = JSON.parse(raw)
-    if (!saved?.meetingNo || !saved?.hostToken) throw new Error('invalid session')
-    return saved
-  } catch {
-    clearHostSession(meetingNo)
-    return null
-  }
-}
-
-function readHostSession(meetingNo) {
-  const raw = window.localStorage.getItem(sessionKey(meetingNo))
-  return raw ? parseHostSession(raw, meetingNo) : null
-}
+// ========== 主持人会话的本地存取（实现见 utils/host-session.js） ==========
 
 /** 扫一遍本机存着的会议会话（先收键名再读，避免读的过程中删键导致漏项） */
 function loadKnownMeetings() {

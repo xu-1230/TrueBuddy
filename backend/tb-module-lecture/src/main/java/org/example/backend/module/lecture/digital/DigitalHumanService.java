@@ -1,8 +1,11 @@
 package org.example.backend.module.lecture.digital;
 
+import org.example.backend.module.lecture.model.vo.DigitalCancelReqVO;
 import org.example.backend.module.lecture.model.vo.DigitalSayReqVO;
 import org.example.backend.module.lecture.model.vo.DigitalSayRespVO;
 import org.example.backend.module.lecture.model.vo.DigitalStatusVO;
+
+import java.io.OutputStream;
 
 /**
  * AI 数字人 Service（后续二阶段一，见 {@code docs/17-AI数字人语音链路方案.md}）。
@@ -35,5 +38,26 @@ public interface DigitalHumanService {
      * @param meetingNo 会议号
      */
     void leaveRoom(String meetingNo);
+
+    /**
+     * 取消一条在途播报（老师侧动作，用 {@code hostToken} 鉴权）。
+     *
+     * <p>语义是「让 worker 停止推送这段并清空未播队列」，对应那次阻塞中的 {@code say} 会很快返回。
+     * 幂等：worker 侧没有该 requestId（已播完）时返回 false，不报错。
+     *
+     * @param reqVO 会议号、主持人凭据与要取消的 requestId
+     * @return 是否真的取消到了一段在途播报
+     */
+    boolean cancelSay(DigitalCancelReqVO reqVO);
+
+    /**
+     * 试听：把一段文本合成成 WAV 写进出参流，<b>不进房间、不依赖 worker</b>（见 {@code docs/18} §5.3）。
+     *
+     * <p>放映形态（彩排）用这条路，好处是 worker 没起来、LiveKit 没配也能听效果，且不占参会席位。
+     *
+     * @param text 要合成的文本，上限 {@code tb.lecture.digital-human.max-speak-chars}
+     * @param out  目标流（44 字节 WAV 头 + 48kHz/单声道/16bit PCM；本方法不关闭该流）
+     */
+    void speak(String text, OutputStream out);
 
 }

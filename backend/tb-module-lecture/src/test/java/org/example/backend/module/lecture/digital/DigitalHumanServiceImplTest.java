@@ -6,6 +6,7 @@ import org.example.backend.module.lecture.digital.tts.TtsSynthPort;
 import org.example.backend.module.lecture.digital.worker.DigitalHumanWorkerClient;
 import org.example.backend.module.lecture.livekit.LiveKitTokenService;
 import org.example.backend.module.lecture.model.LectureMeetingDO;
+import org.example.backend.module.lecture.model.vo.DigitalCancelReqVO;
 import org.example.backend.module.lecture.model.vo.DigitalSayReqVO;
 import org.example.backend.module.lecture.model.vo.DigitalSayRespVO;
 import org.example.backend.module.lecture.model.vo.DigitalStatusVO;
@@ -23,14 +24,22 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 
+import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_CANCEL_REQUEST_REQUIRED;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_DISABLED;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_LIVEKIT_NOT_CONFIGURED;
+import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_SPEAK_BUSY;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_TEXT_EMPTY;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_TEXT_TOO_LONG;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_TTS_FAILED;
 import static org.example.backend.module.lecture.enums.ErrorCodeConstants.DIGITAL_WORKER_UNREACHABLE;
+import static org.example.backend.module.lecture.enums.ErrorCodeConstants.SPEAK_DISABLED;
+import static org.example.backend.module.lecture.enums.ErrorCodeConstants.SPEAK_SYNTH_FAILED;
+import static org.example.backend.module.lecture.enums.ErrorCodeConstants.SPEAK_TEXT_EMPTY;
+import static org.example.backend.module.lecture.enums.ErrorCodeConstants.SPEAK_TEXT_TOO_LONG;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -247,8 +256,7 @@ class DigitalHumanServiceImplTest {
 
     @Test
     @DisplayName("文本会被 trim 后再合成与落库")
-    void textIsTrimmed() {
-        stubHappyMeeting();
+    void textIsTrimmed() {        stubHappyMeeting();
         when(workerClient.healthy()).thenReturn(true);
         when(tokenService.resolveSignallingUrl()).thenReturn(SIGNALLING_URL);
         when(tokenService.createAgentToken(MEETING_NO)).thenReturn(AGENT_TOKEN);
@@ -268,5 +276,210 @@ class DigitalHumanServiceImplTest {
 
         verify(ttsPort).synthesize(eq(TEXT), any(OutputStream.class));
         verify(meetingService).sendMessage(eq(1L), isNull(), eq("数字人"), eq(3), eq(TEXT), eq(2));
+    }
+
+    /* ===== 单飞闸门（docs/18 §5.4） ===== */
+
+    @Test
+    @DisplayName("同一房间第二段播报被明确拒绝：一条轨上混播比报错更糟")
+    void secondSayWhileInFlightIsRejected() throws Exception {
+        stubHappyMeeting();
+        when(workerClient.healthy()).thenReturn(true);
+        when(tokenService.resolveSignallingUrl()).thenReturn(SIGNALLING_URL);
+        when(tokenService.createAgentToken(MEETING_NO)).thenReturn(AGENT_TOKEN);
+
+        var inside = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(ttsPort.synthesize(anyString(), any(OutputStream.class))).thenAnswer(invocation -> {
+            ((OutputStream) invocation.getArgument(1)).write(new byte[]{1, 2, 3, 4});
+            return new TtsSynthPort.TtsStats(10, 4);
+        });
+        // 第一段卡在「交给 worker」这一步，模拟正在播的在途状态
+        doAnswer(invocation -> {
+            inside.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return null;
+        }).when(workerClient).streamPcm(eq(ROOM), anyString(), any(InputStream.class));
+
+        Thread first = new Thread(() -> service.say(reqVO(TEXT)));
+        first.setDaemon(true);
+        first.start();
+        assertTrue(inside.await(3, TimeUnit.SECONDS), "第一段应已进入 worker 推送阶段");
+
+        ServiceException busy = assertThrows(ServiceException.class, () -> service.say(reqVO("再来一段")));
+        assertEquals(DIGITAL_SPEAK_BUSY.getCode(), busy.getCode());
+
+        release.countDown();
+        first.join(5000);
+        assertFalse(first.isAlive(), "第一段应正常收尾");
+    }
+
+    @Test
+    @DisplayName("一段播完后闸门释放：下一次 say 不被误判成忙")
+    void gateReleasedAfterSayFinishes() {
+        stubHappyMeeting();
+        when(workerClient.healthy()).thenReturn(true);
+        when(tokenService.resolveSignallingUrl()).thenReturn(SIGNALLING_URL);
+        when(tokenService.createAgentToken(MEETING_NO)).thenReturn(AGENT_TOKEN);
+        when(ttsPort.synthesize(anyString(), any(OutputStream.class))).thenAnswer(invocation -> {
+            ((OutputStream) invocation.getArgument(1)).write(new byte[]{1, 2, 3, 4});
+            return new TtsSynthPort.TtsStats(10, 4);
+        });
+        doAnswer(invocation -> {
+            ((InputStream) invocation.getArgument(2)).transferTo(new ByteArrayOutputStream());
+            return null;
+        }).when(workerClient).streamPcm(eq(ROOM), anyString(), any(InputStream.class));
+        when(meetingService.sendMessage(anyLong(), any(), anyString(), anyInt(), anyString(), anyInt()))
+                .thenReturn(new MeetingMessageVO());
+
+        service.say(reqVO(TEXT));
+        assertDoesNotThrow(() -> service.say(reqVO(TEXT)));
+    }
+
+    /* ===== 取消播报 ===== */
+
+    @Test
+    @DisplayName("取消要先过主持人凭据校验，再打给 worker")
+    void cancelValidatesHostThenCallsWorker() {
+        when(meetingService.requireRunningMeetingByHost(MEETING_NO, HOST_TOKEN)).thenReturn(meeting());
+        when(workerClient.healthy()).thenReturn(true);
+        when(workerClient.cancelSay("req-1")).thenReturn(true);
+
+        assertTrue(service.cancelSay(cancelReq("req-1")));
+
+        verify(meetingService).requireRunningMeetingByHost(MEETING_NO, HOST_TOKEN);
+        verify(workerClient).cancelSay("req-1");
+    }
+
+    @Test
+    @DisplayName("缺 requestId：直接报参数错误，不碰会议也不碰 worker")
+    void cancelRequiresRequestId() {
+        ServiceException error = assertThrows(ServiceException.class, () -> service.cancelSay(cancelReq("  ")));
+
+        assertEquals(DIGITAL_CANCEL_REQUEST_REQUIRED.getCode(), error.getCode());
+        verifyNoInteractions(meetingService, workerClient);
+    }
+
+    @Test
+    @DisplayName("worker 已不可达时取消返回 false 而不是报错：那段本来就没在响")
+    void cancelIsQuietWhenWorkerGone() {
+        when(meetingService.requireRunningMeetingByHost(MEETING_NO, HOST_TOKEN)).thenReturn(meeting());
+        when(workerClient.healthy()).thenReturn(false);
+
+        assertFalse(service.cancelSay(cancelReq("req-1")));
+        verify(workerClient, never()).cancelSay(anyString());
+    }
+
+    /* ===== 试听通路（docs/18 §5.3） ===== */
+
+    @Test
+    @DisplayName("试听成功：44 字节 WAV 头参数正确 + PCM 原样接在后面，且全程不碰 worker/LiveKit")
+    void speakWritesWavWithoutTouchingRoom() throws IOException {
+        byte[] pcm = new byte[2048];
+        for (int i = 0; i < pcm.length; i++) {
+            pcm[i] = (byte) i;
+        }
+        when(ttsPort.synthesize(eq(TEXT), any(OutputStream.class))).thenAnswer(invocation -> {
+            ((OutputStream) invocation.getArgument(1)).write(pcm);
+            return new TtsSynthPort.TtsStats(1500, pcm.length);
+        });
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        service.speak(TEXT, out);
+
+        byte[] all = out.toByteArray();
+        assertEquals(pcm.length + 44, all.length, "只多一个标准 WAV 头");
+        assertEquals("RIFF", new String(all, 0, 4, StandardCharsets.US_ASCII));
+        assertEquals(36 + pcm.length, readLe32(all, 4), "RIFF 块长 = 36 + 数据长");
+        assertEquals("WAVE", new String(all, 8, 4, StandardCharsets.US_ASCII));
+        assertEquals("fmt ", new String(all, 12, 4, StandardCharsets.US_ASCII));
+        assertEquals(16, readLe32(all, 16), "canonical fmt 块");
+        assertEquals(1, readLe16(all, 20), "audio format 1 = PCM");
+        assertEquals(1, readLe16(all, 22), "单声道");
+        assertEquals(48000, readLe32(all, 24), "采样率必须与合成侧、worker 侧成对");
+        assertEquals(96000, readLe32(all, 28), "byteRate = 48000 × 2");
+        assertEquals(2, readLe16(all, 32), "blockAlign");
+        assertEquals(16, readLe16(all, 34), "位深");
+        assertEquals("data", new String(all, 36, 4, StandardCharsets.US_ASCII));
+        assertEquals(pcm.length, readLe32(all, 40));
+        assertArrayEquals(pcm, java.util.Arrays.copyOfRange(all, 44, all.length), "PCM 不能被改写");
+
+        verifyNoInteractions(workerClient, tokenService, meetingService);
+    }
+
+    @Test
+    @DisplayName("试听上限比会中播报宽松：整页 remark（>1000 字）不该被 maxTextLength 挡下")
+    void speakAllowsWholePageRemark() {
+        String longText = "句".repeat(1500);
+        when(ttsPort.synthesize(eq(longText), any(OutputStream.class))).thenAnswer(invocation -> {
+            ((OutputStream) invocation.getArgument(1)).write(new byte[]{1, 2});
+            return new TtsSynthPort.TtsStats(10, 2);
+        });
+
+        assertDoesNotThrow(() -> service.speak(longText, new ByteArrayOutputStream()));
+    }
+
+    @Test
+    @DisplayName("试听的三种拒绝：未启用 / 空文本 / 超长，都不去碰合成")
+    void speakValidatesBeforeSynth() {
+        properties.setEnabled(false);
+        assertEquals(SPEAK_DISABLED.getCode(),
+                assertThrows(ServiceException.class, () -> service.speak(TEXT, new ByteArrayOutputStream())).getCode());
+
+        properties.setEnabled(true);
+        assertEquals(SPEAK_TEXT_EMPTY.getCode(),
+                assertThrows(ServiceException.class, () -> service.speak("   ", new ByteArrayOutputStream())).getCode());
+
+        properties.setMaxSpeakChars(5);
+        assertEquals(SPEAK_TEXT_TOO_LONG.getCode(),
+                assertThrows(ServiceException.class, () -> service.speak(TEXT, new ByteArrayOutputStream())).getCode());
+
+        verifyNoInteractions(ttsPort, workerClient, tokenService, meetingService);
+    }
+
+    @Test
+    @DisplayName("试听合成失败：映射成业务错误码并带上厂商原因")
+    void speakMapsSynthFailure() {
+        when(ttsPort.synthesize(anyString(), any(OutputStream.class)))
+                .thenThrow(new IllegalStateException("语音合成失败: Model not exist"));
+
+        ServiceException error = assertThrows(ServiceException.class,
+                () -> service.speak(TEXT, new ByteArrayOutputStream()));
+
+        assertEquals(SPEAK_SYNTH_FAILED.getCode(), error.getCode());
+        assertTrue(error.getMessage().contains("Model not exist"), "原因要透传: " + error.getMessage());
+    }
+
+    @Test
+    @DisplayName("试听产出超字节上限：拒绝写出，不把半个音频塞给浏览器")
+    void speakRejectsOversizedAudio() {
+        properties.setMaxSpeakBytes(1024);
+        when(ttsPort.synthesize(anyString(), any(OutputStream.class))).thenAnswer(invocation -> {
+            ((OutputStream) invocation.getArgument(1)).write(new byte[4096]);
+            return new TtsSynthPort.TtsStats(10, 4096);
+        });
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        ServiceException error = assertThrows(ServiceException.class, () -> service.speak(TEXT, out));
+
+        assertEquals(SPEAK_SYNTH_FAILED.getCode(), error.getCode());
+        assertEquals(0, out.size(), "一个字节都不该写出");
+    }
+
+    private DigitalCancelReqVO cancelReq(String requestId) {
+        DigitalCancelReqVO reqVO = new DigitalCancelReqVO();
+        reqVO.setMeetingNo(MEETING_NO);
+        reqVO.setHostToken(HOST_TOKEN);
+        reqVO.setRequestId(requestId);
+        return reqVO;
+    }
+
+    private static int readLe32(byte[] bytes, int offset) {
+        return (bytes[offset] & 0xFF) | ((bytes[offset + 1] & 0xFF) << 8)
+                | ((bytes[offset + 2] & 0xFF) << 16) | ((bytes[offset + 3] & 0xFF) << 24);
+    }
+
+    private static int readLe16(byte[] bytes, int offset) {
+        return (bytes[offset] & 0xFF) | ((bytes[offset + 1] & 0xFF) << 8);
     }
 }

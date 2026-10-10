@@ -16,7 +16,7 @@
 | 完整 URL 前缀 | `/api/{模块}/{资源}` |
 | 数据格式 | JSON（`application/json`）；文件上传 `multipart/form-data` |
 | 上传上限 | 单文件 `50MB`、单请求 `1024MB`（`spring.servlet.multipart`；整包上传靠请求上限放行） |
-| 统一返回 | `CommonResult<T>`（`code = 0` 成功）；例外：`POST /chat` 返回 `SseEmitter`、`GET /workflow/text` 返回 `void` |
+| 统一返回 | `CommonResult<T>`（`code = 0` 成功）；三处例外：`POST /chat` 返回 `SseEmitter`、`GET /workflow/text` 返回 `void`、`POST /ppt/speech/speak` 直接写 `audio/wav` 字节流 |
 | 认证 | 请求头 `Authorization: Bearer <token>`，或参数 `token`（`tb.security.token-parameter`） |
 | 跨域 | **未配置可用的 CORS 来源**：`SecurityConfig` 只有 `.cors(withDefaults())`，全仓无 `CorsConfigurationSource` / `@CrossOrigin`，前端开发一律走 Vite 代理 `/api` → `8086` |
 
@@ -70,7 +70,7 @@
 >
 > **仍待整改**：`application.yml` 里 `/workflow/**` 上方的注释仍写着「`/run`、`/resume` 为 SSE 流」，而这两个端点已合并为 `POST /chat`（且 `/chat/**` **故意不放行**，要求登录）；注释误导，需随代码修正。
 
-### 2.5 接口清单（共 15 个 `@RestController` / 43 个接口）
+### 2.5 接口清单（共 15 个 `@RestController` / 45 个接口）
 
 > 下表路径均省略上下文前缀 `/api`。
 
@@ -117,8 +117,10 @@
 | 39 | `MeetingController` | POST | `/meeting/close` | 结束会议（`meetingNo` + `hostToken`）：置为已结束、给台账补离会时间并**删除 LiveKit 房间**（房间内学生立即断开） | `CommonResult<Boolean>` |
 | 40 | `MeetingController` | POST | `/meeting/message` | 聊天落库（`meetingNo` + `attendeeToken` 或 `hostToken` + `content`）；实时由 LiveKit DataChannel 承担，本接口只写历史 | `CommonResult<MeetingMessageVO>` |
 | 41 | `MeetingController` | GET | `/meeting/digital/status` | 数字人可用性探测（`meetingNo`；后端会按 `worker-probe-timeout-ms` 探一次 worker 的 `/healthz`），前端据此显示「数字人不可用」而不是静默无声 | `CommonResult<DigitalStatusVO>` |
-| 42 | `MeetingController` | POST | `/meeting/digital/say` | 让数字人在会议里播报一段文本（`meetingNo` + `hostToken` + `text`，长度受 `tb.lecture.digital-human.max-text-length` 约束）；合成走 CosyVoice、发布走 Node worker | `CommonResult<DigitalSayRespVO>` |
-| 43 | `PptSpeechController` | POST | `/ppt/speech/optimize` | PPT 讲稿生成（`pages` 长度 1 = 本页，长度 N = 全部）；无状态、不落库，内部按 `tb.lecture.ppt.batch-size` 分批调用模型，部分失败走 `failedIndexes` | `CommonResult<PptSpeechOptimizeRespVO>` |
+| 42 | `MeetingController` | POST | `/meeting/digital/say` | 让数字人在会议里播报一段文本（`meetingNo` + `hostToken` + `text`，长度受 `tb.lecture.digital-human.max-text-length` 约束）；合成走 CosyVoice、发布走 Node worker。**`requestId` 可由客户端自带**（8–64 位 `[A-Za-z0-9_-]`，不合规则后端生成）——因为本接口同步返回即代表整段已交给 worker，前端要能在响应回来之前就打断它，见 [18](./18-放映与会议演讲体系方案.md) §5.4 | `CommonResult<DigitalSayRespVO>` |
+| 43 | `MeetingController` | POST | `/meeting/digital/say/cancel` | 掐断一条在途播报（`meetingNo` + `hostToken` + `requestId`）：后端转调 worker 的 `DELETE /say/{id}` 清未播队列。幂等，已播完时返回 `false` 不报错 | `CommonResult<Boolean>` |
+| 44 | `PptSpeechController` | POST | `/ppt/speech/speak` | 试听：把一段文本合成成 WAV 直接回给浏览器，**不进 LiveKit 房间、不依赖 worker**（放映形态自己听，见 [18](./18-放映与会议演讲体系方案.md) §5.3）。上限走 `tb.lecture.digital-human.max-speak-chars`（比会中播报宽松，整页 `remark` 要一次进来） | `void`（`audio/wav` 字节流；合成失败发生在写出首字节前，此时仍返回 `CommonResult` JSON） |
+| 45 | `PptSpeechController` | POST | `/ppt/speech/optimize` | PPT 讲稿生成（`pages` 长度 1 = 本页，长度 N = 全部）；无状态、不落库，内部按 `tb.lecture.ppt.batch-size` 分批调用模型，部分失败走 `failedIndexes` | `CommonResult<PptSpeechOptimizeRespVO>` |
 
 > 接口 24~30 属**自定义工作流模块**（包根 `org.example.textflow`），分两块：
 >

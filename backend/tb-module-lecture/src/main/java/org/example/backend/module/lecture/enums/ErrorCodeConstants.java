@@ -36,5 +36,14 @@ public interface ErrorCodeConstants {
     ErrorCode DIGITAL_TTS_FAILED = new ErrorCode(1_007_000_018, "语音合成失败：{}");
     ErrorCode DIGITAL_LIVEKIT_NOT_CONFIGURED = new ErrorCode(1_007_000_019,
             "数字人需要 LiveKit 房间，请先配置 LIVEKIT_API_KEY / LIVEKIT_API_SECRET");
+    ErrorCode DIGITAL_SPEAK_BUSY = new ErrorCode(1_007_000_020,
+            "本场已有一段播报在进行，请先停止或等它念完");
+    ErrorCode DIGITAL_CANCEL_REQUEST_REQUIRED = new ErrorCode(1_007_000_021, "缺少要取消的播报标识 requestId");
+
+    // ========== 放映试听（见 docs/18 §5.3） 1_007_000_022 起 ==========
+    ErrorCode SPEAK_DISABLED = new ErrorCode(1_007_000_022, "语音合成未启用，无法试听");
+    ErrorCode SPEAK_TEXT_EMPTY = new ErrorCode(1_007_000_023, "请填写要试听的内容");
+    ErrorCode SPEAK_TEXT_TOO_LONG = new ErrorCode(1_007_000_024, "试听内容长度不能超过 {} 个字符");
+    ErrorCode SPEAK_SYNTH_FAILED = new ErrorCode(1_007_000_025, "试听合成失败：{}");
 
 }

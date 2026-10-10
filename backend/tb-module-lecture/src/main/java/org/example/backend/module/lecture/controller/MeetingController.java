@@ -3,6 +3,7 @@ package org.example.backend.module.lecture.controller;
 import jakarta.annotation.Resource;
 import org.example.backend.framework.common.pojo.CommonResult;
 import org.example.backend.module.lecture.digital.DigitalHumanService;
+import org.example.backend.module.lecture.model.vo.DigitalCancelReqVO;
 import org.example.backend.module.lecture.model.vo.DigitalSayReqVO;
 import org.example.backend.module.lecture.model.vo.DigitalSayRespVO;
 import org.example.backend.module.lecture.model.vo.DigitalStatusVO;
@@ -109,6 +110,16 @@ public class MeetingController {
     @PostMapping("/digital/say")
     public CommonResult<DigitalSayRespVO> digitalSay(@RequestBody DigitalSayReqVO reqVO) {
         return success(digitalHumanService.say(reqVO));
+    }
+
+    /**
+     * 掐断一条在途播报（跟页播报的「停止 / 翻页先断」都靠它，见 docs/18 §6）。
+     *
+     * <p>幂等：worker 侧那段已经播完时返回 false，不报错，编排层照样可以把状态收敛到 idle。
+     */
+    @PostMapping("/digital/say/cancel")
+    public CommonResult<Boolean> digitalSayCancel(@RequestBody DigitalCancelReqVO reqVO) {
+        return success(digitalHumanService.cancelSay(reqVO));
     }
 
 }

@@ -1,14 +1,19 @@
 package org.example.backend.module.lecture.ppt.controller;
 
 import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletResponse;
 import org.example.backend.framework.common.pojo.CommonResult;
+import org.example.backend.module.lecture.digital.DigitalHumanService;
 import org.example.backend.module.lecture.ppt.model.vo.PptSpeechOptimizeReqVO;
 import org.example.backend.module.lecture.ppt.model.vo.PptSpeechOptimizeRespVO;
+import org.example.backend.module.lecture.ppt.model.vo.PptSpeechSpeakReqVO;
 import org.example.backend.module.lecture.ppt.service.PptSpeechService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.io.IOException;
 
 import static org.example.backend.framework.common.pojo.CommonResult.success;
 
@@ -27,6 +32,9 @@ public class PptSpeechController {
 
     @Resource
     private PptSpeechService pptSpeechService;
+    /** 试听走的是合成通路（{@code digital} 包），与「发进房间的播报」共用同一个 TTS 接缝 */
+    @Resource
+    private DigitalHumanService digitalHumanService;
 
     /**
      * 生成讲稿。
@@ -36,6 +44,20 @@ public class PptSpeechController {
     @PostMapping("/optimize")
     public CommonResult<PptSpeechOptimizeRespVO> optimize(@RequestBody PptSpeechOptimizeReqVO reqVO) {
         return success(pptSpeechService.optimize(reqVO));
+    }
+
+    /**
+     * 试听：把这页讲稿合成成 WAV 直接回给浏览器，<b>不进 LiveKit 房间、不依赖 worker</b>。
+     *
+     * <p>返回的是音频字节而非 {@code CommonResult}，与 {@code POST /chat} 同属已记录的例外
+     * （见 {@code docs/05} §2.1）。合成失败发生在写出第一个字节<b>之前</b>，所以错误照常走 JSON；
+     * 一旦开始写流就只有客户端断开这一条退路（前端用 {@code AbortController}）。
+     */
+    @PostMapping("/speak")
+    public void speak(@RequestBody PptSpeechSpeakReqVO reqVO, HttpServletResponse response) throws IOException {
+        response.setContentType("audio/wav");
+        response.setHeader("Cache-Control", "no-store");
+        digitalHumanService.speak(reqVO.getText(), response.getOutputStream());
     }
 
 }

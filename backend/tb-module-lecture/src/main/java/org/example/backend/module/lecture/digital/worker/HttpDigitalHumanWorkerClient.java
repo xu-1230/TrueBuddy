@@ -99,6 +99,25 @@ public class HttpDigitalHumanWorkerClient implements DigitalHumanWorkerClient {
         sendAndRequire(request, "推送播报音频");
     }
 
+    @Override
+    public boolean cancelSay(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return false;
+        }
+        var request = baseRequest("/say/" + requestId).DELETE().timeout(CALL_TIMEOUT).build();
+        try {
+            int status = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)).statusCode();
+            log.info("[cancelSay][requestId={} 已请求取消 status={}]", requestId, status);
+            return status / 100 == 2;
+        } catch (IOException e) {
+            log.warn("[cancelSay][取消请求失败 requestId={}: {}]", requestId, e.getMessage());
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
     private HttpRequest.Builder baseRequest(String path) {
         String base = properties.getWorkerBaseUrl();
         if (base == null || base.isBlank()) {

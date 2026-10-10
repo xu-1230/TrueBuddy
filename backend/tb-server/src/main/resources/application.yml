@@ -170,6 +170,10 @@ tb:
       max-text-length: ${TB_DH_MAX_TEXT_LENGTH:1000}
       # 前端轮询状态接口时探测 worker 的超时
       worker-probe-timeout-ms: ${TB_DH_PROBE_TIMEOUT_MS:1500}
+      # 试听（POST /ppt/speech/speak）的单段文本上限：整页 remark 要一次送进来，比会中播报宽松
+      max-speak-chars: ${TB_DH_MAX_SPEAK_CHARS:2000}
+      # 试听音频字节上限：48k/单声道/16bit 下 8MB ≈ 85 秒，只用来挡异常产出
+      max-speak-bytes: ${TB_DH_MAX_SPEAK_BYTES:8388608}
   # 知识库文档解析：阿里云文档智能（文档解析大模型版）
   # AK/SK 为必填项，一律通过环境变量注入（项目根目录 .env，模板见 .env.example），缺失时启动即失败
   docmind:

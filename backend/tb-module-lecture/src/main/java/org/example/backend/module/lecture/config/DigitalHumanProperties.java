@@ -60,4 +60,19 @@ public class DigitalHumanProperties {
      */
     private Integer workerProbeTimeoutMs = 1500;
 
+    /**
+     * 试听（{@code POST /ppt/speech/speak}）的单段文本上限。
+     *
+     * <p>比 {@link #maxTextLength} 宽松：照读模式要把**整页 remark** 一次送进去，而讲稿单页上限是 1500 字
+     * （{@code tb.lecture.ppt.max-remark-chars}），按 1000 字切会逼前端自己拼段、听感断句不自然。
+     */
+    private Integer maxSpeakChars = 2000;
+
+    /**
+     * 试听音频的字节上限，超出直接拒绝。
+     *
+     * <p>48kHz / 单声道 / 16bit 下 8MB ≈ 85 秒，而合成侧本身 60 秒超时，所以这个闸门只挡异常产出。
+     */
+    private Integer maxSpeakBytes = 8 * 1024 * 1024;
+
 }

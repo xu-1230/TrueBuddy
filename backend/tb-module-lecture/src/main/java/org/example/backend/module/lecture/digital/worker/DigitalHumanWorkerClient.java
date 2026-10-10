@@ -39,4 +39,14 @@ public interface DigitalHumanWorkerClient {
      * @param pcm       48kHz / 单声道 / 16bit 裸 PCM
      */
     void streamPcm(String room, String requestId, InputStream pcm);
+
+    /**
+     * 取消一条在途播报：worker 置 cancelled 并清空未播队列，本方法对应的那次 {@link #streamPcm} 随即返回。
+     *
+     * <p>幂等：worker 侧不存在该 requestId 时返回 false（已经播完或从未开始），调用方不应报错。
+     *
+     * @param requestId 播报幂等标识
+     * @return worker 是否确认收到取消
+     */
+    boolean cancelSay(String requestId);
 }
