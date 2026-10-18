@@ -28,6 +28,7 @@
   - [3.10 模拟会议模块](#310-模拟会议模块)
   - [3.11 PPT 讲稿模块](#311-ppt-讲稿模块)
   - [3.12 测试与联调模块](#312-测试与联调模块)
+  - [3.13 管理端身份模块](#313-管理端身份模块)
 - [4. 附录](#4-附录)
   - [4.1 错误码总表](#41-错误码总表)
   - [4.2 枚举速查](#42-枚举速查)
@@ -102,7 +103,8 @@
 | `/test2/read-pptx` | PPTX 读取验证 |
 | `/test2/file-text` | 作业文件文本读取（联调桩） |
 
-**需登录**的模块：`/infra/**`、`/knowledge-base/**`、`/chat/**`、`/test/ping`、`/test2/ping`。
+**需登录**的模块：`/infra/**`、`/knowledge-base/**`、`/chat/**`、`/admin/**`、`/test/ping`、`/test2/ping`。
+其中 `/admin/auth/profile` 与 `/admin/auth/permissions` 还要求 `admin:dashboard` 权限（管理员与审核员拥有，普通用户与会员返回 403）。
 
 > `/chat/**` **故意不放入白名单**：会话与执行实例要记录 `creator`，因此要求登录；这也是它没有挂在 `/workflow` 前缀下的原因。
 >
@@ -132,7 +134,7 @@
 
 ## 2. 接口索引
 
-> 共 **14 个 Controller / 40 个接口**。路径省略 `/api` 前缀。
+> 共 **15 个 Controller / 42 个接口**。路径省略 `/api` 前缀。
 
 | # | 模块 | 方法 | 路径 | 说明 | 鉴权 |
 | --- | --- | --- | --- | --- | --- |
@@ -176,6 +178,8 @@
 | 38 | 测试联调 | GET | `/test2/ping` | 连通性测试 | 需登录 |
 | 39 | 测试联调 | GET | `/test2/read-pptx` | 读取本地 PPTX 验证解析 | 免登录 |
 | 40 | 测试联调 | GET | `/test2/file-text` | 读取作业文件文本（联调桩） | 免登录 |
+| 41 | 管理端身份 | GET | `/admin/auth/profile` | 当前账号资料 + 角色 + 权限 | 需登录 + `admin:dashboard` |
+| 42 | 管理端身份 | GET | `/admin/auth/permissions` | 当前账号权限码 | 需登录 + `admin:dashboard` |
 
 ---
 
@@ -212,7 +216,8 @@ curl -X POST http://localhost:8086/api/system/auth/login \
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `userId` | Long | 用户 ID |
-| `userType` | Integer | 用户身份：`0` 普通用户 / `1` 会员 / `2` 管理员；前端据此判断入口权限 |
+| `roles` | String[] | 角色编码集合（只含启用角色）：`normal` / `member` / `admin` / `auditor` |
+| `permissions` | String[] | 权限码集合，来自 `system_menu.permission`（角色与菜单均需启用） |
 | `accessToken` | String | 访问令牌，后续请求写入 `Authorization` |
 | `refreshToken` | String | 刷新令牌（有效期 7 天） |
 | `expiresTime` | LocalDateTime | accessToken 过期时间 |
@@ -225,7 +230,8 @@ curl -X POST http://localhost:8086/api/system/auth/login \
   "message": "",
   "data": {
     "userId": 1,
-    "userType": 2,
+    "roles": ["admin"],
+    "permissions": ["admin:dashboard", "system:user:list", "system:role:list"],
     "accessToken": "5f1c9a7be3d84c0d8a2f6b7c9d1e0a3b",
     "refreshToken": "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d",
     "expiresTime": "2026-10-18 18:30:00"
@@ -240,7 +246,8 @@ curl -X POST http://localhost:8086/api/system/auth/login \
 | `1002002000` | 登录失败，账号密码不正确 |
 | `1002002001` | 登录失败，账号被禁用 |
 
-> 身份随登录一并下发，不再提供单独的身份校验接口。
+> 角色与权限随登录一并下发；管理端初始化仍以 `/admin/auth/profile` 为权威。
+> **安全提示**：当前 `AdminUserServiceImpl.isPasswordMatch` 恒为 `true`（演示便利），上线前必须改为 BCrypt 校验。
 
 ---
 
@@ -2391,6 +2398,100 @@ curl http://localhost:8086/api/test2/file-text
 
 ---
 
+### 3.13 管理端身份模块
+
+> 模块前缀 `/admin/auth`，**需登录**，并额外要求 `admin:dashboard` 权限（管理员与审核员拥有）。
+> 角色与权限由后端按 RBAC 实时解析（`system_user_role` → `system_role` → `system_role_menu` → `system_menu`），
+> 前端不保存、也不自行拼装身份快照。管理端其余业务接口当前仍为前端 mock。
+
+#### 3.13.1 当前账号资料
+
+| 项 | 值 |
+| --- | --- |
+| 请求方法 | `GET` |
+| 请求路径 | `/admin/auth/profile` |
+| 鉴权 | 需登录 + `admin:dashboard` |
+
+**请求参数**：无（依赖请求头 Token）
+
+**请求示例**
+
+```bash
+curl http://localhost:8086/api/admin/auth/profile \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**响应字段（data，`AdminProfileRespVO`）**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `userId` | Long | 用户 ID |
+| `username` | String | 登录账号 |
+| `nickname` | String | 昵称 |
+| `avatar` | String | 头像 URL（可为 `null`） |
+| `roles` | String[] | 角色编码集合（只含启用角色） |
+| `permissions` | String[] | 权限码集合（只含启用菜单，去重） |
+
+**响应示例**
+
+```json
+{
+  "code": 0,
+  "message": "",
+  "data": {
+    "userId": 1,
+    "username": "admin",
+    "nickname": "管理员",
+    "avatar": null,
+    "roles": ["admin"],
+    "permissions": ["admin:dashboard", "system:user:list", "system:role:list"]
+  }
+}
+```
+
+**可能错误**
+
+| HTTP | code | message |
+| --- | --- | --- |
+| 401 | `401` | 账号未登录 |
+| 403 | `403` | 没有该操作权限 |
+| 200 | `1002000000` | 用户不存在 |
+
+> 未登录与无权限都由安全框架直接返回，响应体仍是 `{code, message, data}` 结构。
+
+---
+
+#### 3.13.2 当前账号权限码
+
+| 项 | 值 |
+| --- | --- |
+| 请求方法 | `GET` |
+| 请求路径 | `/admin/auth/permissions` |
+| 鉴权 | 需登录 + `admin:dashboard` |
+
+**请求参数**：无
+
+**请求示例**
+
+```bash
+curl http://localhost:8086/api/admin/auth/permissions \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**响应字段（data）**：`String[]`，权限码集合；无权限时为空数组
+
+```json
+{
+  "code": 0,
+  "message": "",
+  "data": ["admin:dashboard", "system:user:list", "system:role:list"]
+}
+```
+
+**可能错误**：同 [3.13.1](#3131-当前账号资料)（401 / 403）。
+
+---
+
 ## 4. 附录
 
 ### 4.1 错误码总表
@@ -2474,7 +2575,8 @@ curl http://localhost:8086/api/test2/file-text
 
 | 枚举 | 取值 |
 | --- | --- |
-| 用户身份 `UserTypeEnum` | `0` 普通用户 / `1` 会员 / `2` 管理员 |
+| 角色编码 | `normal` / `member` / `admin` / `auditor`（来自 `system_role.code`） |
+| 管理端入口权限 | `admin:dashboard` |
 | 知识库文档状态 | `0` 待处理 / `1` 解析中 / `2` 已完成（已向量化）/ `3` 失败 / `4` 待确认（已解析未向量化） |
 | 文档类型 | `PDF` / `WORD` / `MARKDOWN` |
 | 模板生成任务状态 | `1` 成功 / `2` 部分成功 / `3` 失败 |
@@ -2501,7 +2603,11 @@ curl http://localhost:8086/api/test2/file-text
 
 **`AuthLoginRespVO`（登录响应）**
 
-`userId: Long`、`userType: Integer`、`accessToken: String`、`refreshToken: String`、`expiresTime: LocalDateTime`
+`userId: Long`、`roles: String[]`、`permissions: String[]`、`accessToken: String`、`refreshToken: String`、`expiresTime: LocalDateTime`
+
+**`AdminProfileRespVO`（管理端账号资料）**
+
+`userId: Long`、`username: String`、`nickname: String`、`avatar: String`、`roles: String[]`、`permissions: String[]`
 
 **`FileUploadRespVO`（文件上传响应）**
 

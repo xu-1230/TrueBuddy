@@ -70,14 +70,14 @@
 >
 > **仍待整改**：`application.yml` 里 `/workflow/**` 上方的注释仍写着「`/run`、`/resume` 为 SSE 流」，而这两个端点已合并为 `POST /chat`（且 `/chat/**` **故意不放行**，要求登录）；注释误导，需随代码修正。
 
-### 2.5 接口清单（共 14 个 `@RestController` / 40 个接口）
+### 2.5 接口清单（共 15 个 `@RestController` / 42 个接口）
 
 > 下表路径均省略上下文前缀 `/api`。
 
 | # | Controller | 方法 | 路径 | 说明 | 返回 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `TestController` | GET | `/test/ping` | 连通性测试 | `CommonResult<String>` |
-| 2 | `AuthController` | POST | `/system/auth/login` | 登录（`@PermitAll`；响应含 `userType`） | `CommonResult<AuthLoginRespVO>` |
+| 2 | `AuthController` | POST | `/system/auth/login` | 登录（`@PermitAll`；响应含 `roles` / `permissions`） | `CommonResult<AuthLoginRespVO>` |
 | 3 | `Test2Controller` | GET | `/test2/ping` | 连通性测试 | `CommonResult<String>` |
 | 4 | `Test2Controller` | GET | `/test2/read-pptx` | 读取本地 pptx 做解析验证（白名单放行） | `CommonResult<List<PptxPage>>` |
 | 5 | `FileController` | POST | `/infra/file/upload` | 文件上传（multipart） | `CommonResult<FileUploadRespVO>` |
@@ -116,6 +116,8 @@
 | 38 | `MeetingController` | GET | `/meeting/digital/status` | 语音可用性（**无参数**）：只看开关与 DashScope 合成配置是否齐备，**不探测任何进程**（worker 已删）。播报本身不在会议接口里，见 40 | `CommonResult<DigitalStatusVO>` |
 | 39 | `PptSpeechController` | POST | `/ppt/speech/optimize` | PPT 讲稿生成（`pages` 长度 1 = 本页，长度 N = 全部）；无状态、不落库，内部按 `tb.lecture.ppt.batch-size` 分批调用模型，部分失败走 `failedIndexes` | `CommonResult<PptSpeechOptimizeRespVO>` |
 | 40 | `PptSpeechController` | POST | `/ppt/speech/speak` | **讲稿流式播报**（SSE，`produces=text/event-stream`）：`{ text, meetingNo?, hostToken? }` → 事件 `status`（started / done）、`chunk`（base64 的 48kHz 单声道 16bit PCM）、`error`；**调用方断开即取消合成**。带齐会议号与凭据时以数字人身份落库（`kind=2`），否则是彩排试听。链路见 [16](./16-PPT演讲与模拟会议方案.md) §5.7 | `SseEmitter` |
+| 41 | `AdminAuthController` | GET | `/admin/auth/profile` | 当前管理端账号资料 + 角色 + 权限；`@PreAuthorize("hasAuthority('admin:dashboard')")` | `CommonResult<AdminProfileRespVO>` |
+| 42 | `AdminAuthController` | GET | `/admin/auth/permissions` | 当前账号权限码集合；同样要求 `admin:dashboard` | `CommonResult<List<String>>` |
 
 > 接口 21~27 属**自定义工作流模块**（包根 `org.example.textflow`），分两块：
 >

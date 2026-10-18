@@ -146,7 +146,7 @@ frontend/src/
 │   │   └── styles/admin.css  # 管理端页面骨架（.admin-* 前缀）
 │   ├── IndexView.vue     # 侧边栏布局（Logo + 功能模块 + 用户信息）
 │   ├── LoginView.vue     # 登录页（账号/邮箱/注册/忘记密码）
-│   └── TestView.vue      # 接口连通性 / 身份测试页
+│   └── TestView.vue      # 接口连通性 / 登录测试页
 ├── App.vue
 └── main.js
 ```
@@ -216,7 +216,7 @@ const service = axios.create({
 
 | 函数                                   | 方法 | 路径                      | 说明               |
 | -------------------------------------- | ---- | ------------------------- | ------------------ |
-| `login(username, password)`            | POST | `/system/auth/login`      | 登录，返回 Token 与 `userType` |
+| `login(username, password)`            | POST | `/system/auth/login`      | 登录，返回 Token 与 `roles` / `permissions` |
 | `ping()`                               | GET  | `/test/ping`              | 连通性测试（需登录） |
 | `ping2()`                              | GET  | `/test2/ping`             | 连通性测试（需登录） |
 
@@ -282,7 +282,7 @@ export const useUserStore = defineStore("user", () => {
 | `/index/knowledge-base`     | `knowledge-base`   | `views/system/KnowledgeBaseView.vue`   | 知识库模块           |
 | `/index/ppt`                | `ppt`              | `views/ppt/index.vue`             | PPT 演示                 |
 | `/index/workflow`           | `workflow`         | `views/workflow/WorkflowView.vue` | 工作流编排（节点画布）   |
-| `/test`                     | `test`             | `views/TestView.vue`              | 接口连通性 / 身份测试页  |
+| `/test`                     | `test`             | `views/TestView.vue`              | 接口连通性 / 登录测试页  |
 | `/admin/login`              | `admin-login`      | `views/admin/login/AdminLoginView.vue` | 管理端登录（开发环境可「以演示数据预览」） |
 | `/admin`                    | `admin`            | `views/admin/AdminLayoutView.vue` | 管理端外壳，重定向到 `dashboard`，`meta.requiresAuth + requiresAdmin` |
 | `/admin/dashboard`          | `admin-dashboard`  | `views/admin/dashboard/DashboardView.vue` | 概览（pinned，不属于功能模块） |
@@ -313,7 +313,7 @@ export const useUserStore = defineStore("user", () => {
 | `/403`                      | `forbidden`        | `views/error/ForbiddenView.vue`   | 非管理员访问管理端时跳转 |
 | `/:pathMatch(.*)*`          | `not-found`        | `views/error/NotFoundView.vue`    | 兜底 404 |
 
-> 路由守卫现状：**管理端已实现**（`meta.requiresAuth` 校验 Token，`meta.requiresAdmin` 校验管理员身份，未登录跳 `/admin/login`，非管理员跳 `/403`）；
+> 路由守卫现状：**管理端已实现**（`meta.requiresAuth` 校验 Token，`meta.requiresAdmin` 校验 `admin:dashboard` 权限，未登录跳 `/admin/login`，无权限跳 `/403`）；
 > 用户端仍未加 Token 校验（规划）。管理端侧栏菜单由 `admin.routes.js` 的 `meta` 生成，不另写 `menuData`。
 
 ---
