@@ -7,6 +7,8 @@ import com.google.common.collect.Multimap;
 import jakarta.annotation.Resource;
 import jakarta.servlet.DispatcherType;
 import org.example.backend.framework.security.core.filter.TokenAuthenticationFilter;
+import org.example.backend.framework.security.core.handler.RestAccessDeniedHandler;
+import org.example.backend.framework.security.core.handler.RestAuthenticationEntryPoint;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -35,7 +37,7 @@ import java.util.Set;
 
 @AutoConfiguration
 @EnableWebSecurity
-@EnableMethodSecurity(securedEnabled = true)
+@EnableMethodSecurity(prePostEnabled = true, securedEnabled = true)
 @EnableConfigurationProperties(SecurityProperties.class)
 public class SecurityConfig {
 
@@ -60,9 +62,11 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 // 基于 token 机制，所以不需要 Session
                 .sessionManagement(c -> c.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .headers(c -> c.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable));
-//                .exceptionHandling(c -> c.authenticationEntryPoint(authenticationEntryPoint)
-//                        .accessDeniedHandler(accessDeniedHandler));
+                .headers(c -> c.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
+                // 未登录 401、无权限 403，响应体保持 CommonResult 结构
+                .exceptionHandling(c -> c
+                        .authenticationEntryPoint(new RestAuthenticationEntryPoint())
+                        .accessDeniedHandler(new RestAccessDeniedHandler()));
 
         // 获得 @PermitAll 带来的 URL 列表模拟数据
         Multimap<HttpMethod, String> permitAllUrls = HashMultimap.create();
