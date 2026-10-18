@@ -126,7 +126,6 @@ frontend/src/
 │   ├── error/            # ForbiddenView（403）/ NotFoundView（404），两端共用
 │   ├── admin/            # 管理端（独立外壳 /admin，按功能图 6 个模块组织）
 │   │   ├── AdminLayoutView.vue   # 侧栏（概览固定项 + 6 个模块）+ 顶栏 + RouterView
-│   │   ├── login/        # AdminLoginView（管理端独立登录；开发环境可演示数据预览）
 │   │   ├── dashboard/    # DashboardView（概览，pinned，不属于 6 个功能模块）
 │   │   ├── user/         # 用户与权限管理：UserListView / RolePermissionView / MenuTreeView + components
 │   │   ├── doctemplate/  # 文档模板管理：TemplateListView / GenerationRecordView / InspectionRecordView
@@ -283,7 +282,6 @@ export const useUserStore = defineStore("user", () => {
 | `/index/ppt`                | `ppt`              | `views/ppt/index.vue`             | PPT 演示                 |
 | `/index/workflow`           | `workflow`         | `views/workflow/WorkflowView.vue` | 工作流编排（节点画布）   |
 | `/test`                     | `test`             | `views/TestView.vue`              | 接口连通性 / 登录测试页  |
-| `/admin/login`              | `admin-login`      | `views/admin/login/AdminLoginView.vue` | 管理端登录（开发环境可「以演示数据预览」） |
 | `/admin`                    | `admin`            | `views/admin/AdminLayoutView.vue` | 管理端外壳，重定向到 `dashboard`，`meta.requiresAuth + requiresAdmin` |
 | `/admin/dashboard`          | `admin-dashboard`  | `views/admin/dashboard/DashboardView.vue` | 概览（pinned，不属于功能模块） |
 | `/admin/user/list`          | `admin-user-list`  | `views/admin/user/UserListView.vue` | 用户与权限管理：用户列表（新增/编辑/启停/重置密码在页内） |
@@ -313,7 +311,7 @@ export const useUserStore = defineStore("user", () => {
 | `/403`                      | `forbidden`        | `views/error/ForbiddenView.vue`   | 非管理员访问管理端时跳转 |
 | `/:pathMatch(.*)*`          | `not-found`        | `views/error/NotFoundView.vue`    | 兜底 404 |
 
-> 路由守卫现状：**管理端已实现**（`meta.requiresAuth` 校验 Token，`meta.requiresAdmin` 校验 `admin:dashboard` 权限，未登录跳 `/admin/login`，无权限跳 `/403`）；
+> 路由守卫现状：**管理端已实现**（`meta.requiresAuth` 校验 Token，`meta.requiresAdmin` 校验 `admin:dashboard` 权限，未登录统一跳 `/login?redirect=...`，无权限跳 `/403`）；
 > 用户端仍未加 Token 校验（规划）。管理端侧栏菜单由 `admin.routes.js` 的 `meta` 生成，不另写 `menuData`。
 
 ---
