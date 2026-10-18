@@ -4,13 +4,6 @@
 
     <!-- Zone B 可用工具：与 Zone D 共用列宽，每张卡占 2 格 -->
     <section class="band" aria-labelledby="band-modules">
-      <header class="band__head">
-        <div class="band__titles">
-          <h2 id="band-modules" class="band__title">可用工具</h2>
-          <p class="band__sub">{{ railSummary }}</p>
-        </div>
-      </header>
-
       <div class="rail">
         <ShowcaseCard
           v-for="card in moduleCards"

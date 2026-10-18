@@ -535,7 +535,7 @@ onMounted(() => {
 const description = ref('')
 
 /* ---------- 高级 ---------- */
-const advancedOpen = ref(true)
+const advancedOpen = ref(false)
 const qualityOptions = ['480p', '720p', '1080p']
 const quality = ref('720p')
 
