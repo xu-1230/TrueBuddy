@@ -7,9 +7,14 @@ import RegisterForm from '@/components/RegisterForm.vue'
 import ForgetPasswordForm from '@/components/ForgetPasswordForm.vue'
 import LoginShowcase from '@/components/LoginShowcase.vue'
 import { useAppearance } from '@/composables/useAppearance'
+import { isSafeRedirect, resolveLoginDestination } from '@/utils/access'
+import { enableAdminPreview, resetAdminSession } from '@/views/admin/hooks/useAdminSession'
 
 const route = useRoute()
 const router = useRouter()
+
+/** 开发环境才显示「演示数据预览」入口 */
+const isDev = import.meta.env.DEV
 
 /** 明暗态：本页不使用内页外壳，故独立提供切换入口 */
 const { isDark, toggle } = useAppearance()
@@ -58,9 +63,27 @@ function goForgot() {
   formType.value = 'forgot'
 }
 
-function onLoginSuccess() {
-  // 工作台外壳 /index 会重定向到 /index/home；'/' 在本项目没有注册路由
-  router.push('/index')
+/**
+ * 管理端与用户端共用本页：按登录响应里的权限决定落地页。
+ * 管理员 / 审核员拥有 admin:dashboard，进管理端；其余进用户端。
+ */
+function onLoginSuccess(data) {
+  // 账号可能已切换：清掉上一个账号残留的管理端会话缓存
+  resetAdminSession()
+  const target = resolveLoginDestination({
+    permissions: Array.isArray(data?.permissions) ? data.permissions : [],
+    redirect: route.query.redirect,
+  })
+  router.replace(target)
+}
+
+/** 开发预览：不请求后端，以演示数据进入管理端 */
+function enterPreview() {
+  if (!isDev || !enableAdminPreview()) return
+  const redirect = isSafeRedirect(route.query.redirect) && route.query.redirect.startsWith('/admin')
+    ? route.query.redirect
+    : '/admin/dashboard'
+  router.replace(redirect)
 }
 </script>
 
@@ -124,6 +147,11 @@ function onLoginSuccess() {
               @keyup.enter="switchForm(formType === 'register' ? 'login' : 'register')"
             >
               {{ formType === 'register' ? '直接登录' : '注册一个' }}
+            </a>
+          </p>
+          <p v-if="isDev" class="preview-entry">
+            <a role="button" tabindex="0" @click="enterPreview" @keyup.enter="enterPreview">
+              以演示数据预览管理端
             </a>
           </p>
           <p class="side__meta">© 2026 TrueBuddy · 师范生教学练一体化平台</p>
@@ -437,6 +465,32 @@ function onLoginSuccess() {
 }
 
 .account-switch__link:focus-visible {
+  outline: 2px solid var(--tb-primary);
+  outline-offset: 2px;
+  border-radius: var(--tb-radius-xs);
+}
+
+.preview-entry {
+  margin: 0;
+  font-size: var(--tb-text-2xs);
+}
+
+.preview-entry a {
+  color: var(--tb-text-tertiary);
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dashed var(--tb-border-strong);
+  transition:
+    color var(--tb-motion-dur) var(--tb-motion-ease),
+    border-color var(--tb-motion-dur) var(--tb-motion-ease);
+}
+
+.preview-entry a:hover {
+  color: var(--tb-primary-text);
+  border-bottom-color: var(--tb-primary-border);
+}
+
+.preview-entry a:focus-visible {
   outline: 2px solid var(--tb-primary);
   outline-offset: 2px;
   border-radius: var(--tb-radius-xs);

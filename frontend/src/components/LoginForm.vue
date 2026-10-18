@@ -45,8 +45,8 @@ async function submitAccount() {
     const data = await login(accountForm.username, accountForm.password)
     // 勾选「记住我」才写 30 天持久 Cookie，否则维持会话级
     setToken(data.accessToken, accountForm.remember ? 30 : undefined)
-    // 角色与权限由管理端初始化时从 /admin/auth/profile 拉取，前端不落地身份快照
-    emit('login-success')
+    // 响应里的 roles / permissions 交给登录页做落地分流；管理端仍会调 profile 复核
+    emit('login-success', data)
   } catch (error) {
     ElMessage.error(error?.message || '登录失败，请检查账号密码或后端服务')
   } finally {
@@ -57,8 +57,9 @@ async function submitAccount() {
 async function submitMail() {
   const valid = await mailFormRef.value.validate().catch(() => false)
   if (!valid) return
+  // 邮箱验证码目前是演示路径，没有真实登录响应，按普通用户分流
   ElMessage.success('登录成功')
-  emit('login-success')
+  emit('login-success', null)
 }
 
 function submit() {

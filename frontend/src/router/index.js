@@ -26,7 +26,7 @@ const router = createRouter({
 
 /**
  * 全局守卫：只处理「已声明 requiresAuth」的路由，未声明的页面维持原有免登录行为。
- * 管理端登录页是 /admin/login，其余端仍是 /login。
+ * 管理端与用户端共用 /login。
  */
 router.beforeEach((to) => {
   const meta = mergeRouteMeta(to.matched);
@@ -41,8 +41,7 @@ router.beforeEach((to) => {
   });
 
   if (access === "login") {
-    const loginPath = to.path.startsWith("/admin") ? "/admin/login" : "/login";
-    return buildLoginLocation(to.fullPath, loginPath);
+    return buildLoginLocation(to.fullPath, "/login");
   }
 
   if (access === "forbidden") {

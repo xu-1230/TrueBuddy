@@ -14,11 +14,14 @@
  */
 export const adminRoutes = [
   {
-    // 管理端独立登录页：不套管理端外壳，未登录时从守卫跳到这里
+    // 旧入口兼容：管理端已与用户端共用 /login，书签与旧链接不 404
     path: '/admin/login',
-    name: 'admin-login',
-    component: () => import('@/views/admin/login/AdminLoginView.vue'),
-    meta: { title: '管理端登录', menu: false },
+    redirect: (to) => {
+      const target = typeof to.query.redirect === 'string' && to.query.redirect.startsWith('/admin')
+        ? to.query.redirect
+        : '/admin/dashboard'
+      return { path: '/login', query: { redirect: target } }
+    },
   },
   {
     path: '/admin',

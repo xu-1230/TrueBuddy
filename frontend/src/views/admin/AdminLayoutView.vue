@@ -30,7 +30,7 @@ function handleLogout() {
   removeToken()
   exitAdminSession()
   ElMessage.success('已退出登录')
-  router.replace('/admin/login')
+  router.replace('/login')
 }
 </script>
 

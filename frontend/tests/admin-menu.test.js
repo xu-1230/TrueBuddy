@@ -19,7 +19,6 @@ const { countMenuNodes, findMenuNode, insertMenuNode, removeMenuNode, updateMenu
 )
 
 const routeFixture = [
-  { path: '/admin/login', name: 'admin-login', meta: { title: '管理端登录', menu: false } },
   {
     path: '/admin',
     name: 'admin',

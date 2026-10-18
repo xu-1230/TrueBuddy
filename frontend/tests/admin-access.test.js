@@ -14,9 +14,11 @@ import {
   hasPermission,
   hasRole,
   isAdmin,
+  isSafeRedirect,
   mergeRouteMeta,
   normalizeList,
   resolveAccess,
+  resolveLoginDestination,
 } from '../src/utils/access.js'
 
 test('normalizeList 把数组 / 逗号串 / 空值收敛为字符串数组', () => {
@@ -122,11 +124,54 @@ test('登录跳转只回跳站内绝对路径，挡住开放重定向', () => {
     path: '/login',
     query: { redirect: '/admin/user' },
   })
-  assert.deepEqual(buildLoginLocation('/admin/user', '/admin/login'), {
-    path: '/admin/login',
-    query: { redirect: '/admin/user' },
-  })
   assert.deepEqual(buildLoginLocation('//evil.com'), { path: '/login' })
   assert.deepEqual(buildLoginLocation('https://evil.com'), { path: '/login' })
   assert.deepEqual(buildLoginLocation(undefined), { path: '/login' })
+})
+
+test('isSafeRedirect 只认站内绝对路径', () => {
+  assert.equal(isSafeRedirect('/index/home'), true)
+  assert.equal(isSafeRedirect('/admin/dashboard'), true)
+  assert.equal(isSafeRedirect('//evil.com'), false)
+  assert.equal(isSafeRedirect('https://evil.com'), false)
+  assert.equal(isSafeRedirect('javascript:alert(1)'), false)
+  assert.equal(isSafeRedirect(''), false)
+  assert.equal(isSafeRedirect(null), false)
+})
+
+test('登录分流：管理员进管理端，普通用户进用户端', () => {
+  assert.deepEqual(resolveLoginDestination({ permissions: [ADMIN_PERMISSION] }), {
+    path: '/admin/dashboard',
+  })
+  assert.deepEqual(resolveLoginDestination({ permissions: [] }), { path: '/index' })
+  assert.deepEqual(resolveLoginDestination({ permissions: ['system:user:list'] }), { path: '/index' })
+})
+
+test('登录分流：安全 redirect 优先，管理员也可回到用户端目标', () => {
+  assert.deepEqual(
+    resolveLoginDestination({ permissions: [ADMIN_PERMISSION], redirect: '/admin/user/list' }),
+    { path: '/admin/user/list' },
+  )
+  assert.deepEqual(
+    resolveLoginDestination({ permissions: [ADMIN_PERMISSION], redirect: '/index/workflow' }),
+    { path: '/index/workflow' },
+  )
+  assert.deepEqual(
+    resolveLoginDestination({ permissions: [], redirect: '/index/homework-grading' }),
+    { path: '/index/homework-grading' },
+  )
+})
+
+test('登录分流：普通用户回跳管理端地址进 403，非法 redirect 被丢弃', () => {
+  assert.deepEqual(
+    resolveLoginDestination({ permissions: [], redirect: '/admin/user/list' }),
+    { name: 'forbidden', query: { from: '/admin/user/list' } },
+  )
+  assert.deepEqual(resolveLoginDestination({ permissions: [], redirect: '//evil.com' }), {
+    path: '/index',
+  })
+  assert.deepEqual(
+    resolveLoginDestination({ permissions: [ADMIN_PERMISSION], redirect: 'https://evil.com' }),
+    { path: '/admin/dashboard' },
+  )
 })

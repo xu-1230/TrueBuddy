@@ -111,6 +111,17 @@ export function resolveAccess(meta = {}, session = {}) {
 }
 
 /**
+ * 是否为可回跳的站内绝对路径。
+ * 拒绝 `//evil.com`、`https://evil.com`、`javascript:` 等开放重定向写法。
+ *
+ * @param {unknown} target
+ * @returns {boolean}
+ */
+export function isSafeRedirect(target) {
+  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')
+}
+
+/**
  * 生成登录跳转地址，并带上回跳路径。
  * 只接受站内绝对路径，避免 `//evil.com` 这类开放重定向。
  *
@@ -119,6 +130,31 @@ export function resolveAccess(meta = {}, session = {}) {
  * @returns {{ path: string, query?: { redirect: string } }}
  */
 export function buildLoginLocation(fullPath, loginPath = '/login') {
-  const redirect = typeof fullPath === 'string' && fullPath.startsWith('/') && !fullPath.startsWith('//') ? fullPath : ''
+  const redirect = isSafeRedirect(fullPath) ? fullPath : ''
   return redirect ? { path: loginPath, query: { redirect } } : { path: loginPath }
+}
+
+/**
+ * 登录成功后的落地页（管理端与用户端共用同一个登录页）。
+ *
+ * 规则：
+ *   - 有安全的站内 redirect 时优先回跳；
+ *   - 有 admin:dashboard 权限：无 redirect 时进 /admin/dashboard；
+ *   - 没有管理端权限：redirect 指向 /admin/** 时进 403，否则回用户端 /index。
+ *
+ * @param {{ permissions?: string[], redirect?: unknown }} options
+ * @returns {{ path: string } | { name: 'forbidden', query: { from: string } }}
+ */
+export function resolveLoginDestination({ permissions = [], redirect = '' } = {}) {
+  const target = isSafeRedirect(redirect) ? redirect : ''
+
+  if (hasPermission(permissions, ADMIN_PERMISSION)) {
+    return { path: target || '/admin/dashboard' }
+  }
+
+  if (target.startsWith('/admin')) {
+    return { name: 'forbidden', query: { from: target } }
+  }
+
+  return { path: target || '/index' }
 }

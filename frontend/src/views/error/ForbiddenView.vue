@@ -17,7 +17,7 @@ function goUser() {
 }
 
 function goLogin() {
-  router.replace('/admin/login')
+  router.replace('/login')
 }
 </script>
 
