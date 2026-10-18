@@ -48,9 +48,9 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
     private AdminUserService adminUserService;
 
     @Override
-    public OAuth2AccessTokenDO createAccessToken(Long userId, Integer userType, List<String> scopes) {
+    public OAuth2AccessTokenDO createAccessToken(Long userId, List<String> scopes) {
         // 创建刷新令牌
-        OAuth2RefreshTokenDO refreshTokenDO = createOAuth2RefreshToken(userId, userType, scopes);
+        OAuth2RefreshTokenDO refreshTokenDO = createOAuth2RefreshToken(userId, scopes);
         // 创建访问令牌
         return createOAuth2AccessToken(refreshTokenDO);
     }
@@ -92,9 +92,9 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
 
     private OAuth2AccessTokenDO createOAuth2AccessToken(OAuth2RefreshTokenDO refreshTokenDO) {
         OAuth2AccessTokenDO accessTokenDO = new OAuth2AccessTokenDO().setAccessToken(generateAccessToken())
-                .setUserId(refreshTokenDO.getUserId()).setUserType(refreshTokenDO.getUserType())
+                .setUserId(refreshTokenDO.getUserId())
                 .setScopes(refreshTokenDO.getScopes())
-                .setUserInfo(buildUserInfo(refreshTokenDO.getUserId(), refreshTokenDO.getUserType()))
+                .setUserInfo(buildUserInfo(refreshTokenDO.getUserId()))
                 .setRefreshToken(refreshTokenDO.getRefreshToken())
                 .setExpiresTime(LocalDateTime.now().plusSeconds(accessTokenValiditySeconds));
 
@@ -104,9 +104,9 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
         return accessTokenDO;
     }
 
-    private OAuth2RefreshTokenDO createOAuth2RefreshToken(Long userId, Integer userType, List<String> scopes) {
+    private OAuth2RefreshTokenDO createOAuth2RefreshToken(Long userId, List<String> scopes) {
         OAuth2RefreshTokenDO refreshToken = new OAuth2RefreshTokenDO().setRefreshToken(generateRefreshToken())
-                .setUserId(userId).setUserType(userType)
+                .setUserId(userId)
                 .setScopes(scopes)
                 .setExpiresTime(LocalDateTime.now().plusSeconds(refreshTokenValiditySeconds));
 
@@ -114,7 +114,7 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
         return refreshToken;
     }
 
-    private Map<String, String> buildUserInfo(Long userId, Integer userType) {
+    private Map<String, String> buildUserInfo(Long userId) {
         if (userId == null || userId <= 0) {
             return Collections.emptyMap();
         }

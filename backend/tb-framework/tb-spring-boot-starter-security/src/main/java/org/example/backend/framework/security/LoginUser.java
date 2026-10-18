@@ -18,7 +18,15 @@ public class LoginUser {
      */
     private Long id;
 
-    private Integer userType;
+    /**
+     * 角色编码集合（如 admin / auditor）
+     */
+    private List<String> roles;
+
+    /**
+     * 权限码集合（来自 system_menu.permission）
+     */
+    private List<String> permissions;
     /**
      * 额外的用户信息
      */

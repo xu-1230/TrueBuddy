@@ -14,7 +14,6 @@ public class OAuth2AccessTokenDO{
     private String accessToken;
     private String refreshToken;
     private Long userId;
-    private Integer userType;
     private Map<String, String> userInfo;
     private List<String> scopes;
     private LocalDateTime expiresTime;

@@ -11,16 +11,17 @@ import org.example.backend.module.test.mybatis.handler.JsonListTypeHandler;
 @Mapper
 public interface OAuth2RefreshTokenMapper {
 
+    /** user_type 列已废弃（保留 DEFAULT 0），不再读写 */
     @Insert("insert into system_oauth2_refresh_token " +
-            "(refresh_token, user_id, user_type, scopes, expires_time) " +
-            "values (#{refreshToken}, #{userId}, #{userType}, " +
+            "(refresh_token, user_id, scopes, expires_time) " +
+            "values (#{refreshToken}, #{userId}, " +
             "#{scopes,typeHandler=org.example.backend.module.test.mybatis.handler.JsonListTypeHandler}::jsonb, #{expiresTime})")
     int insert(OAuth2RefreshTokenDO refreshTokenDO);
 
     @Results(id = "refreshTokenResultMap", value = {
             @Result(column = "scopes", property = "scopes", typeHandler = JsonListTypeHandler.class)
     })
-    @Select("select id, refresh_token, user_id, user_type, scopes, expires_time " +
+    @Select("select id, refresh_token, user_id, scopes, expires_time " +
             "from system_oauth2_refresh_token where refresh_token = #{refreshToken}")
     OAuth2RefreshTokenDO selectByRefreshToken(String refreshToken);
 }

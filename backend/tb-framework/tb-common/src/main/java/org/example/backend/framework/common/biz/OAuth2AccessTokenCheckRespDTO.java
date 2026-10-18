@@ -13,9 +13,13 @@ public class OAuth2AccessTokenCheckRespDTO {
      */
     private Long userId;
     /**
-     * 用户类型
+     * 角色编码集合（如 normal / member / admin / auditor）
      */
-    private Integer userType;
+    private List<String> roles;
+    /**
+     * 权限码集合（来自 system_menu.permission）
+     */
+    private List<String> permissions;
     /**
      * 用户信息
      */

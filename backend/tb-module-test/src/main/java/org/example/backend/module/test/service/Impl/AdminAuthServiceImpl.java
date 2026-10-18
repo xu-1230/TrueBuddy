@@ -1,11 +1,6 @@
 package org.example.backend.module.test.service.Impl;
 
-import cn.hutool.core.util.ObjectUtil;
-import com.google.common.annotations.VisibleForTesting;
 import jakarta.annotation.Resource;
-import lombok.Setter;
-import lombok.extern.slf4j.Slf4j;
-import org.example.backend.framework.common.enums.UserTypeEnum;
 import org.example.backend.framework.common.util.object.BeanUtils;
 import org.example.backend.module.test.model.AdminUserDO;
 import org.example.backend.module.test.model.OAuth2AccessTokenDO;
@@ -14,8 +9,7 @@ import org.example.backend.module.test.model.vo.AuthLoginRespVO;
 import org.example.backend.module.test.service.AdminAuthService;
 import org.example.backend.module.test.service.AdminUserService;
 import org.example.backend.module.test.service.OAuth2TokenService;
-import org.example.backend.module.test.service.RoleService;
-import org.springframework.beans.factory.annotation.Value;
+import org.example.backend.module.test.service.PermissionService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -34,18 +28,7 @@ public class AdminAuthServiceImpl implements AdminAuthService {
     private OAuth2TokenService oauth2TokenService;
 
     @Resource
-    private RoleService roleService;
-
-    private UserTypeEnum getUserType(AdminUserDO user) {
-        List<String> roleCodes = roleService.getRoleCodes(user.getId());
-        if (roleCodes != null && roleCodes.contains("admin")) {
-            return UserTypeEnum.ADMIN;
-        }
-        if (roleCodes != null && roleCodes.contains("member")) {
-            return UserTypeEnum.MEMBER;
-        }
-        return UserTypeEnum.NORMAL;
-    }
+    private PermissionService permissionService;
 
     @Override
     public AdminUserDO authenticate(String username, String password) {
@@ -78,10 +61,12 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         // 统一校验用户状态，避免短信、社交等登录方式遗漏
         validateUserStatus(user, username);
 
-        OAuth2AccessTokenDO accessTokenDO = oauth2TokenService.createAccessToken(user.getId(), getUserType(user).getValue(), null);
-        // 构建返回结果：userType 随登录一并下发，前端据此区分普通用户 / 会员 / 管理员
+        OAuth2AccessTokenDO accessTokenDO = oauth2TokenService.createAccessToken(user.getId(), null);
+        // 构建返回结果：角色与权限随登录一并下发，权限码来自 system_menu
         AuthLoginRespVO respVO = BeanUtils.toBean(accessTokenDO, AuthLoginRespVO.class);
-        respVO.setUserType(accessTokenDO.getUserType());
+        List<String> roles = permissionService.getRoleCodes(user.getId());
+        respVO.setRoles(roles);
+        respVO.setPermissions(permissionService.getPermissions(user.getId()));
         return respVO;
     }
 

@@ -12,7 +12,6 @@ public class OAuth2RefreshTokenDO {
     private Long id;
     private String refreshToken;
     private Long userId;
-    private Integer userType;
     private List<String> scopes;
     private LocalDateTime expiresTime;
 

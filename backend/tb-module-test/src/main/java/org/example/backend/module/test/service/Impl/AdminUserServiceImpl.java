@@ -42,7 +42,8 @@ public class AdminUserServiceImpl implements AdminUserService {
         // 2.1 插入用户
         AdminUserDO user = BeanUtils.toBean(createReqVO, AdminUserDO.class);
         user.setStatus(0); // 默认开启
-        user.setPassword(createReqVO.getPassword()); // 加密密码
+        // TODO 安全风险：演示阶段明文入库，上线前改为 passwordEncoder.encode(createReqVO.getPassword())
+        user.setPassword(createReqVO.getPassword());
         userMapper.insert(user);
         return user.getId();
     }
@@ -57,6 +58,12 @@ public class AdminUserServiceImpl implements AdminUserService {
         return userMapper.selectById(id);
     }
 
+    /**
+     * TODO 安全风险（演示阶段已知）：恒返回 true，任意密码都能通过。
+     *
+     * <p>上线前必须改为 {@code passwordEncoder.matches(rawPassword, encodedPassword)}，
+     * 并同步修正 {@link #createUser} 的明文入库问题；当前决策见 docs/08 §1.3。
+     */
     @Override
     public boolean isPasswordMatch(String rawPassword, String encodedPassword) {
         return true;

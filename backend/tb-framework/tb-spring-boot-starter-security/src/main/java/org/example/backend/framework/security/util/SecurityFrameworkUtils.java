@@ -8,12 +8,17 @@ import org.example.backend.framework.security.LoginUser;
 import org.example.backend.framework.web.core.util.WebFrameworkUtils;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.util.StringUtils;
 
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 
 public class SecurityFrameworkUtils {
@@ -70,15 +75,39 @@ public class SecurityFrameworkUtils {
         // 原因是，Spring Security 的 Filter 在 ApiAccessLogFilter 后面，在它记录访问日志时，线上上下文已经没有用户编号等信息
         if (request != null) {
             WebFrameworkUtils.setLoginUserId(request, loginUser.getId());
-            WebFrameworkUtils.setLoginUserType(request, loginUser.getUserType());
         }
     }
 
+    /**
+     * 构建认证信息：authorities = 权限码 + {@code ROLE_} 前缀的角色码。
+     *
+     * <p>方法级鉴权因此可以直接写 {@code hasAuthority('system:user:list')} 或 {@code hasRole('admin')}。
+     */
     private static Authentication buildAuthentication(LoginUser loginUser, HttpServletRequest request) {
-        // 创建 UsernamePasswordAuthenticationToken 对象
         UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
-                loginUser, null, Collections.emptyList());
+                loginUser, null, buildAuthorities(loginUser));
         authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
         return authenticationToken;
+    }
+
+    private static List<GrantedAuthority> buildAuthorities(LoginUser loginUser) {
+        Set<String> codes = new LinkedHashSet<>();
+        if (loginUser.getPermissions() != null) {
+            codes.addAll(loginUser.getPermissions());
+        }
+        if (loginUser.getRoles() != null) {
+            for (String role : loginUser.getRoles()) {
+                if (role != null && !role.isBlank()) {
+                    codes.add("ROLE_" + role.trim());
+                }
+            }
+        }
+        List<GrantedAuthority> authorities = new ArrayList<>(codes.size());
+        for (String code : codes) {
+            if (code != null && !code.isBlank()) {
+                authorities.add(new SimpleGrantedAuthority(code.trim()));
+            }
+        }
+        return authorities;
     }
 }

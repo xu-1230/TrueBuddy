@@ -7,7 +7,7 @@ import java.util.List;
 
 public interface OAuth2TokenService {
 
-    OAuth2AccessTokenDO createAccessToken(Long userId, Integer userType, List<String> scopes);
+    OAuth2AccessTokenDO createAccessToken(Long userId, List<String> scopes);
 
     OAuth2AccessTokenDO getAccessToken(String accessToken);
 
