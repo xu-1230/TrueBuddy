@@ -67,7 +67,9 @@ frontend/
 frontend/src/
 ├── api/
 │   ├── index.js          # axios 实例 + 请求/响应拦截器
-│   └── test.js           # 登录 / 连通性 / 身份判断接口
+│   ├── test.js           # 登录 / 连通性 / 身份判断接口
+│   └── admin/            # 管理端接口（auth / dashboard / user / role / menu / doctemplate /
+│                         #   homework / knowledgebase / ppt / workflow / system），统一 /admin/** 前缀
 ├── assets/               # 静态资源（当前为空）
 ├── components/
 │   ├── LoginForm.vue     # 登录表单（账号 / 邮箱）
@@ -78,11 +80,14 @@ frontend/src/
 ├── composables/
 │   └── useSmoothScroll.js  # Lenis + GSAP 平滑滚动（见第 9 章）
 ├── router/
-│   └── index.js          # 路由配置
+│   ├── index.js          # 汇总两端路由 + 全局守卫（requiresAuth / requiresAdmin）
+│   ├── user.routes.js    # 用户端路由
+│   └── admin.routes.js   # 管理端路由（meta 同时驱动侧栏菜单）
 ├── stores/
 │   └── counter.js        # Pinia store 示例
 ├── utils/
-│   └── auth.js           # Token 工具（基于 js-cookie）
+│   ├── auth.js           # Token 工具（基于 js-cookie）
+│   └── access.js         # 角色 / 权限判断（纯函数，两端共用，配套 tests/admin-access.test.js）
 ├── views/
 │   ├── guides/
 │   │   ├── HomeView.vue  # 首页（顶部导航 + GSAP 滚动动效）
@@ -118,6 +123,27 @@ frontend/src/
 │   │   ├── DocTemplateView.vue      # 文档模板生成（UI 骨架）
 │   │   ├── HomeworkGradingView.vue  # 作业批改（占位）
 │   │   └── KnowledgeBaseView.vue    # 知识库模块（占位）
+│   ├── error/            # ForbiddenView（403）/ NotFoundView（404），两端共用
+│   ├── admin/            # 管理端（独立外壳 /admin，按功能图 6 个模块组织）
+│   │   ├── AdminLayoutView.vue   # 侧栏（概览固定项 + 6 个模块）+ 顶栏 + RouterView
+│   │   ├── login/        # AdminLoginView（管理端独立登录；开发环境可演示数据预览）
+│   │   ├── dashboard/    # DashboardView（概览，pinned，不属于 6 个功能模块）
+│   │   ├── user/         # 用户与权限管理：UserListView / RolePermissionView / MenuTreeView + components
+│   │   ├── doctemplate/  # 文档模板管理：TemplateListView / GenerationRecordView / InspectionRecordView
+│   │   ├── homework/     # 作业批改管理：GradingResourceView / GradingRecordView
+│   │   ├── knowledgebase/ # 知识库管理：SpaceListView / CreationStatsView / StorageStatsView
+│   │   ├── ppt/          # PPT 智慧课堂管理：AvatarConfig / SlideResource / MeetingRecord /
+│   │   │                 #   ClassStats / InteractionStats
+│   │   ├── workflow/     # 工作流管理：WorkflowList / NodeTemplate / RunRecord /
+│   │   │                 #   ExecutionException / ConversationRecord
+│   │   ├── system/       # setting / log / health（顶栏齿轮进入，menu:false）
+│   │   ├── components/   # Sidebar / Header / Breadcrumb / AdminIcon / PageHeader /
+│   │   │                 #   QueryBar / AdminTable / StatCard / StatusTag / BarChart
+│   │   ├── hooks/        # useAdminSession（身份校验）/ usePagedTable（分页表格状态机）
+│   │   ├── mock/         # data（账号 / 菜单 / 概览）+ 按模块拆分的演示数据
+│   │   ├── utils/        # menu / menu-tree / format / request
+│   │   ├── constants.js  # 权限码、状态字典、分页默认值
+│   │   └── styles/admin.css  # 管理端页面骨架（.admin-* 前缀）
 │   ├── IndexView.vue     # 侧边栏布局（Logo + 功能模块 + 用户信息）
 │   ├── LoginView.vue     # 登录页（账号/邮箱/注册/忘记密码）
 │   └── TestView.vue      # 接口连通性 / 身份测试页
@@ -190,12 +216,9 @@ const service = axios.create({
 
 | 函数                                   | 方法 | 路径                      | 说明               |
 | -------------------------------------- | ---- | ------------------------- | ------------------ |
-| `login(username, password)`            | POST | `/system/auth/login`      | 登录，返回 Token   |
+| `login(username, password)`            | POST | `/system/auth/login`      | 登录，返回 Token 与 `userType` |
 | `ping()`                               | GET  | `/test/ping`              | 连通性测试（需登录） |
 | `ping2()`                              | GET  | `/test2/ping`             | 连通性测试（需登录） |
-| `identityNormal()`                     | GET  | `/identity/normal`        | 普通用户身份校验   |
-| `identityMember()`                     | GET  | `/identity/member`        | 会员身份校验       |
-| `identityAdmin()`                      | GET  | `/identity/admin`         | 管理员身份校验     |
 
 ```js
 import service from "./index";
@@ -260,8 +283,38 @@ export const useUserStore = defineStore("user", () => {
 | `/index/ppt`                | `ppt`              | `views/ppt/index.vue`             | PPT 演示                 |
 | `/index/workflow`           | `workflow`         | `views/workflow/WorkflowView.vue` | 工作流编排（节点画布）   |
 | `/test`                     | `test`             | `views/TestView.vue`              | 接口连通性 / 身份测试页  |
+| `/admin/login`              | `admin-login`      | `views/admin/login/AdminLoginView.vue` | 管理端登录（开发环境可「以演示数据预览」） |
+| `/admin`                    | `admin`            | `views/admin/AdminLayoutView.vue` | 管理端外壳，重定向到 `dashboard`，`meta.requiresAuth + requiresAdmin` |
+| `/admin/dashboard`          | `admin-dashboard`  | `views/admin/dashboard/DashboardView.vue` | 概览（pinned，不属于功能模块） |
+| `/admin/user/list`          | `admin-user-list`  | `views/admin/user/UserListView.vue` | 用户与权限管理：用户列表（新增/编辑/启停/重置密码在页内） |
+| `/admin/user/role`          | `admin-user-role`  | `views/admin/user/RolePermissionView.vue` | 角色权限分配 |
+| `/admin/user/menu`          | `admin-user-menu`  | `views/admin/user/MenuTreeView.vue` | 菜单结构维护（menu:false） |
+| `/admin/doc-template/templates` | `admin-doc-templates` | `views/admin/doctemplate/TemplateListView.vue` | 文档模板管理：模板资源列表 |
+| `/admin/doc-template/records` | `admin-doc-records` | `views/admin/doctemplate/GenerationRecordView.vue` | 生成记录查看 |
+| `/admin/doc-template/inspections` | `admin-doc-inspections` | `views/admin/doctemplate/InspectionRecordView.vue` | 自检与修复问答记录 |
+| `/admin/homework/resources` | `admin-homework-resources` | `views/admin/homework/GradingResourceView.vue` | 作业批改管理：批改资源列表 |
+| `/admin/homework/records`   | `admin-homework-records` | `views/admin/homework/GradingRecordView.vue` | 批改记录查看 |
+| `/admin/knowledge-base/spaces` | `admin-kb-spaces` | `views/admin/knowledgebase/SpaceListView.vue` | 知识库管理：用户空间列表 |
+| `/admin/knowledge-base/creation-stats` | `admin-kb-creation-stats` | `views/admin/knowledgebase/CreationStatsView.vue` | 知识库创建统计 |
+| `/admin/knowledge-base/storage-stats` | `admin-kb-storage-stats` | `views/admin/knowledgebase/StorageStatsView.vue` | 存储用量统计 |
+| `/admin/ppt/avatar`         | `admin-ppt-avatar` | `views/admin/ppt/AvatarConfigView.vue` | PPT 智慧课堂管理：数字人形象配置 |
+| `/admin/ppt/slides`         | `admin-ppt-slides` | `views/admin/ppt/SlideResourceView.vue` | 课件资源管理 |
+| `/admin/ppt/meetings`       | `admin-ppt-meetings` | `views/admin/ppt/MeetingRecordView.vue` | 会议记录查询 |
+| `/admin/ppt/class-stats`    | `admin-ppt-class-stats` | `views/admin/ppt/ClassStatsView.vue` | 课堂数据统计 |
+| `/admin/ppt/interaction-stats` | `admin-ppt-interaction-stats` | `views/admin/ppt/InteractionStatsView.vue` | 课堂互动统计 |
+| `/admin/workflow/list`      | `admin-workflow-list` | `views/admin/workflow/WorkflowListView.vue` | 工作流管理：工作流列表 |
+| `/admin/workflow/node-templates` | `admin-workflow-node-templates` | `views/admin/workflow/NodeTemplateView.vue` | 节点模板维护 |
+| `/admin/workflow/runs`      | `admin-workflow-runs` | `views/admin/workflow/RunRecordView.vue` | 运行记录查询 |
+| `/admin/workflow/exceptions` | `admin-workflow-exceptions` | `views/admin/workflow/ExecutionExceptionView.vue` | 执行异常排查 |
+| `/admin/workflow/conversations` | `admin-workflow-conversations` | `views/admin/workflow/ConversationRecordView.vue` | 会话记录查看 |
+| `/admin/system/setting`     | `admin-system-setting` | `views/admin/system/SettingView.vue` | 系统配置（menu:false，顶栏齿轮） |
+| `/admin/system/log`         | `admin-system-log` | `views/admin/system/OperationLogView.vue` | 操作日志（同上） |
+| `/admin/system/health`      | `admin-system-health` | `views/admin/system/HealthView.vue` | 服务健康（同上） |
+| `/403`                      | `forbidden`        | `views/error/ForbiddenView.vue`   | 非管理员访问管理端时跳转 |
+| `/:pathMatch(.*)*`          | `not-found`        | `views/error/NotFoundView.vue`    | 兜底 404 |
 
-> 需要登录的页面配置路由守卫校验 Token 为**规划**，当前未实现。
+> 路由守卫现状：**管理端已实现**（`meta.requiresAuth` 校验 Token，`meta.requiresAdmin` 校验管理员身份，未登录跳 `/admin/login`，非管理员跳 `/403`）；
+> 用户端仍未加 Token 校验（规划）。管理端侧栏菜单由 `admin.routes.js` 的 `meta` 生成，不另写 `menuData`。
 
 ---
 
