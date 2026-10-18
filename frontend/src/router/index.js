@@ -30,13 +30,14 @@ const router = createRouter({
  */
 router.beforeEach((to) => {
   const meta = mergeRouteMeta(to.matched);
-  const { status, roles } = useAdminSession();
+  const { status, roles, permissions } = useAdminSession();
 
   const access = resolveAccess(meta, {
     // 开发环境的「演示数据预览」不需要真实登录（生产构建里 isAdminPreview 恒为 false）
     hasToken: Boolean(getToken()) || isAdminPreview(),
     roleStatus: status.value,
     roles: roles.value,
+    permissions: permissions.value,
   });
 
   if (access === "login") {

@@ -3,7 +3,7 @@ import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Key, Lock, Message, Right, User } from '@element-plus/icons-vue'
 import { login } from '@/api/test'
-import { setToken, setUserType } from '@/utils/auth'
+import { setToken } from '@/utils/auth'
 import { useCodeCooldown } from '@/composables/useCodeCooldown'
 
 const emit = defineEmits(['go-forgot', 'login-success'])
@@ -45,8 +45,7 @@ async function submitAccount() {
     const data = await login(accountForm.username, accountForm.password)
     // 勾选「记住我」才写 30 天持久 Cookie，否则维持会话级
     setToken(data.accessToken, accountForm.remember ? 30 : undefined)
-    // 身份随登录响应下发，管理端据此判断是否有权进入
-    setUserType(data.userType)
+    // 角色与权限由管理端初始化时从 /admin/auth/profile 拉取，前端不落地身份快照
     emit('login-success')
   } catch (error) {
     ElMessage.error(error?.message || '登录失败，请检查账号密码或后端服务')

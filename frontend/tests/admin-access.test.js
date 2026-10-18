@@ -9,6 +9,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  ADMIN_PERMISSION,
   buildLoginLocation,
   hasPermission,
   hasRole,
@@ -79,18 +80,33 @@ test('身份未知 / 离线先放行，由布局里的校验兜底', () => {
   )
 })
 
-test('已确认管理员身份：roles 里没有 admin 仍然拒绝', () => {
+test('已确认身份：管理端入口只认 admin:dashboard 权限', () => {
   assert.equal(
     resolveAccess(
       { requiresAuth: true, requiresAdmin: true },
-      { hasToken: true, roleStatus: 'granted', roles: ['member'] },
+      { hasToken: true, roleStatus: 'granted', roles: ['member'], permissions: ['system:user:list'] },
     ),
     'forbidden',
   )
   assert.equal(
     resolveAccess(
       { requiresAuth: true, requiresAdmin: true },
-      { hasToken: true, roleStatus: 'granted', roles: ['admin'] },
+      { hasToken: true, roleStatus: 'granted', roles: ['admin'], permissions: [ADMIN_PERMISSION] },
+    ),
+    'ok',
+  )
+})
+
+test('审核员拥有 admin:dashboard 即可进入管理端（只读）', () => {
+  assert.equal(
+    resolveAccess(
+      { requiresAuth: true, requiresAdmin: true },
+      {
+        hasToken: true,
+        roleStatus: 'granted',
+        roles: ['auditor'],
+        permissions: [ADMIN_PERMISSION, 'system:user:list', 'system:log:list'],
+      },
     ),
     'ok',
   )

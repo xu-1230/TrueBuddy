@@ -1,22 +1,30 @@
 import { computed, reactive, readonly } from 'vue'
-import { getUserType } from '@/utils/auth'
 import { getAdminProfile, getAdminPermissions } from '@/api/admin/auth'
-import { ADMIN_ROLE, PERMISSION_ALL } from '@/utils/access'
+import { removeToken } from '@/utils/auth'
+import { ADMIN_PERMISSION, ADMIN_ROLE, PERMISSION_ALL, hasPermission } from '@/utils/access'
+import { SESSION_ERROR, classifySessionError } from '../utils/session-state'
 
 /**
  * 管理端会话（模块级单例）
  *
- * 身份判断只认登录响应里的 `userType`（0 普通用户 / 1 会员 / 2 管理员）：
- * 登录时由 `LoginForm` 写入本地，会话校验时直接读，不再请求身份接口。
+ * 身份与权限只认服务端：初始化调用 `GET /admin/auth/profile`，
+ * 由后端按 RBAC 解析角色与权限码；前端不再保存或伪造身份快照。
  * 三种结果必须分开处理，不能都当失败：
- *   granted —— 身份为管理员，进入管理端；
- *   denied  —— 已登录但非管理员，跳 403；
- *   offline —— 没有登录态（或未连后端），允许以演示数据浏览，
+ *   granted —— 拥有 admin:dashboard 权限（管理员或审核员），进入管理端；
+ *   denied  —— 已登录但没有管理端权限，跳 403；
+ *   offline —— 未登录 / 后端不可达，允许以演示数据浏览，
  *              否则「只启前端不启后端」时管理端会整片打不开，无法联调 UI。
  *
  * 为什么不用 Pinia：这里只有一份会话数据，模块级 reactive 足够；
  * 用户端的 store 也都就近放在模块内（views/ppt/stores、views/meeting/stores）。
  */
+
+const ROLE_LABELS = {
+  admin: '管理员',
+  auditor: '审核员',
+  member: '会员',
+  normal: '普通用户',
+}
 
 export const ADMIN_SESSION_STATUS = {
   UNKNOWN: 'unknown',
@@ -77,7 +85,7 @@ const DEFAULT_PROFILE = {
 const state = reactive({
   status: ADMIN_SESSION_STATUS.UNKNOWN,
   roles: [],
-  permissions: [PERMISSION_ALL],
+  permissions: [],
   profile: { ...DEFAULT_PROFILE },
   message: '',
   verifiedAt: 0,
@@ -86,33 +94,38 @@ const state = reactive({
 /** 并发调用（守卫 + 布局挂载）只发一次请求 */
 let inflight = null
 
-/** 资料与权限码是「锦上添花」，接口没就绪时保留默认值，不影响进入管理端 */
-async function loadProfileAndPermissions() {
-  const [profileResult, permissionResult] = await Promise.allSettled([
-    getAdminProfile(),
-    getAdminPermissions(),
-  ])
-
-  if (profileResult.status === 'fulfilled' && profileResult.value && typeof profileResult.value === 'object') {
-    const profile = profileResult.value
-    const nickname = profile.nickname || profile.name || DEFAULT_PROFILE.nickname
-    state.profile = {
-      id: profile.id ?? DEFAULT_PROFILE.id,
-      username: profile.username || DEFAULT_PROFILE.username,
-      nickname,
-      initial: String(nickname).slice(0, 1) || DEFAULT_PROFILE.initial,
-      roleLabel: profile.roleLabel || profile.roleName || DEFAULT_PROFILE.roleLabel,
-    }
-    if (Array.isArray(profile.roles) && profile.roles.length > 0) state.roles = profile.roles
+/** 把服务端资料写入会话状态；roles 只认服务端返回值 */
+function applyProfile(profile) {
+  if (!profile || typeof profile !== 'object') {
+    return
   }
-
-  if (permissionResult.status === 'fulfilled' && Array.isArray(permissionResult.value)) {
-    state.permissions = permissionResult.value
+  const roles = Array.isArray(profile.roles) ? profile.roles.filter(Boolean) : []
+  const nickname = profile.nickname || profile.name || DEFAULT_PROFILE.nickname
+  state.roles = roles
+  state.profile = {
+    id: profile.userId ?? profile.id ?? DEFAULT_PROFILE.id,
+    username: profile.username || DEFAULT_PROFILE.username,
+    nickname,
+    initial: String(nickname).slice(0, 1) || DEFAULT_PROFILE.initial,
+    roleLabel:
+      profile.roleLabel ||
+      profile.roleName ||
+      roles.map((role) => ROLE_LABELS[role] || role).join(' / ') ||
+      DEFAULT_PROFILE.roleLabel,
   }
 }
 
+/** profile 已带权限时不再多发一次请求；缺失才回退到 /permissions */
+async function resolvePermissions(profile) {
+  if (Array.isArray(profile?.permissions)) {
+    return profile.permissions
+  }
+  const permissions = await getAdminPermissions()
+  return Array.isArray(permissions) ? permissions : []
+}
+
 /**
- * 校验当前账号的管理员身份。
+ * 校验当前账号是否有管理端入口权限（admin:dashboard）。
  * @param {{ force?: boolean }} options force = true 时忽略已通过的缓存重新校验
  * @returns {Promise<string>} ADMIN_SESSION_STATUS
  */
@@ -135,18 +148,14 @@ export async function verifyAdminSession({ force = false } = {}) {
 
   inflight = (async () => {
     try {
-      const userType = getUserType()
-      // 没有登录信息：按「未连后端」处理，保留以演示数据浏览的能力
-      if (userType === null) {
-        state.status = ADMIN_SESSION_STATUS.OFFLINE
-        state.message = '未检测到登录信息，管理端暂时以演示数据运行'
-        state.verifiedAt = Date.now()
-        return state.status
-      }
-      // 已登录但不是管理员：明确拒绝，跳 403
-      if (userType !== 2) {
+      const profile = await getAdminProfile()
+      applyProfile(profile)
+      state.permissions = await resolvePermissions(profile)
+
+      // 服务端已返回 200，但账号没有管理端入口权限：明确拒绝
+      if (!hasPermission(state.permissions, ADMIN_PERMISSION)) {
         state.status = ADMIN_SESSION_STATUS.DENIED
-        state.message = '当前账号不是管理员'
+        state.message = '当前账号没有管理端访问权限'
         state.verifiedAt = Date.now()
         return state.status
       }
@@ -154,9 +163,26 @@ export async function verifyAdminSession({ force = false } = {}) {
       state.status = ADMIN_SESSION_STATUS.GRANTED
       state.message = ''
       state.verifiedAt = Date.now()
-      state.roles = [ADMIN_ROLE]
-      await loadProfileAndPermissions()
-      if (!state.roles.includes(ADMIN_ROLE)) state.roles = [ADMIN_ROLE, ...state.roles]
+      return state.status
+    } catch (error) {
+      const kind = classifySessionError(error)
+      state.roles = []
+      state.permissions = []
+      state.profile = { ...DEFAULT_PROFILE }
+
+      if (kind === SESSION_ERROR.EXPIRED) {
+        // Token 已失效：清掉，下一次导航由守卫送回登录页
+        removeToken()
+        state.status = ADMIN_SESSION_STATUS.OFFLINE
+        state.message = '登录已过期，请重新登录'
+      } else if (kind === SESSION_ERROR.DENIED) {
+        state.status = ADMIN_SESSION_STATUS.DENIED
+        state.message = error?.message || '当前账号没有管理端访问权限'
+      } else {
+        state.status = ADMIN_SESSION_STATUS.OFFLINE
+        state.message = '后端服务未连接，管理端暂时以演示数据运行'
+      }
+      state.verifiedAt = Date.now()
       return state.status
     } finally {
       inflight = null
@@ -170,7 +196,7 @@ export async function verifyAdminSession({ force = false } = {}) {
 export function resetAdminSession() {
   state.status = ADMIN_SESSION_STATUS.UNKNOWN
   state.roles = []
-  state.permissions = [PERMISSION_ALL]
+  state.permissions = []
   state.profile = { ...DEFAULT_PROFILE }
   state.message = ''
   state.verifiedAt = 0

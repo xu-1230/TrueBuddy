@@ -17,7 +17,10 @@
 /** 管理员角色编码：与后端 system_role.code = 'admin' 一致 */
 export const ADMIN_ROLE = 'admin'
 
-/** 超级权限通配符 */
+/** 管理端入口权限：与后端 system_menu.permission 一致（管理员与审核员拥有） */
+export const ADMIN_PERMISSION = 'admin:dashboard'
+
+/** 超级权限通配符（仅开发预览使用） */
 export const PERMISSION_ALL = '*'
 
 /**
@@ -49,7 +52,7 @@ export function hasRole(granted, required) {
 }
 
 /**
- * 是否为管理员（只看角色编码，不看 userType 数字）
+ * 是否为管理员（只看角色编码）
  *
  * @param {string[]|string|null} roles
  * @returns {boolean}
@@ -88,20 +91,20 @@ export function mergeRouteMeta(matched = []) {
  * 判定一次导航的访问结果。
  *
  * @param {object} meta 合并后的路由 meta
- * @param {{ hasToken?: boolean, roleStatus?: string, roles?: string[] }} session
+ * @param {{ hasToken?: boolean, roleStatus?: string, roles?: string[], permissions?: string[] }} session
  *   roleStatus: unknown | checking | granted | denied | offline
  * @returns {'ok'|'login'|'forbidden'}
  */
 export function resolveAccess(meta = {}, session = {}) {
-  const { hasToken = false, roleStatus = 'unknown', roles = [] } = session
+  const { hasToken = false, roleStatus = 'unknown', permissions = [] } = session
 
   if (meta.requiresAuth && !hasToken) return 'login'
 
   if (meta.requiresAdmin) {
     // 后端明确拒绝：直接 403，不再给任意角色放行
     if (roleStatus === 'denied') return 'forbidden'
-    // 已确认管理员身份：再校验一次角色编码，防止后端只回了 userType 而没给角色
-    if (roleStatus === 'granted' && !isAdmin(roles)) return 'forbidden'
+    // 管理端入口按权限码判定：管理员与审核员拥有 admin:dashboard，普通用户 / 会员被拒绝
+    if (roleStatus === 'granted' && !hasPermission(permissions, ADMIN_PERMISSION)) return 'forbidden'
   }
 
   return 'ok'
