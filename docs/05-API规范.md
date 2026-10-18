@@ -61,7 +61,7 @@
 | 机制 | 位置 | 说明 |
 | --- | --- | --- |
 | `@PermitAll` | 方法 / 类 | 标注即免登录（现有 `AuthController.login`） |
-| `tb.security.permit-all-urls` | `application.yml` | URL 白名单：`/system/auth/login`、`/test2/read-pptx`、`/test2/file-text`、`/doc-template/**`、`/workflow/**`、`/homework/**`、`/meeting/**`（实时媒体与聊天走自托管 LiveKit 的 7880/7881，不经过本服务；会议内身份是 `hostToken` / `attendeeToken`，离会接口 `POST /meeting/leave` 也靠它校验）、`/ppt/**`（PPT 讲稿生成，无状态接口） |
+| `tb.security.permit-all-urls` | `application.yml` | URL 白名单：`/system/auth/login`、`/system/auth/refresh`、`/test2/read-pptx`、`/test2/file-text`、`/doc-template/**`、`/workflow/**`、`/homework/**`、`/meeting/**`（实时媒体与聊天走自托管 LiveKit 的 7880/7881，不经过本服务；会议内身份是 `hostToken` / `attendeeToken`，离会接口 `POST /meeting/leave` 也靠它校验）、`/ppt/**`（PPT 讲稿生成，无状态接口） |
 | 兜底 | `SecurityConfig` | `anyRequest().authenticated()`；静态资源与 `DispatcherType.ASYNC` 放行 |
 
 > 新增免登录接口优先使用 `@PermitAll`；批量前缀放行才写入 `permit-all-urls` 并同步本文档。
@@ -70,7 +70,7 @@
 >
 > **仍待整改**：`application.yml` 里 `/workflow/**` 上方的注释仍写着「`/run`、`/resume` 为 SSE 流」，而这两个端点已合并为 `POST /chat`（且 `/chat/**` **故意不放行**，要求登录）；注释误导，需随代码修正。
 
-### 2.5 接口清单（共 15 个 `@RestController` / 42 个接口）
+### 2.5 接口清单（共 15 个 `@RestController` / 43 个接口）
 
 > 下表路径均省略上下文前缀 `/api`。
 
@@ -118,6 +118,7 @@
 | 40 | `PptSpeechController` | POST | `/ppt/speech/speak` | **讲稿流式播报**（SSE，`produces=text/event-stream`）：`{ text, meetingNo?, hostToken? }` → 事件 `status`（started / done）、`chunk`（base64 的 48kHz 单声道 16bit PCM）、`error`；**调用方断开即取消合成**。带齐会议号与凭据时以数字人身份落库（`kind=2`），否则是彩排试听。链路见 [16](./16-PPT演讲与模拟会议方案.md) §5.7 | `SseEmitter` |
 | 41 | `AdminAuthController` | GET | `/admin/auth/profile` | 当前管理端账号资料 + 角色 + 权限；`@PreAuthorize("hasAuthority('admin:dashboard')")` | `CommonResult<AdminProfileRespVO>` |
 | 42 | `AdminAuthController` | GET | `/admin/auth/permissions` | 当前账号权限码集合；同样要求 `admin:dashboard` | `CommonResult<List<String>>` |
+| 43 | `AuthController` | POST | `/system/auth/refresh` | 刷新令牌：旧 refreshToken 一次性消费，返回新 accessToken + refreshToken 与最新角色/权限 | `CommonResult<AuthLoginRespVO>` |
 
 > 接口 21~27 属**自定义工作流模块**（包根 `org.example.textflow`），分两块：
 >

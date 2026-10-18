@@ -89,12 +89,14 @@
   1. 请求头：`Authorization: Bearer <accessToken>`（也兼容不加 `Bearer ` 前缀）
   2. 请求参数：`?token=<accessToken>`
 - Token 有效期：`accessToken` 默认 **2 小时**（`7200` 秒），`refreshToken` 默认 **7 天**（`604800` 秒）。
+- 刷新模型：accessToken 过期后，前端用 `POST /system/auth/refresh` 换取新令牌；旧 refreshToken **一次性消费**，刷新成功后返回新的 accessToken + refreshToken。refreshToken 不能再直接作为 Bearer Token 使用。
 
 **免登录（白名单）接口**，无需携带 Token（`tb.security.permit-all-urls`）：
 
 | 路径 | 说明 |
 | --- | --- |
 | `/system/auth/login` | 登录（另标注了 `@PermitAll`） |
+| `/system/auth/refresh` | 刷新令牌（accessToken 往往已过期，必须免登录） |
 | `/doc-template/**` | 文档模板生成模块全部接口 |
 | `/workflow/**` | 工作流定义模块全部接口（含联调接口 `/workflow/text`） |
 | `/homework/**` | 作业批改模块全部接口 |
@@ -134,7 +136,7 @@
 
 ## 2. 接口索引
 
-> 共 **15 个 Controller / 42 个接口**。路径省略 `/api` 前缀。
+> 共 **15 个 Controller / 43 个接口**。路径省略 `/api` 前缀。
 
 | # | 模块 | 方法 | 路径 | 说明 | 鉴权 |
 | --- | --- | --- | --- | --- | --- |
@@ -180,6 +182,7 @@
 | 40 | 测试联调 | GET | `/test2/file-text` | 读取作业文件文本（联调桩） | 免登录 |
 | 41 | 管理端身份 | GET | `/admin/auth/profile` | 当前账号资料 + 角色 + 权限 | 需登录 + `admin:dashboard` |
 | 42 | 管理端身份 | GET | `/admin/auth/permissions` | 当前账号权限码 | 需登录 + `admin:dashboard` |
+| 43 | 认证 | POST | `/system/auth/refresh` | 刷新令牌换取新令牌（旧 refreshToken 一次性消费） | 免登录 |
 
 ---
 
@@ -248,6 +251,61 @@ curl -X POST http://localhost:8086/api/system/auth/login \
 
 > 角色与权限随登录一并下发；管理端初始化仍以 `/admin/auth/profile` 为权威。
 > **安全提示**：当前 `AdminUserServiceImpl.isPasswordMatch` 恒为 `true`（演示便利），上线前必须改为 BCrypt 校验。
+
+---
+
+#### 3.1.2 刷新令牌
+
+| 项 | 值 |
+| --- | --- |
+| 请求方法 | `POST` |
+| 请求路径 | `/system/auth/refresh` |
+| 鉴权 | 免登录（accessToken 可能已过期） |
+| Content-Type | `application/json` |
+
+**请求参数（Body，`AuthRefreshReqVO`）**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `refreshToken` | String | 是 | 登录或上次刷新下发的刷新令牌；一次性使用 |
+
+**请求示例**
+
+```bash
+curl -X POST http://localhost:8086/api/system/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d"}'
+```
+
+**响应字段（data）**：结构同 [3.1.1](#311-登录) 的 `AuthLoginRespVO`，即新的 `accessToken`、新的 `refreshToken`、`expiresTime`，以及重新解析的 `roles` / `permissions`。
+
+**响应示例**
+
+```json
+{
+  "code": 0,
+  "message": "",
+  "data": {
+    "userId": 1,
+    "roles": ["admin"],
+    "permissions": ["admin:dashboard", "system:user:list"],
+    "accessToken": "b6e2d1f0a9c84e7d8b3a5c2f1e0d9b8a",
+    "refreshToken": "3c1d9e8f7a6b5c4d2e0f1a3b5c7d9e8f",
+    "expiresTime": "2026-10-18 20:30:00"
+  }
+}
+```
+
+**可能错误**
+
+| code | message | 触发条件 |
+| --- | --- | --- |
+| `401` | 刷新令牌不能为空 | 请求体缺少 `refreshToken` |
+| `401` | 刷新令牌不存在或已失效 | 已被消费、伪造或已删除 |
+| `401` | 刷新令牌已过期，请重新登录 | 超过 7 天 |
+| `401` | 刷新令牌已被使用，请重新登录 | 并发刷新时后到的请求 |
+
+> 旧 refreshToken 在刷新成功后立即从 `system_oauth2_refresh_token` 删除；重复使用同一个 refreshToken 会被拒绝，客户端应清空本地登录态并重新登录。
 
 ---
 
@@ -2604,6 +2662,10 @@ curl http://localhost:8086/api/admin/auth/permissions \
 **`AuthLoginRespVO`（登录响应）**
 
 `userId: Long`、`roles: String[]`、`permissions: String[]`、`accessToken: String`、`refreshToken: String`、`expiresTime: LocalDateTime`
+
+**`AuthRefreshReqVO`（刷新令牌请求）**
+
+`refreshToken: String`
 
 **`AdminProfileRespVO`（管理端账号资料）**
 
