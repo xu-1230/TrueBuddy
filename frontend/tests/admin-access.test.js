@@ -1,0 +1,116 @@
+/**
+ * 管理端访问判定的行为用例（Node 内置 node:test）
+ *
+ * 锁三件事：
+ *   ① 未登录只跳登录，不跳 403（两者语义不同）；
+ *   ② 「身份未知 / 离线」不能当成拒绝，否则后端没起时管理端整片打不开；
+ *   ③ 只有 admin 角色才算管理员，会员 / 普通用户一律 403。
+ */
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {
+  buildLoginLocation,
+  hasPermission,
+  hasRole,
+  isAdmin,
+  mergeRouteMeta,
+  normalizeList,
+  resolveAccess,
+} from '../src/utils/access.js'
+
+test('normalizeList 把数组 / 逗号串 / 空值收敛为字符串数组', () => {
+  assert.deepEqual(normalizeList(['admin', ' member ']), ['admin', 'member'])
+  assert.deepEqual(normalizeList('admin,member'), ['admin', 'member'])
+  assert.deepEqual(normalizeList(null), [])
+  assert.deepEqual(normalizeList(undefined), [])
+})
+
+test('hasRole：未声明所需角色即不限制', () => {
+  assert.equal(hasRole([], []), true)
+  assert.equal(hasRole([], null), true)
+  assert.equal(hasRole(['admin'], ['admin']), true)
+  assert.equal(hasRole(['member'], ['admin']), false)
+  assert.equal(hasRole(['member', 'admin'], ['admin']), true)
+})
+
+test('isAdmin 只认 admin 角色编码，不认会员 / 普通用户', () => {
+  assert.equal(isAdmin(['admin']), true)
+  assert.equal(isAdmin('admin'), true)
+  assert.equal(isAdmin(['member']), false)
+  assert.equal(isAdmin(null), false)
+})
+
+test('hasPermission：精确命中、* 与模块通配', () => {
+  assert.equal(hasPermission(['system:user:list'], 'system:user:list'), true)
+  assert.equal(hasPermission(['system:user:list'], 'system:user:update'), false)
+  assert.equal(hasPermission(['*'], 'anything:at:all'), true)
+  assert.equal(hasPermission(['system:*'], 'system:user:list'), true)
+  assert.equal(hasPermission(['system:*'], 'kb:document:list'), false)
+  assert.equal(hasPermission([], ''), true, '没有要求权限码时一律放行')
+})
+
+test('mergeRouteMeta：子路由覆盖父路由的同名键', () => {
+  const meta = mergeRouteMeta([
+    { meta: { requiresAuth: true, requiresAdmin: true } },
+    { meta: { title: '用户管理' } },
+  ])
+  assert.deepEqual(meta, { requiresAuth: true, requiresAdmin: true, title: '用户管理' })
+})
+
+test('未登录访问受保护页 → login', () => {
+  assert.equal(resolveAccess({ requiresAuth: true }, { hasToken: false }), 'login')
+})
+
+test('登录了但没有管理员身份 → forbidden', () => {
+  assert.equal(
+    resolveAccess({ requiresAuth: true, requiresAdmin: true }, { hasToken: true, roleStatus: 'denied' }),
+    'forbidden',
+  )
+})
+
+test('身份未知 / 离线先放行，由布局里的校验兜底', () => {
+  assert.equal(
+    resolveAccess({ requiresAuth: true, requiresAdmin: true }, { hasToken: true, roleStatus: 'unknown' }),
+    'ok',
+  )
+  assert.equal(
+    resolveAccess({ requiresAuth: true, requiresAdmin: true }, { hasToken: true, roleStatus: 'offline' }),
+    'ok',
+  )
+})
+
+test('已确认管理员身份：roles 里没有 admin 仍然拒绝', () => {
+  assert.equal(
+    resolveAccess(
+      { requiresAuth: true, requiresAdmin: true },
+      { hasToken: true, roleStatus: 'granted', roles: ['member'] },
+    ),
+    'forbidden',
+  )
+  assert.equal(
+    resolveAccess(
+      { requiresAuth: true, requiresAdmin: true },
+      { hasToken: true, roleStatus: 'granted', roles: ['admin'] },
+    ),
+    'ok',
+  )
+})
+
+test('公开页不因为没 Token 就被拦', () => {
+  assert.equal(resolveAccess({}, { hasToken: false }), 'ok')
+  assert.equal(resolveAccess({ requiresAuth: false }, { hasToken: false }), 'ok')
+})
+
+test('登录跳转只回跳站内绝对路径，挡住开放重定向', () => {
+  assert.deepEqual(buildLoginLocation('/admin/user'), {
+    path: '/login',
+    query: { redirect: '/admin/user' },
+  })
+  assert.deepEqual(buildLoginLocation('/admin/user', '/admin/login'), {
+    path: '/admin/login',
+    query: { redirect: '/admin/user' },
+  })
+  assert.deepEqual(buildLoginLocation('//evil.com'), { path: '/login' })
+  assert.deepEqual(buildLoginLocation('https://evil.com'), { path: '/login' })
+  assert.deepEqual(buildLoginLocation(undefined), { path: '/login' })
+})
