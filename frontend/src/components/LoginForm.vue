@@ -3,7 +3,7 @@ import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Key, Lock, Message, Right, User } from '@element-plus/icons-vue'
 import { login } from '@/api/test'
-import { setToken } from '@/utils/auth'
+import { setRefreshToken, setToken } from '@/utils/auth'
 import { useCodeCooldown } from '@/composables/useCodeCooldown'
 
 const emit = defineEmits(['go-forgot', 'login-success'])
@@ -44,7 +44,10 @@ async function submitAccount() {
     // 响应拦截器已解包 CommonResult：code !== 0 与网络异常都会 reject，故这里只需处理成功与失败两支
     const data = await login(accountForm.username, accountForm.password)
     // 勾选「记住我」才写 30 天持久 Cookie，否则维持会话级
-    setToken(data.accessToken, accountForm.remember ? 30 : undefined)
+    const expiresDays = accountForm.remember ? 30 : undefined
+    setToken(data.accessToken, expiresDays)
+    // 刷新令牌用于 accessToken 过期后换取新令牌，必须与访问令牌一起保存
+    setRefreshToken(data.refreshToken, expiresDays)
     // 响应里的 roles / permissions 交给登录页做落地分流；管理端仍会调 profile 复核
     emit('login-success', data)
   } catch (error) {
