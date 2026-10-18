@@ -77,21 +77,21 @@ public class LiveKitTokenService {
      * 老师端令牌：可发布（屏幕共享），身份 {@code host}。
      */
     public String createHostToken(String meetingNo) {
-        return createToken(roomNameOf(meetingNo), HOST_IDENTITY, "老师", ROLE_HOST, true, false);
+        return createToken(roomNameOf(meetingNo), HOST_IDENTITY, "老师", ROLE_HOST, true, false, true);
     }
 
     /**
      * 学生端令牌：不可发布、只能订阅，但可发 DataChannel（聊天）。
      */
     public String createAttendeeToken(String meetingNo, Long attendeeId, String nickname) {
-        return createToken(roomNameOf(meetingNo), attendeeIdentityOf(attendeeId), nickname, ROLE_STUDENT, false, false);
+        return createToken(roomNameOf(meetingNo), attendeeIdentityOf(attendeeId), nickname, ROLE_STUDENT, false, false, true);
     }
 
     /**
      * 服务端令牌：房间管理权限，用于 {@code RoomService/DeleteRoom}（结束会议时把学生踢出房间）。
      */
     public String createServerToken(String meetingNo) {
-        return createToken(roomNameOf(meetingNo), SERVER_IDENTITY, "服务端", ROLE_HOST, false, true);
+        return createToken(roomNameOf(meetingNo), SERVER_IDENTITY, "服务端", ROLE_HOST, false, true, true);
     }
 
     /**
@@ -123,7 +123,7 @@ public class LiveKitTokenService {
     // ========== 内部方法 ==========
 
     private String createToken(String roomName, String identity, String displayName, int role,
-                              boolean canPublish, boolean roomAdmin) {
+                              boolean canPublish, boolean roomAdmin, boolean canPublishData) {
         String apiKey = meetingProperties.getLivekitApiKey();
         String apiSecret = meetingProperties.getLivekitApiSecret();
         if (StrUtil.isBlank(apiKey) || StrUtil.isBlank(apiSecret)) {
@@ -137,8 +137,8 @@ public class LiveKitTokenService {
         video.put("room", roomName);
         video.put("canPublish", canPublish);
         video.put("canSubscribe", true);
-        // 聊天走 DataChannel，因此数据发布权限必须开启（学生也需要发消息）
-        video.put("canPublishData", true);
+        // 聊天走 DataChannel，因此师生两端必须开数据发布权限；数字人只出声音，故显式关闭
+        video.put("canPublishData", canPublishData);
         if (roomAdmin) {
             video.put("roomAdmin", true);
             video.put("roomList", true);

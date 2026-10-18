@@ -2,7 +2,7 @@
  * 工作流接口层（workflow2 画布页专用）。
  *
  * 执行与人工确认恢复都以 `text/event-stream` 返回，axios 无法流式读取，
- * 因此这里只负责接口地址与请求体构造，真正的读流在 `@/utils/workflow-sse`。
+ * 因此这里只负责接口地址与请求体构造，真正的读流在 `@/utils/event-stream`。
  */
 import service from './index'
 import { collapseIterations } from '@/views/workflow2/utils/iteration'
@@ -11,7 +11,7 @@ import { collapseIterations } from '@/views/workflow2/utils/iteration'
  * `/chat` 的接口地址。
  *
  * 执行入口已**合并成一个 `/chat`**：首轮与中断续跑共用，由服务端按「该会话最新一条执行实例的状态」
- * 分流，客户端不传状态。执行接口由 `@/utils/workflow-sse` 用原生 `fetch` 读取（故**带** `/api`
+ * 分流，客户端不传状态。执行接口由 `@/utils/event-stream` 用原生 `fetch` 读取（故**带** `/api`
  * 前缀：`fetch` 不经过 axios 实例、不会自动补 baseURL）；另外两个接口走 axios（故**不带**前缀，
  * axios 实例的 baseURL 已经是 `/api`）。
  */

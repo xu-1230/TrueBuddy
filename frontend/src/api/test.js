@@ -12,8 +12,3 @@ export const login = (username, password) => {
 // 访问需要登录才能调用的接口
 export const ping = () => service({ url: '/test/ping', method: 'get' })
 export const ping2 = () => service({ url: '/test2/ping', method: 'get' })
-
-// 三个身份判断测试接口
-export const identityNormal = () => service({ url: '/identity/normal', method: 'get' })
-export const identityMember = () => service({ url: '/identity/member', method: 'get' })
-export const identityAdmin = () => service({ url: '/identity/admin', method: 'get' })

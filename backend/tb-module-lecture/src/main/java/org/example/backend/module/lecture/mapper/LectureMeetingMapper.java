@@ -23,10 +23,6 @@ public interface LectureMeetingMapper {
     @Select("SELECT * FROM lecture_meeting WHERE meeting_no = #{meetingNo} AND deleted = FALSE")
     LectureMeetingDO selectByMeetingNo(String meetingNo);
 
-    /** 按主键查询（仅未删除） */
-    @Select("SELECT * FROM lecture_meeting WHERE id = #{id} AND deleted = FALSE")
-    LectureMeetingDO selectById(Long id);
-
     /** 更新会议状态与结束时间 */
     @Update("UPDATE lecture_meeting SET status = #{status}, end_time = #{endTime}, update_time = now() "
             + "WHERE id = #{id} AND deleted = FALSE")

@@ -85,6 +85,13 @@ export const useSlidesStore = defineStore('ppt-slides', {
       this.slides[slideIndex] = { ...this.slides[slideIndex], ...props }
     },
 
+    // 按 id 修改任意一页：AI 讲稿是整篇回填的，而 updateSlide 只改当前页
+    updateSlideById(slideId, props) {
+      const index = this.slides.findIndex(item => item.id === slideId)
+      if (index < 0) return
+      this.slides[index] = { ...this.slides[index], ...props }
+    },
+
     deleteSlide(slideId) {
       const slidesId = Array.isArray(slideId) ? slideId : [slideId]
 

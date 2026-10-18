@@ -6,7 +6,10 @@ import java.time.LocalDateTime;
 
 /**
  * 模拟会议参会人 DO（表 lecture_meeting_attendee）
- * <p>学生点入会链接并输入名字后落一行，同时签发 {@code attendeeToken}。
+ *
+ * <p><b>本表是台账，不是在线名单</b>：凡入会过的学生各留一行，
+ * {@code leaveTime == null} 的含义是「尚未显式离开」，<b>不等于</b>此人此刻在线
+ * （崩溃 / 断网 / 直接关标签页都不会写 leaveTime）。当前在线与否只看 LiveKit 房间事件，见 docs/adr/0002 与 CONTEXT.md。
  */
 @Data
 public class LectureMeetingAttendeeDO {
@@ -21,11 +24,9 @@ public class LectureMeetingAttendeeDO {
     private String attendeeToken;
     /** 角色：1=老师，2=学生 */
     private Integer role;
-    /** 是否在线 */
-    private Boolean online;
     /** 入会时间 */
     private LocalDateTime joinTime;
-    /** 离会时间 */
+    /** 离会时间（null = 尚未显式离开，≠ 在线） */
     private LocalDateTime leaveTime;
     /** 创建时间 */
     private LocalDateTime createTime;

@@ -2,6 +2,7 @@ package org.example.textflow.service;
 
 import cn.hutool.core.util.IdUtil;
 import com.alibaba.cloud.ai.graph.CompiledGraph;
+import jakarta.annotation.PreDestroy;
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.action.InterruptionMetadata;
@@ -44,6 +45,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -72,6 +75,12 @@ public class ChatServiceImpl implements ChatService {
     /** 会话标题长度上限（与 workflow_conversation.title 的 varchar(200) 对齐） */
     private static final int TITLE_MAX_LENGTH = 200;
 
+    /**
+     * 图执行的并发上限：一次执行会**独占一个线程** 1.5~2.5 分钟（批改一个班），
+     * 所以池子按「同时跑几条」定容，超出的排队等前一条跑完。4 是演示规模的经验值。
+     */
+    private static final int GRAPH_MAX_CONCURRENT = 4;
+
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /** 中断点：executeId → 中断信息（续跑复用同一条执行记录，故按执行编号索引） */
@@ -89,6 +98,13 @@ public class ChatServiceImpl implements ChatService {
     /** 大模型节点可自主调用的工具（当前为作业文件读取），装配图时传给节点 */
     private final WorkflowToolCallbacks workflowToolCallbacks;
 
+    /**
+     * 跑图的线程池：请求线程只负责把 {@link SseEmitter} 交回 Spring MVC，
+     * 建图与执行全部在这里的线程上完成（**必须在请求线程之外**，原因见 {@link #runGraph}）。
+     * 与讲稿合成的 `synthExecutor` 同一套写法（守护线程 + 固定容量）。
+     */
+    private final ExecutorService graphExecutor;
+
     public ChatServiceImpl(WorkflowService workflowService,
                           WorkflowDefinitionRepository workflowRepository,
                           WorkflowConversationRepository conversationRepository,
@@ -101,6 +117,16 @@ public class ChatServiceImpl implements ChatService {
         this.runRepository = runRepository;
         this.nodeChatClient = nodeChatClient;
         this.workflowToolCallbacks = workflowToolCallbacks;
+        this.graphExecutor = Executors.newFixedThreadPool(GRAPH_MAX_CONCURRENT, runnable -> {
+            Thread thread = new Thread(runnable, "workflow-graph");
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        graphExecutor.shutdownNow();
     }
 
     @Override
@@ -154,8 +180,32 @@ public class ChatServiceImpl implements ChatService {
         publisher.created(conversation.getWorkflowId());
         publisher.inProgress();
 
+        // 建图与执行**必须离开请求线程**（原因见 runGraph）：先把 emitter 交回 Spring MVC，
+        // 再在池子里跑。前面那两帧（created / inProgress）此刻还是 Spring 的"早发送"，
+        // 会在 return 那一刻立即补发，所以客户端依旧是"先收到已受理、再逐帧收执行过程"。
         final InterruptionMetadata feedback = resumeFrom;
         final Map<String, Object> submitted = humanFeedback;
+        final Map<String, Object> inputs = reqVO.getInputs();
+        graphExecutor.execute(() -> runGraph(publisher, executeId, process, feedback, submitted, inputs));
+        return emitter;
+    }
+
+    /**
+     * 在**独立线程**上建图并跑完本次执行。
+     *
+     * <p><b>为什么必须在请求线程之外</b>：若在 {@code chat()} 里同步跑，方法就要等整张图跑完
+     * （或中断）才把 {@link SseEmitter} 返回给 Spring MVC；而在那之前 Spring 还没拿到 handler，
+     * 每一次 {@code emitter.send()} 都会被收进 {@code ResponseBodyEmitter} 的
+     * {@code earlySendAttempts} 缓冲，直到 {@code return emitter} 才**一次性补发**。
+     * 前端表现就是「跑完才一起出现」：逐份产出、节点实时高亮、人工确认卡片的到达时机全部失效。
+     *
+     * <p>实测与可重复的复现脚本见 {@code docs/specs/2026-10-14-批改作业工作流定义替换.md} §13。
+     *
+     * @param process 已落库的工作流定义（在请求线程上读好再带进来；图执行链路本身不读请求上下文）
+     */
+    private void runGraph(ChatSsePublisher publisher, String executeId, WorkflowProcessRespVO process,
+                          InterruptionMetadata feedback, Map<String, Object> submitted,
+                          Map<String, Object> inputs) {
         try {
             CompiledGraph graph = WorkflowGraphFactory.createGraph(
                     process, output -> push(publisher, executeId, output), nodeChatClient, checkpointSaver,
@@ -169,7 +219,8 @@ public class ChatServiceImpl implements ChatService {
                         .addStateUpdate(Map.of(ChatProtocol.HUMAN_FEEDBACK_KEY, submitted))
                         .resume();
             } else {
-                input = initialState();
+                // 首轮才吃业务输入：续跑的值只从 message.values 来，避免"两处都能送值"的歧义
+                input = initialState(inputs);
             }
 
             graph.stream(input, configBuilder.build()).subscribe(
@@ -180,7 +231,6 @@ public class ChatServiceImpl implements ChatService {
             // 建图失败 / 提交失败：HTTP 已按事件流返回，错误只能走流内
             failRun(publisher, executeId, e);
         }
-        return emitter;
     }
 
     @Override
@@ -264,10 +314,27 @@ public class ChatServiceImpl implements ChatService {
         return run;
     }
 
-    /** /chat 的初始状态：沿用既有占位键，无业务含义（首轮的业务输入由开始节点提供模拟数据） */
-    private Map<String, Object> initialState() {
+    /**
+     * /chat 的初始状态：引擎占位键 {@code __START__} + 调用方传来的**业务输入**（{@link ChatReqVO#inputs}）。
+     *
+     * <p>业务输入**按原样并入顶层状态**（键就是工作流里开始节点声明的变量名，如 {@code file_tree} /
+     * {@code description}），开始节点按同名键读取、读不到才回落演示常量。这样"批改页上的配置"
+     * 才有通道进入工作流——在此之前唯一的输入通道是 {@code StartNode} 里的 Java 常量。
+     *
+     * <p>以 {@code __} 开头的键一律忽略：那是引擎保留键（{@code __START__} / {@code __human_feedback__}），
+     * 让请求体覆盖它们会破坏执行语义。
+     */
+    private Map<String, Object> initialState(Map<String, Object> inputs) {
         Map<String, Object> state = new HashMap<>();
         state.put("__START__", "777");
+        if (inputs != null) {
+            inputs.forEach((name, value) -> {
+                if (name == null || name.isBlank() || name.startsWith("__")) {
+                    return;
+                }
+                state.put(name, value);
+            });
+        }
         return state;
     }
 

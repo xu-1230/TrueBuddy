@@ -1,0 +1,261 @@
+/**
+ * 管理端共享版式（全局 CSS，选择器统一带 .admin- 前缀，避免影响用户端）
+ *
+ * 只放「页面骨架」级别的规则：容器、卡片、栅格、表单两列、列表行。
+ * 具体业务组件的样式仍写在各组件的 <style scoped> 里。
+ */
+
+.admin-shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--tb-bg-page);
+  color: var(--tb-text-primary);
+}
+
+.admin-shell__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.admin-main {
+  flex: 1;
+  padding: var(--tb-size-5) var(--tb-size-6);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.admin-main__inner {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+/* ---------- 页面骨架 ---------- */
+
+.admin-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-size-4);
+}
+
+.admin-grid {
+  display: grid;
+  gap: var(--tb-size-4);
+}
+
+.admin-grid--stats {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.admin-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-panel {
+  min-width: 0;
+  padding: var(--tb-size-4);
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-lg);
+  background: var(--tb-bg-surface);
+}
+
+.admin-panel--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.admin-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tb-size-3);
+  padding: var(--tb-size-3) var(--tb-size-4);
+  border-bottom: var(--tb-border-width) solid var(--tb-border);
+}
+
+.admin-panel__title {
+  margin: 0;
+  color: var(--tb-text-primary);
+  font-size: var(--tb-text-md);
+  font-weight: 600;
+}
+
+.admin-panel__body {
+  padding: var(--tb-size-4);
+}
+
+.admin-panel__foot {
+  padding: var(--tb-size-3) var(--tb-size-4);
+  border-top: var(--tb-border-width) solid var(--tb-border);
+}
+
+/* ---------- 小件 ---------- */
+
+.admin-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tb-size-2);
+}
+
+.admin-muted {
+  color: var(--tb-text-tertiary);
+  font-size: var(--tb-text-xs);
+  line-height: var(--tb-leading-snug);
+}
+
+.admin-code {
+  padding: 1px 6px;
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-xs);
+  background: var(--tb-bg-raised);
+  color: var(--tb-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-xs);
+  white-space: nowrap;
+}
+
+.admin-strong {
+  color: var(--tb-text-primary);
+  font-weight: 600;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--tb-size-4);
+}
+
+.admin-form-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.admin-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--tb-size-2);
+}
+
+.admin-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-list__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tb-size-3);
+  padding: var(--tb-size-3) var(--tb-size-4);
+  border-bottom: var(--tb-border-width) solid var(--tb-border);
+}
+
+.admin-list__item:last-child {
+  border-bottom: 0;
+}
+
+.admin-list__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--tb-primary);
+}
+
+.admin-list__dot.is-warning {
+  background: var(--tb-warning);
+}
+
+.admin-list__dot.is-danger {
+  background: var(--tb-danger);
+}
+
+.admin-list__dot.is-info {
+  background: var(--tb-info);
+}
+
+.admin-list__main {
+  min-width: 0;
+  flex: 1;
+}
+
+.admin-list__title {
+  margin: 0;
+  color: var(--tb-text-primary);
+  font-size: var(--tb-text-sm);
+  line-height: var(--tb-leading-snug);
+}
+
+.admin-list__meta {
+  margin: var(--tb-size-1) 0 0;
+  color: var(--tb-text-tertiary);
+  font-size: var(--tb-text-xs);
+}
+
+/* ---------- Element Plus 在管理端的收敛 ---------- */
+
+.admin-shell .el-table th.el-table__cell {
+  background: var(--tb-bg-raised);
+  color: var(--tb-text-secondary);
+  font-weight: 600;
+}
+
+.admin-shell .el-table .cell {
+  line-height: var(--tb-leading-snug);
+}
+
+.admin-shell .el-table__inner-wrapper::before {
+  display: none;
+}
+
+.admin-shell .el-pagination {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--tb-size-1);
+}
+
+.admin-shell .el-form-item__label {
+  color: var(--tb-text-secondary);
+  font-size: var(--tb-text-xs);
+}
+
+/* 表格内操作按钮不抢视觉：默认文字按钮，悬停才上色 */
+.admin-shell .el-table .el-button.is-link {
+  padding: 0;
+  font-weight: 500;
+}
+
+/* 行内按钮间距统一交给 flex gap，抵消 EP 默认的 margin-left，避免操作列被挤成两行 */
+.admin-shell .el-table .admin-inline .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* ---------- 响应式 ---------- */
+
+@media (max-width: 1200px) {
+  .admin-grid--3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1024px) {
+  .admin-main {
+    padding: var(--tb-size-4);
+  }
+
+  .admin-grid--2,
+  .admin-grid--3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

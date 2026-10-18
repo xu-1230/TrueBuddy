@@ -6,13 +6,18 @@
  * - `card.data`   只读回显的**待确认数据**（中断节点 `inputs` 引用的上游产出）；
  * - `card.fields` 待用户填写的**表单字段**（中断节点 `outputs` 声明）。
  *
- * 字段清单只在卡片帧里下发（不像 Coze 散在模板与变量里），因此这里按 `type` 直接渲染控件即可：
- * `string` / `text` → 输入框；`list` → 文件清单（一期用模拟数据，见 `utils/mock-card-values`）。
+ * 分组规则（哪一项只读、哪一项要填、提交哪些值）**全部在 `utils/card-fields` 里**，
+ * 本组件只负责渲染与抛事件 —— 这条规则漏了会表现为「流程成功但下游变量全是空」，
+ * 属于必须被单测钉住的引擎契约，不能内联在这里（见该模块头部的说明）。
+ *
+ * 一个直接后果：`outputs` 与 `inputs` **同名**的字段是"只读 + 原值回填"，不会渲染成输入框。
+ * 于是「填写确认内容」这一段在"所有字段都有上游来源"时整段不渲染 —— 卡片只剩
+ * 「待确认数据 + 确定」，这才是"看一眼、点确认"应有的样子。
  */
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { prettyJson, summarizeValue } from '../utils/run-state'
-import { isFileListField, kindOf, mockFileItemsOf } from '../utils/mock-card-values'
+import { blockingIssuesOf, kindOf, labelOf, resolveCard } from '../utils/card-fields'
 
 const props = defineProps({
   /** 是否显示 */
@@ -30,25 +35,27 @@ const visible = computed({
 
 const title = computed(() => props.card?.title || '人工确认')
 const dataItems = computed(() => props.card?.data ?? [])
-const fields = computed(() => props.card?.fields ?? [])
 
-/** 表单取值：字段名 → 取值 */
+/** 卡片的三组字段与提交取值（口径见 utils/card-fields） */
+const resolved = computed(() => resolveCard(props.card))
+/** 待填写字段（有可编辑控件的那一类） */
+const editableFields = computed(() => resolved.value.editable)
+/** 声明了但没有来源、也没有控件的字段：只提示，不拦截 */
+const unfillableFields = computed(() => resolved.value.unfillable)
+/** 是否需要渲染「填写确认内容」这一段 */
+const hasFillSection = computed(() => editableFields.value.length > 0 || unfillableFields.value.length > 0)
+
+/** 表单取值：字段名 → 取值（只读项已按上游原值预填） */
 const values = ref({})
 
 /** 展开查看完整 JSON 的字段名集合 */
 const expanded = ref(new Set())
 
-/** 按字段声明初始化取值：文本类空串、列表类空数组 */
+/** 打开弹窗时（重新）初始化：中断卡片可能来自另一轮执行，不能沿用上一轮填过的值 */
 const resetValues = () => {
-  const next = {}
-  fields.value.forEach((field) => {
-    next[field?.name] = kindOf(field) === 'text' ? '' : []
-  })
-  values.value = next
+  values.value = { ...resolved.value.values }
   expanded.value = new Set()
 }
-
-// 打开弹窗时（重新）初始化：中断卡片可能来自另一轮执行，不能沿用上一轮填过的值
 watch(() => props.modelValue, (open) => { if (open) resetValues() })
 watch(() => props.card?.node_id, () => { if (props.modelValue) resetValues() })
 
@@ -59,26 +66,15 @@ const toggleExpand = (name) => {
   expanded.value = next
 }
 
-/** 一期：文件清单用模拟数据填充（不真上传） */
-const fillMockFiles = (field) => {
-  values.value = { ...values.value, [field.name]: mockFileItemsOf() }
-}
-
-const clearField = (field) => {
-  values.value = { ...values.value, [field.name]: kindOf(field) === 'text' ? '' : [] }
-}
-
-const isEmptyValue = (value) => {
-  if (value === null || value === undefined) return true
-  if (typeof value === 'string') return !value.trim()
-  if (Array.isArray(value)) return value.length === 0
-  return false
-}
-
 const submit = () => {
-  const missing = fields.value.filter((field) => field?.required && isEmptyValue(values.value[field?.name]))
-  if (missing.length) {
-    ElMessage.warning(`请先填写：${missing.map((field) => field.label || field.name).join('、')}`)
+  const { sourceMissing, unfilled } = blockingIssuesOf(props.card, values.value)
+  // 两种问题分开说：前者是"上游没给到值"（状态缺失，改弹窗也解决不了），后者才是"你还没填"
+  if (sourceMissing.length) {
+    ElMessage.warning(`上游未提供取值，无法确认：${sourceMissing.join('、')}`)
+    return
+  }
+  if (unfilled.length) {
+    ElMessage.warning(`请先填写：${unfilled.join('、')}`)
     return
   }
   emit('submit', { nodeId: props.card?.node_id, values: { ...values.value } })
@@ -98,7 +94,7 @@ const submit = () => {
       <div class="card-section__title">待确认数据</div>
       <div v-for="item in dataItems" :key="item.name" class="card-data-row">
         <div class="card-data-row__head">
-          <span class="card-data-row__label">{{ item.label || item.name }}</span>
+          <span class="card-data-row__label">{{ labelOf(item) }}</span>
           <button class="card-data-row__toggle" type="button" @click="toggleExpand(item.name)">
             {{ expanded.has(item.name) ? '收起' : '展开' }}
           </button>
@@ -110,45 +106,34 @@ const submit = () => {
       </div>
     </div>
 
-    <!-- 待填写字段 -->
-    <div class="card-section">
+    <!-- 待填写字段：只在这一段真有内容（可填写 / 需提示）时才渲染 -->
+    <div v-if="hasFillSection" class="card-section">
       <div class="card-section__title">填写确认内容</div>
-      <div v-for="field in fields" :key="field.name" class="card-field">
+      <div v-for="field in editableFields" :key="field.name" class="card-field">
         <div class="card-field__head">
           <span class="card-field__label">
-            {{ field.label || field.name }}
+            {{ labelOf(field) }}
             <span v-if="field.required" class="card-field__required">*</span>
           </span>
           <span class="card-field__type">{{ field.type || 'string' }}</span>
         </div>
-
-        <template v-if="kindOf(field) === 'text'">
-          <el-input
-            v-model="values[field.name]"
-            type="textarea"
-            :rows="3"
-            :placeholder="`请输入${field.label || field.name}`"
-          />
-        </template>
-
-        <template v-else>
-          <div class="card-field__actions">
-            <el-button size="small" @click="fillMockFiles(field)">
-              {{ isFileListField(field) ? '选择作业文件（模拟）' : '填充模拟数据' }}
-            </el-button>
-            <el-button size="small" text @click="clearField(field)">清空</el-button>
-            <span class="card-field__count">已选 {{ (values[field.name] ?? []).length }} 条</span>
-          </div>
-          <ul v-if="(values[field.name] ?? []).length" class="card-field__list">
-            <li v-for="(item, index) in values[field.name]" :key="index">
-              {{ item?.path || item?.name || summarizeValue(item) }}
-            </li>
-          </ul>
-        </template>
+        <el-input
+          v-if="kindOf(field) === 'text'"
+          v-model="values[field.name]"
+          type="textarea"
+          :rows="3"
+          :placeholder="`请输入${labelOf(field)}`"
+        />
       </div>
 
-      <div v-if="!fields.length" class="card-section__empty">
-        该中断节点没有声明待填字段（`outputs` 为空）。
+      <div v-for="field in unfillableFields" :key="field.name" class="card-field">
+        <div class="card-field__head">
+          <span class="card-field__label">{{ labelOf(field) }}</span>
+          <span class="card-field__type">{{ field.type || 'list' }}</span>
+        </div>
+        <div class="card-field__empty">
+          该字段需由上游节点产出，本卡片不支持填写
+        </div>
       </div>
     </div>
 
@@ -169,11 +154,6 @@ const submit = () => {
   font-size: 13px;
   font-weight: 600;
   color: var(--tb-text-secondary);
-}
-
-.card-section__empty {
-  font-size: 13px;
-  color: var(--tb-text-tertiary);
 }
 
 /* ===== 待确认数据 ===== */
@@ -254,24 +234,8 @@ const submit = () => {
   color: var(--tb-text-tertiary);
 }
 
-.card-field__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.card-field__count {
+.card-field__empty {
   font-size: 12px;
   color: var(--tb-text-tertiary);
-}
-
-.card-field__list {
-  max-height: 160px;
-  margin: 8px 0 0;
-  padding-left: 18px;
-  overflow: auto;
-  font-size: 12px;
-  color: var(--tb-text-secondary);
-  word-break: break-all;
 }
 </style>

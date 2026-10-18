@@ -1,12 +1,8 @@
 spring:
-  # 自动加载项目根目录的 .env（存在才加载），无需手动导出环境变量
-  # 说明：.env 以 properties 语法解析，值中请避免反斜杠等转义字符
-  # 查找顺序：工作目录（backend/ 或 backend/tb-server/）向上逐级查找项目根目录
-  config:
-    import:
-      - optional:file:.env[.properties]
-      - optional:file:../.env[.properties]
-      - optional:file:../../.env[.properties]
+  # 配置一律写在本文件（2026-10-10 起不再加载仓库根 .env）：值直接写在 `${ENV_KEY:字面值}` 的冒号后面，
+  # 想临时覆盖就用环境变量，不必改本文件。
+  # 这样做的原因见 docs/08 §4：配置曾只以临时环境变量形式存在，进程一重启就回到默认值，
+  # 现象是「昨天还能播报，今天却报数字人未启用 / 口令不符」这种查不出的故障。
   application:
     name: tb-server
   mvc:
@@ -106,6 +102,8 @@ tb:
   security:
     permit-all-urls:
       - /system/auth/login
+      # 刷新令牌时 accessToken 往往已过期，必须免登录
+      - /system/auth/refresh
       - /test2/read-pptx
       # 作业文件文本读取（测试接口，免登录便于联调）
       - /test2/file-text
@@ -117,15 +115,15 @@ tb:
       # 模拟会议：学生点入会链接免登录参会（会议内身份用 hostToken / attendeeToken；
       # 实时媒体与聊天走 LiveKit 自己的端口 7880/7881，不经过本服务）
       - /meeting/**
+      # PPT 讲稿生成：前端 /index/ppt 目前不依赖登录态（无状态接口，不碰数据库）
+      - /ppt/**
   # 讲课模块：模拟会议（本期）
   lecture:
     meeting:
       # 学生入会链接基地址（如 http://192.168.1.5:5173）；留空时自动探测本机局域网 IPv4 并拼接前端端口
-      public-base-url: ${TB_MEETING_PUBLIC_BASE_URL:}
+      public-base-url: ${TB_MEETING_PUBLIC_BASE_URL:http://localhost:5173}
       # 探测局域网 IP 时拼接的前端端口（Vite 开发服务器默认 5173）
       frontend-port: ${TB_MEETING_FRONTEND_PORT:5173}
-      # 单场会议参会人数上限
-      max-attendees: ${TB_MEETING_MAX_ATTENDEES:20}
       # 入会与详情接口返回的历史消息条数上限
       history-limit: ${TB_MEETING_HISTORY_LIMIT:50}
       # 参会昵称最大长度
@@ -138,16 +136,38 @@ tb:
       # 推导信令地址时使用的端口（livekit-url 留空时按 ws://{局域网IP}:{该端口} 拼接）
       livekit-port: ${LIVEKIT_PORT:7880}
       # 必须与 D:\ctf\livekit\.env 里的 LIVEKIT_API_KEY / LIVEKIT_API_SECRET 一致
-      livekit-api-key: ${LIVEKIT_API_KEY:}
-      livekit-api-secret: ${LIVEKIT_API_SECRET:}
+      livekit-api-key: ${LIVEKIT_API_KEY:tbdevmeeting01}
+      livekit-api-secret: ${LIVEKIT_API_SECRET:7f3a91c65d2b48e0a1c4f6b93e7d2058}
       # 访问令牌有效期（小时）
       livekit-token-ttl-hours: ${LIVEKIT_TOKEN_TTL_HOURS:6}
+    # PPT 讲稿生成（前端 /index/ppt 的两个 AI 按钮 → POST /ppt/speech/optimize）
+    ppt:
+      # 时长 → 字数的语速常数（字/秒）：4.0 ≈ 240 字/分钟
+      chars-per-second: ${TB_PPT_CHARS_PER_SECOND:4.0}
+      # 每次模型调用的页数：模型输出有 token 上限，整篇一次问会被截断成无效 JSON
+      batch-size: ${TB_PPT_BATCH_SIZE:8}
+      # 单次请求页数安全上限（超出直接报错，避免误把上百页灌进来）
+      max-pages: ${TB_PPT_MAX_PAGES:200}
+      # 单页讲稿字数硬上限（模型偶尔写飞，超出即截断）
+      max-remark-chars: ${TB_PPT_MAX_REMARK_CHARS:1500}
+      # 单页正文/备注送进 prompt 的字符上限
+      max-page-input-chars: ${TB_PPT_MAX_PAGE_INPUT_CHARS:1200}
+    # AI 数字人播报（见 docs/16 §5.7）：合成结果直接以 SSE 回给放映页浏览器，不再经过任何中间进程
+    digital-human:
+      enabled: ${TB_DH_ENABLED:true}
+      # CosyVoice 走 DashScope 原生 WebSocket（不吃 OpenAI 兼容层），可与 embedding 共用同一个 Key
+      dashscope-api-key: ${DASHSCOPE_API_KEY:sk-b33590d5dc864abfaa16e7080c80a97f}
+      tts-model: ${TB_DH_TTS_MODEL:cosyvoice-v3-flash}
+      tts-voice: ${TB_DH_TTS_VOICE:longanhuan_v3}
+      # 并发播报数（决定合成线程池大小）与单条文本长度上限
+      max-concurrent-speak: ${TB_DH_MAX_SPEAK:2}
+      max-text-length: ${TB_DH_MAX_TEXT_LENGTH:1000}
   # 知识库文档解析：阿里云文档智能（文档解析大模型版）
   # AK/SK 为必填项，一律通过环境变量注入（项目根目录 .env，模板见 .env.example），缺失时启动即失败
   docmind:
     endpoint: ${DOCMIND_ENDPOINT:docmind-api.cn-hangzhou.aliyuncs.com}
-    access-key-id: ${DOCMIND_ACCESS_KEY_ID:}
-    access-key-secret: ${DOCMIND_ACCESS_KEY_SECRET:}
+    access-key-id: ${DOCMIND_ACCESS_KEY_ID:LTAI5t6r3qJiEKoSEpsSG9uT}
+    access-key-secret: ${DOCMIND_ACCESS_KEY_SECRET:S4ezpKHFonVoKHfcuaM5JqhPOYvgvp}
     # 大模型增强（PPT/图表场景效果更好，耗时与费用上升）
     llm-enhancement: ${DOCMIND_LLM_ENHANCEMENT:true}
     # 增强模式，仅 llm-enhancement=true 时生效，可填 VLM
@@ -155,8 +175,6 @@ tb:
     formula-enhancement: ${DOCMIND_FORMULA_ENHANCEMENT:false}
     # 表格输出 HTML 正文（版面块的 llmResult 字段）；接口要求必须同时开启 llm-enhancement，否则提交报 Parameter is invalid
     output-html-table: ${DOCMIND_OUTPUT_HTML_TABLE:true}
-
-    # 结果分页拉取步长（接口上限 3000）
     layout-step-size: 3000
     connect-timeout-millis: 20000
     read-timeout-millis: 300000

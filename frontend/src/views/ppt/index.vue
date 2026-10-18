@@ -19,6 +19,22 @@
           <el-icon class="btn-icon"><VideoPlay /></el-icon>
           从当前页放映
         </el-button>
+        <!-- 创建会议：本页就是被共享的那一屏，控制台随后自动开成另一个标签页（docs/16 §5.6） -->
+        <el-button type="primary" :disabled="screening" @click="openMeetingDialog">
+          <el-icon class="btn-icon"><VideoCamera /></el-icon>
+          创建会议
+        </el-button>
+        <!-- 试听本页：彩排时没有控制台，播报入口就在这一页（声音从这一页出去，共享后学生才听得到） -->
+        <el-button :type="speaking ? 'danger' : 'default'" @click="speaking ? stopSpeaking() : speakCurrentPage()">
+          <el-icon class="btn-icon"><Microphone /></el-icon>
+          {{ speaking ? '停止' : '试听本页' }}
+        </el-button>
+        <el-tooltip content="用 AI 把全部页的备注改写成演讲稿" placement="bottom" :show-after="300">
+          <el-button type="warning" plain :loading="aiRunning" @click="optimizeAllRemarks">
+            <AiSparkIcon class="btn-icon" :size="14" />
+            AI 优化全部备注
+          </el-button>
+        </el-tooltip>
       </div>
       <input
         ref="fileInputRef"
@@ -28,6 +44,21 @@
         @change="onFileChange"
       />
     </div>
+
+    <!-- AI 采纳后可一键撤销：改写备注是不可逆操作，必须留退路（关掉这个提示就放弃撤销入口） -->
+    <el-alert
+      v-if="aiUndo"
+      class="ppt-ai-undo"
+      type="success"
+      :closable="true"
+      show-icon
+      title="已应用 AI 讲稿"
+      @close="aiUndo = null"
+    >
+      <div class="ppt-ai-undo__actions">
+        <el-button size="small" @click="undoAiRemarks">撤销本次优化（还原原备注）</el-button>
+      </div>
+    </el-alert>
 
     <!-- 主体区域 -->
     <div class="ppt-body">
@@ -129,6 +160,18 @@
         <!-- 备注区：center-bottom（参考 PPTist Remark，可拖拽调整高度，编辑后点击保存写回当前页） -->
         <div class="remark center-bottom" :style="{ height: remarkHeight + 'px' }">
           <div class="resize-handler" @mousedown="resizeRemark($event)"></div>
+          <!-- AI 优化本页备注：常显在备注区右上角（「保存」只在有改动时出现，两者互不挤占） -->
+          <el-tooltip content="AI 优化本页备注（生成演讲稿）" placement="top" :show-after="300">
+            <button
+              type="button"
+              class="remark-ai"
+              :class="{ 'is-running': aiRunning }"
+              :disabled="aiRunning || !currentSlide"
+              @click="optimizeCurrentRemark"
+            >
+              <AiSparkIcon :size="16" />
+            </button>
+          </el-tooltip>
           <textarea
             v-model="remarkDraft"
             :placeholder="currentSlide ? '暂无演讲者备注，可在此编辑后保存' : ''"
@@ -160,31 +203,85 @@
 
     <!-- 放映模式 -->
     <ScreenView v-if="screening" />
+
+    <!-- AI 讲稿对比弹窗：单页（备注区星形按钮）/ 整篇（工具栏按钮） -->
+    <AiRemarkDialog
+      v-model="aiSingle.visible"
+      :page-label="`第 ${aiSingle.pageIndex} 页`"
+      :original="aiSingle.original"
+      :remark="aiSingle.remark"
+      :chars="aiSingle.chars"
+      :seconds="aiSingle.seconds"
+      :regenerating="aiSingle.regenerating"
+      @apply="applyCurrentRemark"
+      @regenerate="regenerateCurrentRemark"
+    />
+    <AiRemarkBatchDialog
+      v-model="aiBatch.visible"
+      :pages="aiBatch.pages"
+      :retrying="aiBatch.retrying"
+      @apply="applyBatchRemarks"
+      @retry-failed="retryFailedRemarks"
+    />
+
+    <!-- 创建会议：确认后本页立刻进放映（被共享的就是这一屏），控制台另开一个标签页 -->
+    <el-dialog v-model="meeting.visible" title="创建会议" width="480px">
+      <el-form label-width="80px" @submit.prevent>
+        <el-form-item label="会议标题">
+          <el-input
+            v-model="meeting.title"
+            placeholder="如：企业级应用开发综合实践 第 3 讲"
+            maxlength="100"
+            show-word-limit
+            @keyup.enter="handleCreateMeeting"
+          />
+        </el-form-item>
+      </el-form>
+      <!-- 没有讲稿不阻断建会（无闸门），只把页码列出来：讲稿就是备注，会议的画面是这份 PPT 本身 -->
+      <p v-if="pagesWithoutRemark.length" class="meeting-dialog__hint">
+        第 {{ pagesWithoutRemark.slice(0, 8).join('、') }} 页还没有讲稿（备注）<template v-if="pagesWithoutRemark.length > 8">等 {{ pagesWithoutRemark.length }} 页</template>：不影响开会，建议先补上。
+      </p>
+      <template #footer>
+        <el-button @click="meeting.visible = false">取消</el-button>
+        <el-button type="primary" :loading="meeting.creating" @click="handleCreateMeeting">
+          创建并开始
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  CaretLeft, CaretRight, DocumentChecked, FullScreen, Minus, Monitor, Plus, UploadFilled, VideoPlay,
+  CaretLeft, CaretRight, DocumentChecked, FullScreen, Microphone, Minus, Monitor, Plus, UploadFilled, VideoCamera, VideoPlay,
 } from '@element-plus/icons-vue'
 import * as PIXI from 'pixi.js'
 import { Live2DModel } from 'pixi-live2d-display/cubism4'
 import { convertPPTXToPPTist } from 'pptx-to-pptist'
 import { useSlidesStore } from './stores/slides'
 import { useScreenStore } from './stores/screen'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { VIEWPORT_SIZE } from './configs/canvas'
 import useScreening from './hooks/useScreening'
 
 import './styles/prosemirror.css'
 import './styles/animation.css'
 
+import { optimizeSpeech } from '@/api/ppt'
+import { createMeeting } from '@/api/meeting'
+import { readHostSession, writeHostSession } from '@/utils/hostSession'
+import { readEventStream } from '@/utils/event-stream'
+import { createSpeechPlayer } from './utils/speech-player'
+import { buildSpeechPages, extractSlideTitle, htmlToPlainText } from './utils/slide-text'
 import ThumbnailSlide from './components/thumbnail/ThumbnailSlide.vue'
 import ScreenSlide from './components/screen/ScreenSlide.vue'
 import ScreenView from './screen/ScreenView.vue'
+import AiSparkIcon from './components/ai/AiSparkIcon.vue'
+import AiRemarkDialog from './components/ai/AiRemarkDialog.vue'
+import AiRemarkBatchDialog from './components/ai/AiRemarkBatchDialog.vue'
 
 if (typeof window !== 'undefined' && typeof window.Buffer === 'undefined') {
   window.Buffer = { isBuffer: () => false }
@@ -196,6 +293,7 @@ const { slides, slideIndex, viewportRatio, currentSlide } = storeToRefs(slidesSt
 const { screening } = storeToRefs(screenStore)
 const { enterScreening, enterScreeningFromStart } = useScreening()
 const route = useRoute()
+const router = useRouter()
 
 /**
  * 由路由参数进入放映：`/index/ppt?screen=1`
@@ -212,8 +310,189 @@ const enterScreeningByQuery = () => {
 }
 
 onMounted(enterScreeningByQuery)
-// 命中已存在的放映页签时（window.open 复用同名窗口）组件不会重新挂载，因此同时监听参数变化
+// 同一个标签页被再次导航到 `?screen=1` 时组件不会重新挂载，因此同时监听参数变化
 watch(() => route.query.screen, enterScreeningByQuery)
+
+// ===== 讲稿播报（本页出声，声音随共享轨到学生端）=====
+// 声音的终点就是这一页：它正被屏幕共享，学生听到的就是这里放出来的 PCM（docs/16 §5.7）。
+// 因此播报能力长在放映页，触发有两条路：
+// ① 控制台点「开始演讲」→ 经 BroadcastChannel 把文本送过来（按钮在另一个标签页，中间必须有条通道）；
+// ② 本页「试听本页」：彩排时没有控制台，直接念当前页的讲稿。
+// 「停止」= 掐断请求：后端合成随之取消（写不出去即停），播放器也立刻安静。
+
+/** 播报接口：与讲稿生成同口径（`/ppt/**` 免登录，故带 `/api` 前缀走 Vite 代理） */
+const SPEAK_PATH = '/api/ppt/speech/speak'
+/** 播报总线：一个会议一条频道，与主持人凭据的存储键同形（`tb-meeting-host:{会议号}`） */
+const CHANNEL_PREFIX = 'tb-meeting:'
+
+/** 本页是否正在念讲稿（按钮文案与防重复点击用） */
+const speaking = ref(false)
+/** 数字人口型开合度 0–1：由**本页正在播的音频**算出（不是远端哪条轨） */
+const mouthLevel = ref(0)
+
+const speechPlayer = createSpeechPlayer({
+  onLevel: (level) => {
+    mouthLevel.value = level
+  },
+})
+
+/** 当前播报的中断句柄：停止演讲 / 念下一段 / 离开页面都靠它取消合成 */
+let speakAbort = null
+/** 正在监听的总线（换会议号要换频道） */
+let bus = null
+
+/** 本页所属的会议号：由创建会议或 `?meetid=` 带进来；没有就是纯彩排 */
+const presentingMeetingNo = computed(() => String(route.query.meetid ?? '').trim())
+
+/** 停止播报：掐请求 + 立刻安静（播放器会把已排期与队列里的音频一起丢掉） */
+function stopSpeaking() {
+  speakAbort?.abort()
+  speakAbort = null
+  speechPlayer.stop()
+  speaking.value = false
+}
+
+/**
+ * 念一段讲稿。
+ *
+ * <p>顺序不能变：先停掉上一段（否则两段声音会叠在一起），再建新的中断句柄。
+ * 会议号与主持人凭据都给齐时才落库成「数字人发言」——彩排试听不该出现在会议记录里。
+ *
+ * @param {string} text 要念的文本
+ */
+async function speak(text) {
+  const content = (text ?? '').trim()
+  if (!content) {
+    ElMessage.warning('这一页还没有讲稿：先写备注，或用备注区右上角的 AI 生成')
+    return
+  }
+  stopSpeaking()
+  const controller = new AbortController()
+  speakAbort = controller
+  speaking.value = true
+
+  const meetingNo = presentingMeetingNo.value
+  const hostToken = meetingNo ? readHostSession(meetingNo)?.hostToken : ''
+  try {
+    await readEventStream(SPEAK_PATH, {
+      body: { text: content, meetingNo: meetingNo || undefined, hostToken: hostToken || undefined },
+      signal: controller.signal,
+      onEvent: (event, payload) => {
+        if (event === 'chunk') {
+          speechPlayer.feed(payload)
+          return
+        }
+        if (event === 'error') {
+          ElMessage.error(payload?.message || '语音合成失败')
+        }
+      },
+    })
+  } catch (error) {
+    // 自己取消的（停止演讲 / 换一段 / 关页面）不是错误，别报给老师
+    if (!controller.signal.aborted) ElMessage.error(error?.message || '播报失败')
+  } finally {
+    if (speakAbort === controller) {
+      speakAbort = null
+      speaking.value = false
+    }
+  }
+}
+
+/** 试听本页（彩排用，不需要会议）：读的是备注区草稿，未保存的改动也能先听一遍 */
+function speakCurrentPage() {
+  speak(remarkDraft.value)
+}
+
+/**
+ * 接住控制台的播报指令。
+ *
+ * <p>为什么用总线而不是接口：声音只能在**这一页**播（只有它被共享），而按钮在控制台那个标签页。
+ * 只做单向（控制台 → 本页）：翻页与「现在第几页」仍由本页自己说了算（页面真相只有一个）。
+ * 换会议号就换频道，上一场会的指令打不进来。
+ */
+function watchConsole() {
+  bus?.close()
+  bus = null
+  const meetingNo = presentingMeetingNo.value
+  if (!meetingNo || typeof BroadcastChannel === 'undefined') return
+  bus = new BroadcastChannel(`${CHANNEL_PREFIX}${meetingNo}`)
+  bus.onmessage = (event) => {
+    const message = event?.data ?? {}
+    if (message.action === 'speak') speak(message.text)
+    if (message.action === 'stop') stopSpeaking()
+  }
+}
+
+// `immediate` 让「带着 ?meetid= 刷新」也能挂上这一场的总线
+watch(presentingMeetingNo, watchConsole, { immediate: true })
+
+// ===== 创建会议 =====
+// 建会后**本页就是被共享的那一屏**：控制台是「名单 + 聊天」，而 `.ppt-screen-view` 是
+// `z-index:9999` 的全屏覆盖层，侧栏放在这里一定会被学生看到，所以控制台只能另开一个标签页。
+
+/** 控制台路由：相对路径，自动跟随当前 origin（localhost 或热点下的局域网 IP 都能打开） */
+const CONSOLE_PATH = '/index/meeting'
+
+const meeting = reactive({ visible: false, title: '', creating: false })
+/** 控制台标签页句柄：同一浏览器会话内复用，避免每建一次会就多开一个页签 */
+let consoleTab = null
+
+/** 还没有讲稿（备注）的页码，1 基；只作建会前的提示，**不阻断**（见 docs/16 §5.6） */
+const pagesWithoutRemark = computed(() => slides.value
+  .map((slide, index) => (htmlToPlainText(slide.remark ?? '').trim() ? 0 : index + 1))
+  .filter(Boolean))
+
+function openMeetingDialog() {
+  meeting.visible = true
+}
+
+/** 控制台地址：`credential=1` 让控制台提示一次「凭据只此一次」，提示完它自己会把参数摘掉 */
+function consoleUrl(meetingNo) {
+  return `${CONSOLE_PATH}?meetid=${meetingNo}&credential=1`
+}
+
+/**
+ * 创建会议并开始讲。
+ *
+ * <p>顺序不能变：`window.open` 必须在**点击的同步流程里**执行（过了 `await` 会被弹窗拦截器拦掉）。
+ * 拿不到控制台标签页就整件事失败，**绝不能先进放映**——否则老师已经全屏讲义，
+ * 而提示被那个覆盖层压在下面，什么也看不到。
+ *
+ * <p>共享仍由控制台点「开始共享」发起（`selfBrowserSurface: 'exclude'` 会把控制台自己排除在候选外，
+ * 老师只能选到本页）。这里只把本页切进放映、并把标题改成「PPT 放映页」——共享选择框里靠它认页面。
+ */
+async function handleCreateMeeting() {
+  const title = meeting.title.trim()
+  if (!title) {
+    ElMessage.warning('请先填写会议标题')
+    return
+  }
+  if (!consoleTab || consoleTab.closed) consoleTab = window.open('about:blank', '_blank')
+  meeting.creating = true
+  try {
+    const created = await createMeeting(title)
+    // 凭据只随 create 下发一次（ADR-0003）：先落本机，控制台标签页靠它恢复这一场
+    writeHostSession({ ...created, title })
+    const url = consoleUrl(created.meetingNo)
+    if (!consoleTab || consoleTab.closed) {
+      throw new Error(`浏览器拦截了新标签页：请允许本站弹出窗口，或手动打开 ${url}`)
+    }
+    meeting.visible = false
+    // 地址带上会议号：刷新 / 重新打开这条链接时，放映页才知道自己在哪一场（会议号不是秘密，凭据不进 URL）。
+    // 这次 replace 会命中 `enterScreeningByQuery`（进放映 + 把标题改成「PPT 放映页」，共享选择框里靠它认页面），
+    // 同时让本页挂上这一场的播报总线（见 `watchConsole`）。
+    await router.replace({ query: { screen: '1', meetid: created.meetingNo } })
+    consoleTab.location.replace(url)
+    consoleTab.focus?.()
+    ElMessage.success(`会议已创建：${created.meetingNo}。到控制台点「开始共享」并选中「PPT 放映页」`)
+  } catch (error) {
+    // 建会失败（或标签页没开出来）就别留一个空白页签
+    consoleTab?.close?.()
+    ElMessage.error(error?.message || '创建会议失败')
+  } finally {
+    meeting.creating = false
+  }
+}
 
 const fileInputRef = ref(null)
 
@@ -274,7 +553,15 @@ onMounted(() => {
   initLive2D()
 })
 // 放在 beforeUnmount：此时 canvas 仍在 DOM 中，PIXI 可安全释放渲染器与 WebGL 上下文
-onBeforeUnmount(() => destroyLive2D())
+onBeforeUnmount(() => {
+  destroyLive2D()
+  // 离开 PPT 页就别再念了：掐断请求即取消后端合成，随后收掉播放器与总线
+  stopSpeaking()
+  bus?.close()
+  speechPlayer.destroy()
+  // 离开 PPT 页就别再等讲稿了（后端仍会把当前批次跑完，这是无状态接口的固有代价）
+  aiAbortController?.abort()
+})
 onUnmounted(() => canvasResizeObserver && canvasResizeObserver.disconnect())
 
 const viewportWidth = computed(() => VIEWPORT_SIZE * canvasScale.value)
@@ -321,31 +608,15 @@ const handleMousewheelCanvas = (e) => {
 // ===== 备注区（参考 PPTist Remark，可编辑当前页备注、拖拽调整高度）=====
 const remarkHeight = ref(100)
 
-// pptx 解析出的备注为 HTML 段落（如 <p style="text-align:left;">…</p>），转换为纯文本展示
-const remarkToPlainText = (remark) => {
-  if (!remark) return ''
-  // 已是纯文本（用户编辑后的内容）则原样返回，避免被再次处理导致换行/空格丢失
-  if (!/<[a-z][^>]*>/i.test(remark)) return remark
-  return remark
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|li)>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\n{2,}/g, '\n')
-    .trim()
-}
 // 备注编辑草稿：随当前页切换自动同步；内容有变化时才显示「保存」按钮，保存后按钮消失
 const remarkDraft = ref('') // 正在编辑的内容
 const remarkOriginal = ref('') // 当前页已保存的内容
 const remarkChanged = computed(() => remarkDraft.value !== remarkOriginal.value)
 
 watch(() => currentSlide.value?.id, () => {
-  const text = remarkToPlainText(currentSlide.value?.remark)
+  // pptx 解析出的备注是 HTML 段落（如 <p style="text-align:left;">…</p>），统一转纯文本
+  // （与正文提取共用 utils/slide-text.js 的同一份实现）
+  const text = htmlToPlainText(currentSlide.value?.remark)
   remarkDraft.value = text
   remarkOriginal.value = text
 }, { immediate: true })
@@ -375,6 +646,212 @@ const resizeRemark = (e) => {
     document.onmousemove = null
     document.onmouseup = null
   }
+}
+
+// ===== AI 讲稿优化（备注区星形按钮 = 本页；工具栏按钮 = 全部）=====
+/** 本场时长（分钟）：不再做成输入项，按此固定值均摊成每页目标字数（后端按 4.0 字/秒换算） */
+const AI_TARGET_MINUTES = 8
+/** 跑批中：两个按钮 disabled（并发跑批在演示里只会有害） */
+const aiRunning = ref(false)
+/** 最近一次 AI 应用的可撤销快照：采纳前把原备注留在内存，采纳后可一键还原 */
+const aiUndo = ref(null)
+
+const aiSingle = reactive({
+  visible: false, pageIndex: 0, slideId: '', original: '', remark: '', chars: 0, seconds: 0, regenerating: false,
+})
+const aiBatch = reactive({ visible: false, pages: [], retrying: false })
+/** 当前请求的中止句柄：离开 PPT 页 / 切路由时中止等待（后端仍会把当前批次跑完，见 docs/16 风险表） */
+let aiAbortController = null
+
+/** 目标总时长（秒）：非法或非正数就不传，后端按「不约束篇幅」处理 */
+const aiTargetSeconds = () => {
+  const minutes = Number(AI_TARGET_MINUTES)
+  return Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : undefined
+}
+
+/**
+ * 请求前的快照：页码 → { slideId, title, original }。
+ *
+ * 回填一律按 `slideId`（不按「当前页」），因此老师在等待期间翻页、甚至切到别的页，也不会写错页。
+ */
+const snapshotOf = (entries) => entries.map(({ index, slide }) => ({
+  index,
+  slideId: slide.id,
+  title: extractSlideTitle(slide) || `第 ${index} 页`,
+  original: htmlToPlainText(slide.remark),
+}))
+
+async function requestSpeech(pages) {
+  aiAbortController?.abort()
+  aiAbortController = new AbortController()
+  return optimizeSpeech({ targetSeconds: aiTargetSeconds(), pages }, aiAbortController.signal)
+}
+
+/** 主动中止不算失败：老师切页/离开时必然发生一次，不该弹红字 */
+const isAborted = (error) => error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED'
+
+/** 生成一页讲稿：单页按钮、整篇里的补生成、单页「重新生成」都走这里，保证输入口径一致 */
+async function generatePageScript(slide, index) {
+  const [page] = buildSpeechPages([{ index, slide }])
+  const result = await requestSpeech([page])
+  return result?.pages?.[0] ?? null
+}
+
+/** 当前页被改写时同步备注区草稿与「已保存」基准（否则面板上还是旧备注） */
+function syncRemarkDraft(slideId, remark) {
+  if (slideId !== currentSlide.value?.id) return
+  remarkDraft.value = remark
+  remarkOriginal.value = remark
+}
+
+/** 备注区星形按钮：优化当前页备注 */
+const optimizeCurrentRemark = async () => {
+  const slide = currentSlide.value
+  if (!slide) {
+    ElMessage.warning('请先导入 PPT 数据')
+    return
+  }
+  const index = slideIndex.value + 1
+  const original = htmlToPlainText(slide.remark)
+  aiRunning.value = true
+  try {
+    const item = await generatePageScript(slide, index)
+    if (!item?.remark) {
+      ElMessage.warning('这一页没能生成讲稿，可以再点一次试试')
+      return
+    }
+    Object.assign(aiSingle, {
+      visible: true, pageIndex: index, slideId: slide.id, original,
+      remark: item.remark, chars: item.chars, seconds: item.seconds, regenerating: false,
+    })
+  } catch (error) {
+    if (!isAborted(error)) ElMessage.error(error?.message || '讲稿生成失败')
+  } finally {
+    aiRunning.value = false
+  }
+}
+
+/** 单页弹窗的「重新生成」：仍以**原备注**为输入，避免一轮轮把 AI 的措辞越改越远 */
+const regenerateCurrentRemark = async () => {
+  const slide = slides.value.find(item => item.id === aiSingle.slideId)
+  if (!slide) return
+  aiSingle.regenerating = true
+  try {
+    const item = await generatePageScript(slide, aiSingle.pageIndex)
+    if (item?.remark) {
+      Object.assign(aiSingle, { remark: item.remark, chars: item.chars, seconds: item.seconds })
+      ElMessage.success('已重新生成')
+    } else {
+      ElMessage.warning('这次没有生成成功，可以再试一次')
+    }
+  } catch (error) {
+    if (!isAborted(error)) ElMessage.error(error?.message || '讲稿生成失败')
+  } finally {
+    aiSingle.regenerating = false
+  }
+}
+
+/** 采纳单页讲稿：按 slideId 写回 */
+const applyCurrentRemark = (remark) => {
+  slidesStore.updateSlideById(aiSingle.slideId, { remark })
+  syncRemarkDraft(aiSingle.slideId, remark)
+  aiUndo.value = { pages: [{ slideId: aiSingle.slideId, original: aiSingle.original }] }
+  aiSingle.visible = false
+  ElMessage.success('已应用 AI 讲稿')
+}
+
+/** 工具栏按钮：优化全部页备注（一次请求，后端内部按批跑） */
+const optimizeAllRemarks = async () => {
+  const entries = slides.value.map((slide, i) => ({ index: i + 1, slide }))
+  if (!entries.length) {
+    ElMessage.warning('请先导入 PPT 数据')
+    return
+  }
+  // 跑之前确认一次：整篇会改写所有页的备注；覆盖前留快照，采纳后可一键撤销
+  const confirmed = await ElMessageBox.confirm(
+    `将对全部 ${entries.length} 页生成讲稿，AI 会改写这些页现有的备注。生成完成后可以逐页挑选，也可以一键撤销。`,
+    'AI 优化全部备注',
+    { type: 'warning', confirmButtonText: '开始生成', cancelButtonText: '取消' },
+  )
+    .then(() => true)
+    .catch(() => false)
+  if (!confirmed) return
+
+  const snapshot = snapshotOf(entries)
+  aiRunning.value = true
+  try {
+    const result = await requestSpeech(buildSpeechPages(entries))
+    const byIndex = new Map((result?.pages ?? []).map(item => [item.index, item]))
+    aiBatch.pages = snapshot.map(item => {
+      const generated = byIndex.get(item.index)
+      return {
+        index: item.index,
+        slideId: item.slideId,
+        title: item.title,
+        original: item.original,
+        remark: generated?.remark ?? '',
+        chars: generated?.chars ?? 0,
+        seconds: generated?.seconds ?? 0,
+        failed: !generated?.remark,
+      }
+    })
+    aiBatch.visible = true
+  } catch (error) {
+    if (!isAborted(error)) ElMessage.error(error?.message || '讲稿生成失败')
+  } finally {
+    aiRunning.value = false
+  }
+}
+
+/** 采纳整篇里勾选的页 */
+const applyBatchRemarks = (indexes) => {
+  const selected = new Set(indexes)
+  const applied = aiBatch.pages.filter(page => selected.has(page.index) && !page.failed)
+  applied.forEach(page => {
+    slidesStore.updateSlideById(page.slideId, { remark: page.remark })
+    syncRemarkDraft(page.slideId, page.remark)
+  })
+  aiUndo.value = { pages: applied.map(page => ({ slideId: page.slideId, original: page.original })) }
+  aiBatch.visible = false
+  ElMessage.success(`已应用 ${applied.length} 页 AI 讲稿`)
+}
+
+/** 只重试失败的页：不重跑全篇，避免又等一两分钟 */
+const retryFailedRemarks = async () => {
+  const entries = aiBatch.pages
+    .filter(page => page.failed)
+    .map(page => ({ index: page.index, slide: slides.value.find(item => item.id === page.slideId) }))
+    .filter(entry => entry.slide)
+  if (!entries.length) return
+  aiBatch.retrying = true
+  try {
+    const result = await requestSpeech(buildSpeechPages(entries))
+    const byIndex = new Map((result?.pages ?? []).map(item => [item.index, item]))
+    let recovered = 0
+    aiBatch.pages = aiBatch.pages.map(page => {
+      const generated = byIndex.get(page.index)
+      if (!generated?.remark) return page
+      recovered += 1
+      return { ...page, remark: generated.remark, chars: generated.chars, seconds: generated.seconds, failed: false }
+    })
+    if (recovered) ElMessage.success(`已补生成 ${recovered} 页`)
+    else ElMessage.warning('补生成仍未成功，可以稍后再试')
+  } catch (error) {
+    if (!isAborted(error)) ElMessage.error(error?.message || '重试失败')
+  } finally {
+    aiBatch.retrying = false
+  }
+}
+
+/** 一键撤销：只回滚被采纳过的那几页 */
+const undoAiRemarks = () => {
+  const pages = aiUndo.value?.pages ?? []
+  pages.forEach(page => {
+    slidesStore.updateSlideById(page.slideId, { remark: page.original })
+    syncRemarkDraft(page.slideId, page.original)
+  })
+  aiUndo.value = null
+  ElMessage.success('已还原到 AI 优化前的备注')
 }
 
 // 右侧工具栏宽度
@@ -500,6 +977,21 @@ let app = null // PIXI.Application 单实例
 let model = null // Live2DModel 单实例
 let live2dDisposed = false // 卸载标记：阻断「组件已卸载后才 resolve」的异步回调写入已销毁实例
 
+/**
+ * 把口型开合度写给本页这份 Live2D（本页唯一会动嘴的入口）。
+ *
+ * <p>Cubism 4 才有 `setParameterValueById`；缺了就静默不动，不能让渲染循环抛错。
+ *
+ * @param {number} level 开合度 0–1，来自**本页正在播的音频**的逐帧响度
+ */
+const writeMouthOpen = (level) => {
+  const coreModel = model?.internalModel?.coreModel
+  coreModel?.setParameterValueById?.('ParamMouthOpenY', Math.max(0, Math.min(1, level)))
+}
+
+/** 数字人一开口，这一屏的嘴就要跟着动 —— 学生看到的就是这一屏，听到的声音也从这里出去 */
+watch(mouthLevel, writeMouthOpen)
+
 // 完整释放：停渲染循环 → 销毁模型 → 销毁渲染器
 // 路由 /index/ppt 每次进入都是新实例，若此处不销毁，旧 Ticker 会持续对已被浏览器回收的
 // WebGL 上下文发起 bindBuffer/bindTexture，产生 INVALID_OPERATION 刷屏
@@ -596,6 +1088,20 @@ const initLive2D = async () => {
 }
 .btn-icon {
   margin-right: 4px;
+}
+/* AI 应用后的撤销入口（关掉即放弃撤销） */
+.ppt-ai-undo {
+  margin: 0 0 0.5rem;
+}
+.ppt-ai-undo__actions {
+  margin-top: 0.25rem;
+}
+/* 创建会议弹窗里「哪些页还没有讲稿」的提示：只列页码、不阻断建会 */
+.meeting-dialog__hint {
+  margin: 0;
+  color: var(--tb-text-secondary);
+  font-size: var(--tb-text-sm);
+  line-height: 1.6;
 }
 .file-input {
   display: none;
@@ -781,6 +1287,8 @@ const initLive2D = async () => {
     right: 0;
     bottom: 0;
     padding-bottom: 34px;
+    /* 给右上角的 AI 按钮留位（textarea 是绝对定位铺满的，不留位会被盖住） */
+    padding-right: 38px;
     color: var(--tb-text-secondary);
   }
 }
@@ -789,6 +1297,46 @@ const initLive2D = async () => {
   right: 8px;
   bottom: 8px;
   z-index: 3;
+}
+/* AI 优化本页备注：备注区右上角常显（「保存」只在有改动时出现，两者互不挤占） */
+.remark-ai {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--tb-primary);
+  background: var(--tb-bg-surface);
+  border: 1px solid var(--tb-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.remark-ai:hover:not(:disabled) {
+  color: var(--tb-bg-surface);
+  background: var(--tb-primary);
+  border-color: var(--tb-primary);
+}
+.remark-ai:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+/* 生成中：呼吸提示（单页也要等十几秒，光靠 disabled 太安静） */
+.remark-ai.is-running {
+  animation: remark-ai-pulse 1.2s ease-in-out infinite;
+}
+@keyframes remark-ai-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 .resize-handler {
   height: 7px;

@@ -1,58 +1,54 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { userRoutes } from "./user.routes";
+import { adminRoutes } from "./admin.routes";
+import { getToken } from "@/utils/auth";
+import { buildLoginLocation, mergeRouteMeta, resolveAccess } from "@/utils/access";
+import { useAdminSession, isAdminPreview } from "@/views/admin/hooks/useAdminSession";
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    ...userRoutes,
+    ...adminRoutes,
     {
-      path: "/guides",
-      name: "guides",
-      component: () => import("../views/guides/HomeView.vue"),
+      path: "/403",
+      name: "forbidden",
+      component: () => import("@/views/error/ForbiddenView.vue"),
     },
     {
-      path: "/docs",
-      name: "docs",
-      component: () => import("../views/guides/DocsView.vue"),
-    },
-    //登录页
-    {
-      path: "/login",
-      name: "login",
-      component: () => import("../views/LoginView.vue"),
-    },
-    {
-      path: "/register",
-      name: "register",
-      component: () => import("../views/LoginView.vue"),
-    },
-    {
-      path: "/index",
-      name: "index",
-      component: () => import("../views/IndexView.vue"),
-      redirect: "/index/home",
-      children: [
-        { path: "home", name: "system-home", component: () => import("../views/system/SystemHomeView.vue") },
-        { path: "doc-template", name: "doc-template", component: () => import("../views/doctemplate/DocTemplateView.vue") },
-        { path: "homework-grading", name: "homework-grading", component: () => import("../views/homework/HomeworkGradingView.vue") },
-        { path: "knowledge-base", name: "knowledge-base", component: () => import("../views/knowledgebase/KnowledgeBaseView.vue") },
-        { path: "ppt", name: "ppt", component: () => import("../views/ppt/index.vue") },
-        // 模拟会议：老师控制台（建会、看名单与聊天、共享屏幕）
-        { path: "meeting", name: "meeting-console", component: () => import("../views/meeting/MeetingConsoleView.vue") },
-        // 工作流编排：画布页（workflow2）
-        { path: "workflow", name: "workflow", component: () => import("../views/workflow2/WorkflowView.vue") },
-      ],
-    },
-    {
-      // 学生会议室：独立于 /index 布局、免登录，学生点入会链接直接进入
-      path: "/meeting/:meetingNo",
-      name: "meeting-room",
-      component: () => import("../views/meeting/MeetingRoomView.vue"),
-    },
-    {
-      path: "/test",
-      name: "test",
-      component: () => import("../views/TestView.vue"),
+      // 兜底：未命中的路径统一落到 404，而不是白屏
+      path: "/:pathMatch(.*)*",
+      name: "not-found",
+      component: () => import("@/views/error/NotFoundView.vue"),
     },
   ],
+});
+
+/**
+ * 全局守卫：只处理「已声明 requiresAuth」的路由，未声明的页面维持原有免登录行为。
+ * 管理端与用户端共用 /login。
+ */
+router.beforeEach((to) => {
+  const meta = mergeRouteMeta(to.matched);
+  const { status, roles, permissions } = useAdminSession();
+
+  const access = resolveAccess(meta, {
+    // 开发环境的「演示数据预览」不需要真实登录（生产构建里 isAdminPreview 恒为 false）
+    hasToken: Boolean(getToken()) || isAdminPreview(),
+    roleStatus: status.value,
+    roles: roles.value,
+    permissions: permissions.value,
+  });
+
+  if (access === "login") {
+    return buildLoginLocation(to.fullPath, "/login");
+  }
+
+  if (access === "forbidden") {
+    return { name: "forbidden", query: { from: to.fullPath } };
+  }
+
+  return true;
 });
 
 export default router;

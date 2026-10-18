@@ -60,7 +60,7 @@ public final class NodeActionFactory {
 
     /**
      * 节点类型 → 动作实现。
-     * <p>画布导出的 type 是数字编码：1=开始、2=结束、3=大模型、4=迭代、5=人工确认；
+     * <p>画布导出的 type 是数字编码：1=开始、2=结束、3=大模型、4=迭代、5=人工确认、6=输出；
      * 旧的语义化字符串写法（input / llm / human / output / iterate）已不再兼容。
      */
     private static NodeAction create(WorkflowNode node, NodeEventListener listener, ChatClient chatClient,
@@ -72,6 +72,7 @@ public final class NodeActionFactory {
             case "3" -> new LlmNode(node, chatClient, toolCallbacks);
             case "4" -> new IterateNode(node, listener, chatClient, toolCallbacks);
             case "5" -> new HumanNode(node);
+            case "6" -> new OutputNode(node);
             default -> throw new IllegalArgumentException("不支持的节点类型: " + node.getType());
         };
     }

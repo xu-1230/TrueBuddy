@@ -40,12 +40,24 @@ const canvas = () => {
   return { nodes, edges }
 }
 
-/** 默认流程中的关键 id：迭代容器 / 迭代体子块 / 迭代源 / 结束节点 */
-const CONTAINER = '132996'
-const CHILD = '173594'
-const PLANNER = '100002'
-const START = '100001'
-const END = '900001'
+/**
+ * 默认流程中的关键 id：**从定义里取，不在这里硬编码**。
+ *
+ * `default-flow.js` 里的 id 是数据、不是契约 —— 上一版把 id 写死在这里，替换默认流程时
+ * 这批用例集体染红，而它们本来只关心「同层可见性」这类与 id 无关的行为。
+ */
+const idsOfType = (type) => DEFAULT_FLOW_DEFINITION.nodes
+  .filter((node) => String(node.type) === type)
+  .map((node) => node.id)
+const iterateNode = () => DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node.type) === '4')
+const [START] = idsOfType('1')
+const [PLANNER] = idsOfType('3')
+const [END] = idsOfType('2')
+const [CONTAINER] = idsOfType('4')
+/** 迭代体首个子块 */
+const CHILD = iterateNode().blocks[0].id
+/** 迭代节点的聚合产出变量名（迭代体要素同名，否则汇总恒为空） */
+const ITERATE_OUTPUT = iterateNode().data.outputs[0].name
 
 test('迭代容器下游的顶层节点看不到迭代体子块的产出（跨迭代体引用）', () => {
   const { nodes, edges } = canvas()
@@ -54,10 +66,10 @@ test('迭代容器下游的顶层节点看不到迭代体子块的产出（跨�
   assert.equal(
     outputs.some((item) => item.blockID === CHILD),
     false,
-    '子块 173594 的产出只活在迭代体子图里，不该出现在父图节点的候选里',
+    `子块 ${CHILD} 的产出只活在迭代体子图里，不该出现在父图节点的候选里`,
   )
   assert.ok(
-    outputs.some((item) => item.blockID === CONTAINER && item.name === 'result'),
+    outputs.some((item) => item.blockID === CONTAINER && item.name === ITERATE_OUTPUT),
     '容器自身的聚合产出对下游仍然可见',
   )
   assert.ok(outputs.some((item) => item.blockID === PLANNER), '同为顶层的上游节点仍然可见')
@@ -84,11 +96,18 @@ test('迭代体子块能拿到容器每轮注入的变量（index / item / 迭�
   const container = nodes.find((node) => node.id === CONTAINER)
   const inject = injectOutputsOf(nodes, container, CHILD)
   const names = inject.map((item) => item.name)
+  const paramNames = container.data.variableParameters.map((item) => item.name)
 
   assert.ok(names.includes('index'), '每轮注入轮次下标')
   assert.ok(names.includes('item'), '每轮注入当前项')
-  assert.ok(names.includes('jj'), '容器 variableParameters 声明的中间变量')
-  assert.equal(names.length, 3, '同名变量只出现一次（item 既在固定注入项里，也是子块声明的别名）')
+  for (const name of paramNames) {
+    assert.ok(names.includes(name), `容器 variableParameters 声明的中间变量：${name}`)
+  }
+  assert.equal(
+    names.length,
+    2 + paramNames.length,
+    '同名变量只出现一次（item 既在固定注入项里，也是子块声明的别名）',
+  )
   assert.equal(
     inject.every((item) => item.blockID === CONTAINER),
     true,
@@ -134,28 +153,30 @@ test('未绑定取值：默认流程的所有输入 / 迭代变量都有来源�
 const cardSourceOf = (file) =>
   readFileSync(new URL(`../src/views/workflow2/node/${file}`, import.meta.url), 'utf8')
 
-test('卡片接线：输入 / 迭代变量行都挂上未绑定告警，且口径唯一', () => {
+test('卡片接线：输入 / 迭代变量都挂上未绑定告警，且口径唯一', () => {
   // 旧实现只有大模型卡片挂了这个 prop（VariableTags 的注释还写着「其余节点没有这个概念」），
-  // 于是迭代节点的迭代源完全没绑定时卡片毫无提示、人工确认同理——这里把三张卡片一起锁住
+  // 于是迭代节点的迭代源完全没绑定时卡片毫无提示、人工确认同理——这里把四张卡片一起锁住。
+  // 只锁「绑的是哪个口径」，不锁行标签：标签属文案（结束节点这行的 label 曾从「输入」改成「输出」，
+  // 一度把这条用例染红），而 `unboundInputNames` / `unboundParamNames` 两个名字本身已足以区分同一卡片内的多行。
   const cards = {
-    'LlmNode.vue': [['输入', 'unboundInputNames']],
-    'IterateNode.vue': [['输入', 'unboundInputNames'], ['迭代变量', 'unboundParamNames']],
-    'HumanNode.vue': [['输入', 'unboundInputNames']],
-    'EndNode.vue': [['输入', 'unboundInputNames']],
+    'LlmNode.vue': ['unboundInputNames'],
+    'IterateNode.vue': ['unboundInputNames', 'unboundParamNames'],
+    'HumanNode.vue': ['unboundInputNames'],
+    'EndNode.vue': ['unboundInputNames'],
   }
 
-  for (const [file, rows] of Object.entries(cards)) {
+  for (const [file, names] of Object.entries(cards)) {
     const source = cardSourceOf(file)
     assert.match(
       source,
       /import \{ unboundNamesOf \} from '\.\.\/utils\/variable-sources'/,
       `${file} 必须复用统一口径（unboundNamesOf），不能自己写一份判定`,
     )
-    for (const [label, names] of rows) {
+    for (const name of names) {
       assert.match(
         source,
-        new RegExp(`<VariableTags[^>]*label="${label}"[\\s\\S]*?:undefined-names="${names}"`),
-        `${file} 的「${label}」行要挂上未绑定告警`,
+        new RegExp(`<VariableTags[^>]*?:undefined-names="${name}"`),
+        `${file} 要有一行 VariableTags 把告警名单接到 ${name} 上`,
       )
     }
   }
@@ -166,7 +187,11 @@ test('迭代输出与子块产出同名时不告警，不同名时告警', () =>
   const container = nodes.find((node) => node.id === CONTAINER)
   const children = nodes.filter((node) => node.parentNode === CONTAINER)
 
-  assert.equal(iterationOutputWarningsOf(container, children).size, 0, '默认流程里两边都是 result')
+  assert.equal(
+    iterationOutputWarningsOf(container, children).size,
+    0,
+    `默认流程里迭代输出与迭代体子块的产出同名（${ITERATE_OUTPUT}）`,
+  )
 
   const renamed = { ...container, data: { ...container.data, outputs: [{ name: 'summary' }] } }
   assert.deepEqual([...iterationOutputWarningsOf(renamed, children)], ['summary'])

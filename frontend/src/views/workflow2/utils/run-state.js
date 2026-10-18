@@ -197,8 +197,15 @@ const withNode = (state, nodeId, patch) => ({
   nodes: { ...state.nodes, [nodeId]: { ...(state.nodes[nodeId] ?? IDLE_RUNTIME), ...patch } },
 })
 
-/** 从节点产出帧里取出 `{ node, state }`：载荷在同形约束下改挂到了 `content.data` 上 */
-const nodePayloadOf = (payload) => {
+/**
+ * 从节点产出帧里取出 `{ node, state }`：载荷在同形约束下改挂到了 `content.data` 上。
+ *
+ * 对外导出：`views/homework/utils/grading-run.js` 要在**流式过程中**逐帧取产出
+ * （每完成一份学生就上一张卡），帧结构只应该有一个地方知道。
+ *
+ * @returns {{node: string, state: object}|null} 不是节点产出帧时返回 null
+ */
+export const nodePayloadOf = (payload) => {
   const data = payload?.content?.data
   if (!data?.node) return null
   return { node: data.node, state: data.state ?? {} }

@@ -2,6 +2,8 @@ package org.example.textflow.model.vo;
 
 import lombok.Data;
 
+import java.util.Map;
+
 /**
  * {@code POST /chat} 入参。
  *
@@ -22,6 +24,14 @@ public class ChatReqVO {
 
     /** 工作流 id（可选）：带上时校验与会话绑定的流程一致，避免前端串会话 */
     private String workflowId;
+
+    /**
+     * **首轮的业务输入**：变量名 → 取值（如 {@code file_tree} / {@code description} / {@code know}），
+     * 由服务端并入初始状态，开始节点按同名键读取（读不到才回落演示常量）。
+     * <p>续跑**忽略**它（续跑只认 {@code message.values}，否则会出现"两处都能送值、到底哪份算数"的歧义）；
+     * 键名以 {@code __} 开头的一律跳过（{@code __START__} / {@code __human_feedback__} 是引擎保留键）。
+     */
+    private Map<String, Object> inputs;
 
     /** 本轮输入：首轮可省略（开始节点使用模拟数据）；续跑必填，承载表单卡片的填写值 */
     private ChatMessageVO message;

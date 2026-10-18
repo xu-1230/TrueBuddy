@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Bean;
 public class WebAutoConfiguration {
 
     @Bean
-    public WebFrameworkUtils webFrameworkUtils(WebProperties webProperties) {
-        return new WebFrameworkUtils(webProperties);
+    public WebFrameworkUtils webFrameworkUtils() {
+        return new WebFrameworkUtils();
     }
 }

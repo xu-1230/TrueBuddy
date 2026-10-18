@@ -39,6 +39,34 @@
         </dependency>
         <!-- 实时通道：媒体与聊天都交给自托管的 LiveKit（见 docs/16），因此不引入 WebSocket starter；
              令牌签发用项目已有的 Hutool 手写 HS256，房间管理用 Twirp HTTP 直调 -->
+        <!-- Spring AI OpenAI 兼容对话模型：PPT 讲稿生成（ChatClient）；版本与 tb-module-doctemplate 保持一致 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+            <version>2.0.0-M3</version>
+        </dependency>
+        <!-- 数字人语音：CosyVoice 流式 TTS（后续二，见 docs/17）。
+             三项排除都是必需的：victools 两项与 spring-ai 在用版本冲突；
+             slf4j-simple 在该 SDK 里是 compile 作用域，不排会与 Logback 抢 SLF4J provider。 -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>dashscope-sdk-java</artifactId>
+            <version>2.22.7</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.github.victools</groupId>
+                    <artifactId>jsonschema-generator</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.github.victools</groupId>
+                    <artifactId>jsonschema-module-jackson</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <!-- 测试：LiveKit 访问令牌签发的回归锁定（本模块唯一有纯逻辑、值得锁的部分） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

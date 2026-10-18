@@ -17,7 +17,7 @@ import org.springframework.security.web.access.AccessDeniedHandlerImpl;
 
 
 @AutoConfiguration
-@EnableMethodSecurity(securedEnabled = true)
+@EnableMethodSecurity(prePostEnabled = true, securedEnabled = true)
 @EnableConfigurationProperties(SecurityProperties.class)
 public class SecurityAutoConfiguration {
     @Resource

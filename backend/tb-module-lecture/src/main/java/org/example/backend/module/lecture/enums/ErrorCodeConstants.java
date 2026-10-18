@@ -16,7 +16,7 @@ public interface ErrorCodeConstants {
     ErrorCode MEETING_ALREADY_CLOSED = new ErrorCode(1_007_000_002, "会议已结束");
     ErrorCode MEETING_NICKNAME_REQUIRED = new ErrorCode(1_007_000_003, "请输入你的名字");
     ErrorCode MEETING_NICKNAME_TOO_LONG = new ErrorCode(1_007_000_004, "名字长度不能超过 {} 个字符");
-    ErrorCode MEETING_ATTENDEE_LIMIT_EXCEED = new ErrorCode(1_007_000_005, "会议人数已达上限（{} 人）");
+    // 1_007_000_005 已作废：入会人数上限闸门移除，见 docs/adr/0001（编号不复用）
     ErrorCode MEETING_HOST_TOKEN_INVALID = new ErrorCode(1_007_000_006, "主持人凭据无效");
     ErrorCode MEETING_NO_GENERATE_FAILED = new ErrorCode(1_007_000_007, "会议号生成失败，请重试");
     ErrorCode MEETING_TITLE_TOO_LONG = new ErrorCode(1_007_000_008, "会议标题长度不能超过 {} 个字符");
@@ -26,5 +26,13 @@ public interface ErrorCodeConstants {
     ErrorCode MEETING_MESSAGE_CONTENT_EMPTY = new ErrorCode(1_007_000_011, "消息内容不能为空");
     ErrorCode MEETING_MESSAGE_CONTENT_TOO_LONG = new ErrorCode(1_007_000_012, "消息长度不能超过 {} 个字符");
     ErrorCode MEETING_SENDER_INVALID = new ErrorCode(1_007_000_013, "发送者凭据无效，请重新入会");
+
+    // ========== AI 数字人（后续二，见 docs/17） 1_007_000_014 起 ==========
+    ErrorCode DIGITAL_DISABLED = new ErrorCode(1_007_000_014, "数字人未启用");
+    ErrorCode DIGITAL_TEXT_EMPTY = new ErrorCode(1_007_000_016, "请填写要播报的内容");
+    ErrorCode DIGITAL_TEXT_TOO_LONG = new ErrorCode(1_007_000_017, "播报内容长度不能超过 {} 个字符");
+
+    // 1_007_000_015（worker 不可达）、1_007_000_018（合成失败）、1_007_000_019（数字人需要 LiveKit）
+    // 随 worker 一起删除：合成现在直接回给放映页浏览器，失败以 SSE `error` 事件下发（见 docs/16 §5.7）。
 
 }

@@ -42,7 +42,7 @@ backend/
 ├── tb-module-doctemplate/         # 文档模板复刻生成（MCP + LLM + 检索增强）
 ├── tb-module-workflow/            # 自定义工作流（画布 schema → spring-ai-alibaba-graph 可执行图；MVP 模拟数据）
 ├── tb-module-homework/            # 作业批改（作业文件夹上传 → 文件清单）
-├── tb-module-lecture/             # 讲课模块（本期：模拟会议，实时走自托管 LiveKit；后续：PPT 演讲稿 / AI 数字人）
+├── tb-module-lecture/             # 讲课模块（meeting：模拟会议，实时走自托管 LiveKit；ppt：AI 讲稿生成；后续：AI 数字人）
 ├── tb-server/                     # 启动模块（BackendApplication + application.yml）
 ├── sql/                           # 数据库脚本
 └── mvnw / mvnw.cmd                # Maven Wrapper
@@ -174,7 +174,7 @@ spring:
 
 ## 7. 接口规范
 
-接口清单以 [../docs/05-API规范.md](../docs/05-API规范.md) §2.5 为唯一权威来源，当前为 **11 个 Controller / 34 个接口**（实时媒体与聊天由自托管 LiveKit 承载，不经过本服务）：
+接口清单以 [../docs/05-API规范.md](../docs/05-API规范.md) §2.5 为唯一权威来源，当前为 **12 个 Controller / 36 个接口**（实时媒体与聊天由自托管 LiveKit 承载，不经过本服务）：
 
 | 模块 | 前缀 | 接口数 | 代表接口 |
 |------|------|--------|----------|
@@ -187,7 +187,8 @@ spring:
 | 知识库文档 | `/knowledge-base/document` | 7 | `list` / `create` / `upload` / `parse-status` / `vectorize` / `delete` / `abandon` |
 | 知识库分片 | `/knowledge-base/chunk` | 1 | `GET /knowledge-base/chunk/list` |
 | 自定义工作流 | `/workflow` | 5 | `POST /workflow/run`（**SSE** 提交执行 / 恢复人工确认，双语义）、`GET /workflow/get_process`（节点级执行状态轮询兜底，建议 2s）、`POST /workflow/save`、`GET /workflow/detail`、`GET /workflow/list`（定义已落库；大模型仍为模拟数据，白名单放行 `/workflow/**`） |
-| 模拟会议 | `/meeting` | 6 | `POST /meeting/create`、`POST /meeting/join`、`GET /meeting/detail`、`GET /meeting/state`（三者下发 LiveKit 接入信息）、`POST /meeting/message`（聊天落库）、`POST /meeting/close`（并删 LiveKit 房间）；实时媒体与聊天走自托管 LiveKit，**不经过本服务**；白名单放行 `/meeting/**` |
+| 模拟会议 | `/meeting` | 7 | `POST /meeting/create`、`POST /meeting/join`（**不限人数**，见 docs/adr/0001）、`POST /meeting/leave`（只给入会台账补 `leave_time`，幂等）、`GET /meeting/detail`、`GET /meeting/state`（下发 LiveKit 接入信息；两者都**不再**下发 `onlineCount`——在线只看房间事件，docs/adr/0002）、`POST /meeting/message`（聊天落库）、`POST /meeting/close`（补离会时间并删 LiveKit 房间）；实时媒体与聊天走自托管 LiveKit，**不经过本服务**；白名单放行 `/meeting/**` |
+| PPT 讲稿 | `/ppt/speech` | 1 | `POST /ppt/speech/optimize`（`pages` 长度 1 = 本页，长度 N = 全部）：**无状态、不落库**，内部按 `tb.lecture.ppt.batch-size` 分批调对话模型，部分失败走 `failedIndexes`；白名单放行 `/ppt/**` |
 
 - **上下文路径**：`/api`（端口 8086）
 
@@ -227,7 +228,9 @@ tb:
 ## 9. AI 配置
 
 - AI 模型相关配置（API Key、模型名、超时等）在 `application.yml` 中管理。
-- **敏感凭据一律环境变量注入，禁止硬编码**：`application.yml` 中只写 `${VAR}` 占位符，**不提供默认值**（缺失时启动即报错，避免误用弱默认值）。运行时的实际取值来自项目根目录 `.env`（`spring.config.import` 自动加载，见 §10）。
+- **配置一律写在 `application.yml`**（2026-10-10 决策，覆盖原先「只写占位符、值进 `.env`」的做法）：真实值直接写在 `${ENV_KEY:字面值}` 的冒号后面，根 `.env` **不再被加载**（`spring.config.import` 已移除）。想临时覆盖就用环境变量（优先级高于配置文件），见 [../docs/08-通用约束.md](../docs/08-通用约束.md) §1.1。
+  - 触发原因是本模块一次真实故障：配置只存在于临时环境变量里，进程重启即回到默认值，表现为「昨天还能播报，今天报数字人未启用 / 口令不符」。
+  - 代价：密钥进入 **git 跟踪**的 `application.yml`（源码与文档里仍禁止出现明文）。
 - **文档解析**：`tb.docmind.*` 由 `DocMindProperties` 承载；AK/SK 缺失时启动即失败（`missingCredentials()` 校验）。
 - **检索增强**：知识库已有 `searchBySpace`（`VectorStore.similaritySearch` + `spaceId` 过滤），供文档模板生成复用。
 - 向量检索依赖 PostgreSQL 的 `vector` 扩展（`CREATE EXTENSION vector`）与 `spring-ai-starter-vector-store-pgvector`（版本 2.0.0-M3）。向量维度固定 1024，与 embedding 模型（`text-embedding-v3`）绑定，**换模型须同步重建向量表**。
@@ -274,25 +277,20 @@ tb:
 
 ## 10. 启动
 
-**前置：创建项目根目录 `.env`**（已被 `.gitignore` 忽略，不随仓库分发）
-
-```properties
-# 项目根目录 .env —— properties 语法；值保持 ASCII，避免反斜杠转义
-DOCMIND_ACCESS_KEY_ID=your-ak
-DOCMIND_ACCESS_KEY_SECRET=your-sk
-# 其余可选变量见 §9 表格
-```
-
-`application.yml` 已配置自动加载，从工作目录逐级向上查找，**无需手动 `export`**：
+**前置：无**。真实值已写在 `tb-server/src/main/resources/application.yml` 的 `${ENV_KEY:字面值}` 位（2026-10-10 起不再加载项目根 `.env`，`cp .env.example .env` 这一步已作废 —— 见 §9 与 [../docs/08-通用约束.md](../docs/08-通用约束.md) §1.1）。
 
 ```yaml
+# application.yml（节选）—— 值写在冒号后面，环境变量仍可临时覆盖
 spring:
-  config:
-    import:
-      - optional:file:.env[.properties]
-      - optional:file:../.env[.properties]
-      - optional:file:../../.env[.properties]
+  # 不再有 spring.config.import 的 .env 加载
+  datasource:
+    username: ${DB_USERNAME:postgres}
+tb:
+  docmind:
+    access-key-id: ${DOCMIND_ACCESS_KEY_ID:<你的 AK>}
 ```
+
+> **改了 `application.yml` 必须重启后端**才生效。这条链路上最典型的一类故障历来是「配置没跟上进程」（两侧配置不一致、或进程还在跑旧配置）—— 那个需要两侧同步的 worker 进程已于 2026-10-10 删除（见 docs/16 §5.7），约束因此简化为一句：**改配置就重启后端**。
 
 ```bash
 cd backend

@@ -60,8 +60,13 @@ const canvasOfDefaultFlow = () => {
   return { nodes, edges }
 }
 
-const CONTAINER_ID = '132996'
-const CHILD_ID = '173594'
+/** 默认流程里的迭代容器与它的子块：从定义派生，id 是数据、不是契约 */
+const iterateNode = () => DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node.type) === '4')
+const CONTAINER_ID = iterateNode().id
+/** 迭代体首个子块（单个子块的断言用它） */
+const CHILD_ID = iterateNode().blocks[0].id
+/** 迭代体全部子块（与个数有关的断言用它） */
+const CHILD_IDS = iterateNode().blocks.map((block) => block.id)
 
 const containerOf = (nodes) => nodes.find((node) => node.id === CONTAINER_ID)
 
@@ -96,19 +101,23 @@ test('invalidEdgesOf：默认流程没有跨层连线', () => {
 
 test('invalidEdgesOf：节点入容器后，它连着外部的边变成跨层并被挑出来', () => {
   const { nodes, edges } = canvasOfDefaultFlow()
-  // 模拟「把 100002 拖进 132996」之后的状态
+  // 取「紧邻容器的那个上游顶层节点」拖进容器：它入边来自更上游的顶层节点、出边正好指向容器
+  const upstreamOfContainer = DEFAULT_FLOW_DEFINITION.edges
+    .find((edge) => edge.targetNodeID === CONTAINER_ID).sourceNodeID
+  const beforeIt = DEFAULT_FLOW_DEFINITION.edges
+    .find((edge) => edge.targetNodeID === upstreamOfContainer).sourceNodeID
   const moved = nodes.map((node) => (
-    node.id === '100002' ? { ...node, parentNode: CONTAINER_ID } : node
+    node.id === upstreamOfContainer ? { ...node, parentNode: CONTAINER_ID } : node
   ))
   const invalid = invalidEdgesOf(moved, edges)
-  // 只剩「顶层 100001 → 子块 100002」跨层；
-  // `100002 → 132996` 此时变成了「容器 ↔ 自己的子块」，折叠后等价于子图的出口，仍然合法
-  assert.deepEqual(invalid.map((edge) => edge.id), ['e-100001-100002'])
+  // 只剩「顶层上游 → 子块」这条跨层；
+  // 「子块 → 容器」此时变成了「容器 ↔ 自己的子块」，折叠后等价于子图的出口，仍然合法
+  assert.deepEqual(invalid.map((edge) => edge.id), [`e-${beforeIt}-${upstreamOfContainer}`])
 })
 
 test('descendantIdsOf：把容器拖进自己的后代必须被识别出来', () => {
   const { nodes } = canvasOfDefaultFlow()
-  assert.deepEqual([...descendantIdsOf(nodes, CONTAINER_ID)], [CHILD_ID])
+  assert.deepEqual([...descendantIdsOf(nodes, CONTAINER_ID)], CHILD_IDS)
   assert.deepEqual([...descendantIdsOf(nodes, '100001')], [])
 })
 

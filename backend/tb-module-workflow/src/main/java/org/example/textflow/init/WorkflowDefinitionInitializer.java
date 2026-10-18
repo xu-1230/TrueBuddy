@@ -33,7 +33,8 @@ public class WorkflowDefinitionInitializer implements ApplicationRunner {
 
     /** 内置模板说明 */
     private static final String BUILTIN_DESCRIPTION =
-            "系统内置的批改工作流：开始 → 逐份迭代（大模型评分与评语）→ 结束";
+            "系统内置的批改工作流：开始 → 学生名单与批改方案规划 → 教师确认名单与评分标准"
+                    + " → 逐学生批改（评分 + 评语）→ 生成成绩单与统计 → 结束";
 
     private final WorkflowDefinitionRepository workflowRepository;
 

@@ -2,12 +2,15 @@ package org.example.backend.module.lecture.controller;
 
 import jakarta.annotation.Resource;
 import org.example.backend.framework.common.pojo.CommonResult;
+import org.example.backend.module.lecture.digital.DigitalHumanService;
+import org.example.backend.module.lecture.model.vo.DigitalStatusVO;
 import org.example.backend.module.lecture.model.vo.MeetingCloseReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingCreateReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingCreateRespVO;
 import org.example.backend.module.lecture.model.vo.MeetingDetailRespVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinRespVO;
+import org.example.backend.module.lecture.model.vo.MeetingLeaveReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageVO;
 import org.example.backend.module.lecture.service.MeetingService;
@@ -36,6 +39,8 @@ public class MeetingController {
 
     @Resource
     private MeetingService meetingService;
+    @Resource
+    private DigitalHumanService digitalHumanService;
 
     /** 创建会议：返回会议号、学生入会链接与主持人凭据（凭据仅返回一次） */
     @PostMapping("/create")
@@ -47,6 +52,18 @@ public class MeetingController {
     @PostMapping("/join")
     public CommonResult<MeetingJoinRespVO> join(@RequestBody MeetingJoinReqVO reqVO) {
         return success(meetingService.join(reqVO));
+    }
+
+    /**
+     * 学生离会：给参会台账补记离会时间。
+     *
+     * <p>由学生端在页面关闭前用 {@code sendBeacon} 触发；重复调用幂等。
+     * 本接口<b>不</b>维护「在线」状态——在线与否只看 LiveKit 房间事件。
+     */
+    @PostMapping("/leave")
+    public CommonResult<Boolean> leave(@RequestBody MeetingLeaveReqVO reqVO) {
+        meetingService.leave(reqVO);
+        return success(true);
     }
 
     /** 会议详情：老师控制台初始化 / 刷新后恢复 */
@@ -78,6 +95,17 @@ public class MeetingController {
     public CommonResult<Boolean> close(@RequestBody MeetingCloseReqVO reqVO) {
         meetingService.close(reqVO);
         return success(true);
+    }
+
+    /**
+     * 数字人可用性：前端据此显示「语音不可用」，而不是点了播报却静默无声。
+     *
+     * <p>播报本身不在这里：它由放映页（{@code /index/ppt}）直接向 {@code POST /ppt/speech/speak}
+     * 取流播放（声音随共享轨到学生端），见 docs/16 §5.7。
+     */
+    @GetMapping("/digital/status")
+    public CommonResult<DigitalStatusVO> digitalStatus() {
+        return success(digitalHumanService.status());
     }
 
 }

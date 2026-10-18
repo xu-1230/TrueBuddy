@@ -11,6 +11,7 @@ import EndNode from './node/EndNode.vue'
 import LlmNode from './node/LlmNode.vue'
 import IterateNode from './node/IterateNode.vue'
 import HumanNode from './node/HumanNode.vue'
+import OutputNode from './node/OutputNode.vue'
 import ConnectionLine from './ConnectionLine.vue'
 import HumanCardDialog from './components/HumanCardDialog.vue'
 import NodeDataDrawer from './components/NodeDataDrawer.vue'
@@ -45,7 +46,7 @@ import {
   saveWorkflow,
   CHAT_API,
 } from '@/api/workflow'
-import { readWorkflowStream } from '@/utils/workflow-sse'
+import { readEventStream } from '@/utils/event-stream'
 import {
   ITERATE_NODE_TYPE,
   ITERATION_EDGE_STYLE,
@@ -82,6 +83,7 @@ const nodeTypes = {
   "3": markRaw(LlmNode),
   "4": markRaw(IterateNode),
   "5": markRaw(HumanNode),
+  "6": markRaw(OutputNode),
 }
 
 /** 运行态：状态与产出由 run-state 归约，节点卡片按节点 id 读取 */
@@ -621,7 +623,7 @@ const execute = async ({ body, resume = false }) => {
   runState.value = resume ? resumeRun(runState.value) : beginRun(runState.value, getNodes.value)
 
   try {
-    await readWorkflowStream(CHAT_API.chat, {
+    await readEventStream(CHAT_API.chat, {
       body,
       signal: controller.signal,
       onEvent: (event, payload) => {

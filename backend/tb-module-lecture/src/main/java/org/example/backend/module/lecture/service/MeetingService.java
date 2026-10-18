@@ -1,14 +1,17 @@
 package org.example.backend.module.lecture.service;
 
 import org.example.backend.module.lecture.model.LectureMeetingAttendeeDO;
+import org.example.backend.module.lecture.model.LectureMeetingDO;
 import org.example.backend.module.lecture.model.vo.MeetingCloseReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingCreateReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingCreateRespVO;
 import org.example.backend.module.lecture.model.vo.MeetingDetailRespVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingJoinRespVO;
+import org.example.backend.module.lecture.model.vo.MeetingLeaveReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageReqVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageVO;
+import org.example.backend.module.lecture.model.vo.MeetingRealtimeVO;
 
 /**
  * 模拟会议 Service
@@ -31,7 +34,10 @@ public interface MeetingService {
     MeetingCreateRespVO create(MeetingCreateReqVO reqVO);
 
     /**
-     * 学生入会：校验会议可入、昵称合法、人数未满，落参会人并签发参会凭据。
+     * 学生入会：校验会议可入、昵称合法，落参会人并签发参会凭据。
+     *
+     * <p>不限制人数：入会曾按 {@code online} 布尔列设上限闸门，而该列没有任何写入方能把它改回 false，
+     * 会在实际无人在线时抛「人数已满」——闸门已作废，见 docs/adr/0001。
      *
      * @param reqVO 会议号与昵称
      * @return 参会凭据、会议信息、参会人列表、最近消息与实时接入信息
@@ -48,7 +54,18 @@ public interface MeetingService {
     MeetingDetailRespVO detail(String meetingNo, String hostToken);
 
     /**
-     * 结束会议：置为已结束、写结束时间、把全部在线参会人置为离线，并删除 LiveKit 房间。
+     * 学生离会：给参会台账的那一行补记离会时间。
+     *
+     * <p>重复调用**不报错且不覆盖**首次时间（幂等），因为页面关闭前 {@code sendBeacon} 可能重试。
+     * 崩溃 / 断网 / 直接杀进程不会走到这里，台账会留下一行 {@code leaveTime} 为空的记录——
+     * 这是预期行为，该行<b>不代表</b>此人在线（见 docs/adr/0002）。
+     *
+     * @param reqVO 会议号与参会凭据
+     */
+    void leave(MeetingLeaveReqVO reqVO);
+
+    /**
+     * 结束会议：置为已结束、写结束时间、给全部「尚未显式离开」的台账行补记离会时间，并删除 LiveKit 房间。
      *
      * @param reqVO 会议号与主持人凭据
      */
@@ -91,5 +108,23 @@ public interface MeetingService {
      * @return 已落库的消息
      */
     MeetingMessageVO sendMessage(Long meetingId, Long attendeeId, String nickname, Integer role, String content);
+
+    /**
+     * 同 {@link #sendMessage}，但显式指定消息类型（数字人播报走 {@code kind=2}，不是文字）。
+     *
+     * @param kind 消息类型：1=文字，2=数字人播报，3=语音转写（预留）
+     */
+    MeetingMessageVO sendMessage(Long meetingId, Long attendeeId, String nickname, Integer role, String content, Integer kind);
+
+    /**
+     * 校验主持人凭据并返回**进行中**的会议，供老师侧动作（如数字人播报）复用同一套鉴权口径。
+     *
+     * <p>会议不存在 / 已结束 / 凭据不符时抛对应业务异常。
+     *
+     * @param meetingNo 会议号
+     * @param hostToken 主持人凭据
+     * @return 进行中的会议
+     */
+    LectureMeetingDO requireRunningMeetingByHost(String meetingNo, String hostToken);
 
 }

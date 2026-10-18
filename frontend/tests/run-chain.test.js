@@ -171,14 +171,16 @@ test('链路：合法画布点运行 → 校验通过（不弹窗）→ 建会�
   assert.equal(calls.execute[0].body.message, undefined, '首轮不带 message（业务输入由开始节点提供模拟数据）')
   assert.deepEqual(calls.debug, [['[workflow] 运行前校验', '通过']], '开发期能看到校验跑过且通过')
 
-  // 折叠口径仍然成立（保存与运行前校验都走 buildRunDefinition）：顶层节点（开始 / 大模型 / 容器 / 结束）
-  // + 容器内折叠的子块。`/chat` 只提交 workflow_id，故这里直接验证折叠产物本身。
+  // 折叠口径仍然成立（保存与运行前校验都走 buildRunDefinition）：顶层节点（开始 / 规划 / 人工确认 /
+  // 容器 / 汇总 / 结束）+ 容器内折叠的子块。`/chat` 只提交 workflow_id，故这里直接验证折叠产物本身。
+  // 期望值一律取自定义本身（id 与节点数是数据，不该在用例里再抄一遍）。
+  const seedContainer = DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node.type) === '4')
   const definition = buildRunDefinition(store.nodes, store.edges)
-  assert.equal(definition.nodes.length, 4)
-  assert.equal(definition.nodes[0].id, '100001')
-  const container = definition.nodes.find((node) => node.id === '132996')
-  assert.equal(container.blocks.length, 1, '迭代体子块被折叠进容器的 blocks')
-  assert.equal(container.edges.length, 2, '迭代体内部连线被折叠进容器的 edges')
+  assert.equal(definition.nodes.length, DEFAULT_FLOW_DEFINITION.nodes.length)
+  assert.equal(definition.nodes[0].id, DEFAULT_FLOW_DEFINITION.nodes[0].id)
+  const container = definition.nodes.find((node) => node.id === seedContainer.id)
+  assert.equal(container.blocks.length, seedContainer.blocks.length, '迭代体子块被折叠进容器的 blocks')
+  assert.equal(container.edges.length, seedContainer.edges.length, '迭代体内部连线被折叠进容器的 edges')
 })
 
 /* ===== 链路：未保存的画布（执行按 workflow_id 读库，没有 id 就不能跑） ===== */
@@ -223,15 +225,16 @@ test('链路：删掉「开始」节点后点运行 → 同样被拦住', async 
 
 /* ===== 链路：断链（顶层有节点没有连入的连线） ===== */
 
-test('链路：删掉「迭代 → 结束」的连线后点运行 → 报断链并拦住（用户实际遇到的场景）', async () => {
+test('链路：删掉「汇总 → 结束」的连线后点运行 → 报断链并拦住（用户实际遇到的场景）', async () => {
   const store = canvasOfDefaultFlow()
   // 画布上「结束」没有连入的连线：后端会给它自动接 START 变成并行起点，运行后才表现为「失败 / 本次无产出变量」
-  store.edges = store.edges.filter((edge) => edge.id !== 'e-132996-900001')
+  const endId = DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node.type) === '2').id
+  store.edges = store.edges.filter((edge) => edge.target !== endId)
   const { handleRun, calls } = loadHandleRun(store)
 
   await handleRun()
 
-  // 期望值取真实校验器的输出：这条线一断，「结束」声明的取值（引用迭代容器的 result）也同时失去来源
+  // 期望值取真实校验器的输出：这条线一断，「结束」声明的取值（引用汇总节点的产出）也同时失去来源
   const expected = runValidationErrors(store.nodes, store.edges)
   assert.equal(
     expected[0],
@@ -247,19 +250,25 @@ test('链路：删掉「迭代 → 结束」的连线后点运行 → 报断链�
 
 test('链路：输入变量没选取值来源后点运行 → 报未绑定并拦住', async () => {
   const store = canvasOfDefaultFlow()
-  // 把「学生名单规划」的输入改成「只声明、没选来源」：后端遇到 input 为空会跳过该变量，
+  // 把规划节点的输入改成「只声明、没选来源」：后端遇到 input 为空会跳过该变量，
   // 提示词占位符替换成空串，运行照样「成功」——必须在运行前拦住。
   // 注意替换整条节点（而不是就地改 `data`）：夹具的顶层节点与 `DEFAULT_FLOW_DEFINITION` 共享引用
+  const planner = DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node.type) === '3')
   store.nodes = store.nodes.map((node) => (
-    node.id === '100002' ? { ...node, data: { ...node.data, inputs: [{ name: 'description' }] } } : node
+    node.id === planner.id ? { ...node, data: { ...node.data, inputs: [{ name: 'description' }] } } : node
   ))
   const { handleRun, calls } = loadHandleRun(store)
 
   await handleRun()
 
-  assert.deepEqual(calls.popup, [[
-    '变量还没有绑定取值：节点「学生名单规划」的输入变量「description」',
-  ]])
+  // 期望值取真实校验器的输出（与本文件其它链路用例同一口径）：这条链路保证的是「弹窗 = 校验器结果」。
+  // 摘掉规划节点的输入声明会连带把「下游引用它的产出」变成另一条错误，那是 run-validation 的职责。
+  const expected = runValidationErrors(store.nodes, store.edges)
+  assert.ok(
+    expected.some((message) => message.includes(`节点「${planner.data.label}」的输入变量「description」`)),
+    '未绑定的输入变量必须被点名',
+  )
+  assert.deepEqual(calls.popup, [expected])
   assert.equal(calls.execute.length, 0, '未绑定时不能提交执行')
 })
 

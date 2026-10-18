@@ -21,10 +21,6 @@ public class LectureMeetingDO {
     private String hostToken;
     /** 会议状态：1=进行中，2=已结束 */
     private Integer status;
-    /** 计划时长（分钟）：预留给后续演讲稿阶段 */
-    private Integer plannedMinutes;
-    /** 绑定的 PPT 文档 id：预留给后续演讲稿阶段 */
-    private Long documentId;
     /** 开始时间 */
     private LocalDateTime startTime;
     /** 结束时间 */

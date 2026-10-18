@@ -68,12 +68,24 @@ import {
 
 /* ===== 夹具（默认流程 default-flow.js 的真实数据） ===== */
 
+/**
+ * 默认流程里的关键 id：**从定义派生**。
+ *
+ * id 是数据、不是契约 —— 上一版写死在这里，替换默认流程时本文件的用例集体染红，
+ * 而它们真正关心的是「子块脱离 / 回到容器时连线的归一化」这类与具体 id 无关的行为。
+ */
+const iterateNode = () => DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node.type) === '4')
+const idsOfType = (type) => DEFAULT_FLOW_DEFINITION.nodes
+  .filter((node) => String(node.type) === type)
+  .map((node) => node.id)
 /** 迭代容器（type 4） */
-const CONTAINER_ID = '132996'
-/** 迭代体子块（单份批改） */
-const CHILD_ID = '173594'
-/** 顶层节点（学生名单规划）：问题2 里「顶层状态」的参照物 */
-const UPSTREAM_ID = '100002'
+const CONTAINER_ID = iterateNode().id
+/** 迭代体首个子块 */
+const CHILD_ID = iterateNode().blocks[0].id
+/** 迭代体全部子块 id（用来把「内部边」与「主链路连入」区分开） */
+const CHILD_IDS = iterateNode().blocks.map((block) => block.id)
+/** 顶层节点（规划）：问题2 里「顶层状态」的参照物 */
+const [UPSTREAM_ID] = idsOfType('3')
 
 /**
  * 默认流程的画布表示：迭代节点用 `expandIteration` 展开成「容器 + 子块 + 内部边」，
@@ -104,11 +116,6 @@ const nodeOf = (nodes, id) => nodes.find((node) => node?.id === id)
 /** 写回节点：等价于画布页 `useVueFlow().updateNode(id, patch)`（`Object.assign` 语义） */
 const applyPatch = (nodes, id, patch) => nodes.map((node) => (
   node?.id === id ? { ...node, ...patch } : node
-))
-
-/** 写回连线：等价于画布页 `normalizeIterationEdges` 里的 `setEdges(map(edge => ({ ...edge, ...patch })))` */
-const applyEdgePatches = (edges, patches) => edges.map((edge) => (
-  patches.has(edge.id) ? { ...edge, ...patches.get(edge.id) } : edge
 ))
 
 /** 读取组件源码（源码契约断言用；路径相对本测试文件） */
@@ -272,13 +279,19 @@ const reattachedState = () => {
   )
   const isChildToContainer = (edge) => (edge.source === CHILD_ID && edge.target === CONTAINER_ID)
     || (edge.target === CHILD_ID && edge.source === CONTAINER_ID)
+  const childToContainerEdges = innerEdges.filter(isChildToContainer)
+  // 首个子块只与容器之间有一条内部边（入口）；出口边挂在末尾子块上
   assert.equal(
-    innerEdges.filter(isChildToContainer).length,
-    2,
-    '（前置）默认流程里「容器 ↔ 子块」有两条内部边（入口 / 出口）',
+    childToContainerEdges.length,
+    1,
+    '（前置）首个子块与容器之间的内部边只有入口那一条',
   )
   const keptEdges = innerEdges.filter((edge) => !isChildToContainer(edge))
-  assert.equal(keptEdges.length, innerEdges.length - 2, '（前置）脱离容器时这两条内部边被清理')
+  assert.equal(
+    keptEdges.length,
+    innerEdges.length - childToContainerEdges.length,
+    '（前置）脱离容器时这些内部边被清理',
+  )
 
   // 顶层状态下的重新连线：两端是外侧 handle，且没有 zIndex（= CANVAS_EDGE_STYLE）
   const redrawnEdge = {
@@ -362,7 +375,10 @@ test('问题2 回归：拖回容器后，留下的连线被归一到内部边口
 
 test('问题2 回归：顶层连线不会被归一化（口径只作用于迭代体内部）', () => {
   const { nodes, edges } = canvasOfDefaultFlow()
-  const outerEdge = edges.find((edge) => edge.id === 'e-100002-132996')
+  // 主链路连入：指向容器、且不是来自迭代体内部子块的那条
+  const outerEdge = edges.find((edge) => (
+    edge.target === CONTAINER_ID && !CHILD_IDS.includes(edge.source)
+  ))
   assert.ok(outerEdge, '默认流程里存在「顶层节点 → 容器」的主链路连线')
   assert.equal(
     internalEdgePatchOf(nodes, outerEdge),
