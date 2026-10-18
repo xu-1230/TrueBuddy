@@ -102,6 +102,8 @@ tb:
   security:
     permit-all-urls:
       - /system/auth/login
+      # 刷新令牌时 accessToken 往往已过期，必须免登录
+      - /system/auth/refresh
       - /test2/read-pptx
       # 作业文件文本读取（测试接口，免登录便于联调）
       - /test2/file-text

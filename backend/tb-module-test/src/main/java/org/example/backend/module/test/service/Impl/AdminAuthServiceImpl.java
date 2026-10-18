@@ -62,11 +62,21 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         validateUserStatus(user, username);
 
         OAuth2AccessTokenDO accessTokenDO = oauth2TokenService.createAccessToken(user.getId(), null);
-        // 构建返回结果：角色与权限随登录一并下发，权限码来自 system_menu
+        return buildLoginResp(accessTokenDO);
+    }
+
+    @Override
+    public AuthLoginRespVO refreshToken(String refreshToken) {
+        OAuth2AccessTokenDO accessTokenDO = oauth2TokenService.refreshAccessToken(refreshToken);
+        return buildLoginResp(accessTokenDO);
+    }
+
+    /** 登录与刷新共用：把 Token 转成登录响应，并回填最新角色与权限 */
+    private AuthLoginRespVO buildLoginResp(OAuth2AccessTokenDO accessTokenDO) {
         AuthLoginRespVO respVO = BeanUtils.toBean(accessTokenDO, AuthLoginRespVO.class);
-        List<String> roles = permissionService.getRoleCodes(user.getId());
+        List<String> roles = permissionService.getRoleCodes(accessTokenDO.getUserId());
         respVO.setRoles(roles);
-        respVO.setPermissions(permissionService.getPermissions(user.getId()));
+        respVO.setPermissions(permissionService.getPermissions(accessTokenDO.getUserId()));
         return respVO;
     }
 
