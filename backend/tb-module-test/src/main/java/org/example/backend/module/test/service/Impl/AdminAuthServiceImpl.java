@@ -79,8 +79,10 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         validateUserStatus(user, username);
 
         OAuth2AccessTokenDO accessTokenDO = oauth2TokenService.createAccessToken(user.getId(), getUserType(user).getValue(), null);
-        // 构建返回结果
-        return BeanUtils.toBean(accessTokenDO, AuthLoginRespVO.class);
+        // 构建返回结果：userType 随登录一并下发，前端据此区分普通用户 / 会员 / 管理员
+        AuthLoginRespVO respVO = BeanUtils.toBean(accessTokenDO, AuthLoginRespVO.class);
+        respVO.setUserType(accessTokenDO.getUserType());
+        return respVO;
     }
 
     private void validateUserStatus(AdminUserDO user, String username) {

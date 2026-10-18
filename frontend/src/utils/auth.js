@@ -1,6 +1,7 @@
 import Cookies from "js-cookie";
 
 const TokenKey = "token";
+const UserTypeKey = "userType";
 
 export function getToken() {
   return Cookies.get(TokenKey);
@@ -12,6 +13,20 @@ export function setToken(token, expiresDays) {
   return Cookies.set(TokenKey, token, options);
 }
 
+/** 登录响应携带的身份（0 普通用户 / 1 会员 / 2 管理员），供管理端判断入口权限 */
+export function getUserType() {
+  const raw = localStorage.getItem(UserTypeKey);
+  if (raw === null || raw === "") return null;
+  const value = Number(raw);
+  return Number.isNaN(value) ? null : value;
+}
+
+export function setUserType(userType) {
+  if (userType === null || userType === undefined) return;
+  localStorage.setItem(UserTypeKey, String(userType));
+}
+
 export function removeToken() {
+  localStorage.removeItem(UserTypeKey);
   return Cookies.remove(TokenKey);
 }

@@ -1,13 +1,13 @@
 <script setup>
 import { ref } from 'vue'
-import { login, ping, ping2, identityNormal, identityMember, identityAdmin } from '@/api/test'
+import { login, ping, ping2 } from '@/api/test'
+import { setToken } from '@/utils/auth'
 
 const username = ref('')
 const password = ref('')
 const loginResult = ref('')
 const pingResult = ref('')
 const ping2Result = ref('')
-const identityResults = ref({ normal: '', member: '', admin: '' })
 
 const accounts = {
   normal: { label: '普通用户', u: 'normal', p: '123456' },
@@ -26,7 +26,7 @@ async function handleLogin() {
   try {
     const data = await login(username.value, password.value)
     if (data?.accessToken) {
-      localStorage.setItem('token', data.accessToken)
+      setToken(data.accessToken)
     }
     loginResult.value = JSON.stringify(data, null, 2)
   } catch (e) {
@@ -54,17 +54,6 @@ async function handlePing2() {
   }
 }
 
-async function testIdentity(type) {
-  const fn = { normal: identityNormal, member: identityMember, admin: identityAdmin }[type]
-  identityResults.value[type] = '请求中...'
-  try {
-    const data = await fn()
-    identityResults.value[type] = JSON.stringify(data, null, 2)
-  } catch (e) {
-    identityResults.value[type] = `无该身份：${formatError(e)}`
-  }
-}
-
 function formatError(e) {
   const status = e?.response?.status
   const msg = e?.response?.data?.message || e?.message || JSON.stringify(e)
@@ -74,7 +63,7 @@ function formatError(e) {
 
 <template>
   <main class="test-page">
-    <h1>身份测试</h1>
+    <h1>登录与连通性测试</h1>
 
     <section>
       <h2>登录</h2>
@@ -89,21 +78,6 @@ function formatError(e) {
         <button @click="handleLogin">登录</button>
       </div>
       <pre>{{ loginResult || '暂无登录结果' }}</pre>
-    </section>
-
-    <section>
-      <h2>身份判断接口</h2>
-      <div class="actions">
-        <button @click="testIdentity('normal')">测试普通用户</button>
-        <button @click="testIdentity('member')">测试会员</button>
-        <button @click="testIdentity('admin')">测试管理员</button>
-      </div>
-      <div class="identity-grid">
-        <div v-for="(_, key) in identityResults" :key="key">
-          <h3>{{ accounts[key].label }}</h3>
-          <pre>{{ identityResults[key] || '未测试' }}</pre>
-        </div>
-      </div>
     </section>
 
     <section>
@@ -154,9 +128,4 @@ pre {
   word-break: break-all;
 }
 
-.identity-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
 </style>

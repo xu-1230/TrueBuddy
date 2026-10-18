@@ -15,5 +15,4 @@ public interface ErrorCodeConstants {
     // ========== 认证模块 1-002-002-000 ==========
     ErrorCode AUTH_LOGIN_BAD_CREDENTIALS = new ErrorCode(1_002_002_000, "登录失败，账号密码不正确");
     ErrorCode AUTH_LOGIN_USER_DISABLED = new ErrorCode(1_002_002_001, "登录失败，账号被禁用");
-    ErrorCode AUTH_PERMISSION_DENIED = new ErrorCode(1_002_002_002, "当前用户无该身份权限");
 }
