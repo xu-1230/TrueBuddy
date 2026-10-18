@@ -7,8 +7,6 @@
         v-model:description="config.description"
         v-model:export-format="config.exportFormat"
         v-model:workflow="config.workflow"
-        v-model:recognize-image="config.recognizeImage"
-        v-model:concurrency="config.concurrency"
         v-model:folder="folder"
         :knowledge-bases="kbOptions"
         :workflows="workflows"
@@ -81,6 +79,8 @@
         <div class="stage__canvas">
           <!-- 卡片堆栈容器：w-full / h-full / relative / overflow-visible / z-0
                每张卡一份作业文件，绝对定位居中，深度几何由 stackStyle() 下发 -->
+          <!-- 班级汇总条：**本轮先不展示**（汇总节点的产出仍在 `runGradingWorkflow` 的返回值里）。
+               当前节奏是「确认名单 → 每完成一份上一张卡」，画布上只留卡堆，避免抢焦点。 -->
           <div v-if="records.length" class="card-stack">
             <div
               v-for="card in deck"
@@ -110,10 +110,12 @@
             <template v-if="grading">
               <span class="stage__blank-spinner"></span>
               <p class="stage__blank-title">
-                {{ uploading ? `正在上传作业文件 ${uploadPercent}%` : '正在上传作业文件…' }}
+                {{ uploading ? `正在上传作业文件 ${uploadPercent}%` : '正在批改作业' }}
               </p>
               <p class="stage__blank-desc">
-                {{ stageLabel || `共 ${fileCount} 份作业，正在逐份存储并保留目录结构，请勿关闭页面` }}
+                {{ uploading
+                  ? `共 ${fileCount} 份作业，正在逐份存储并保留目录结构，请勿关闭页面`
+                  : (stageLabel || '正在逐份批改，每完成一份会立刻出现一张成绩卡；请勿关闭页面') }}
               </p>
             </template>
             <template v-else>
@@ -192,6 +194,16 @@
       :detail-loading-id="historyDetailLoadingId"
       @select="handleOpenHistoryRecord"
     />
+
+    <!-- ============ 确认批改列表（工作流跑到人工确认节点时弹出） ============
+         复用画布页那张卡：上半是上游产出的只读回显（名单 / 批改方案 / 评分标准），
+         字段取值全部来自上游时下半段不渲染，行为就是「看一眼、点确定」。
+         关掉弹窗＝取消本次批改（`askConfirm` 的 promise 拿到 null，执行链路随即中止）。 -->
+    <HumanCardDialog
+      v-model="confirmCardVisible"
+      :card="pendingCard"
+      @submit="handleConfirmSubmit"
+    />
   </div>
 </template>
 
@@ -206,6 +218,8 @@ import { listWorkflows } from '@/api/workflow'
 import ConfigPanel from './components/ConfigPanel.vue'
 import HistoryDrawer from './components/HistoryDrawer.vue'
 import ScoreCard from './components/ScoreCard.vue'
+import HumanCardDialog from '@/views/workflow2/components/HumanCardDialog.vue'
+import { runGradingWorkflow } from './utils/grading-run'
 
 const route = useRoute()
 const router = useRouter()
@@ -268,8 +282,6 @@ const config = reactive({
   description: '',
   exportFormat: 'xlsx',
   workflow: '',
-  recognizeImage: false,
-  concurrency: 3,
 })
 
 /* ---------- 知识库选择 ---------- */
@@ -306,8 +318,15 @@ const grading = ref(false)
 /** 上传阶段：''（空闲）/ upload（上传中）/ grading（上传完成、结果整理中） */
 const gradingPhase = ref('')
 const uploadPercent = ref(0)
-/** 右侧卡堆数据源：一份作业文件 = 一张卡 */
+/** 右侧卡堆数据源：**一个学生 = 一张卡**（字段名来自工作流里输出节点声明的 inputs） */
 const records = ref([])
+/**
+ * 人工确认弹窗：工作流跑到「教师确认名单与评分标准」时挂起，等用户点「确定」或关掉弹窗。
+ * `settleConfirm` 是那次挂起的 resolver —— 提交取值即放行，关掉弹窗即取消（传 null）。
+ */
+const pendingCard = ref(null)
+const confirmCardVisible = ref(false)
+let settleConfirm = null
 /** 当前阶段（预留，工作流阶段回显用） */
 const currentStage = ref(null)
 /** 当前结果对应的任务信息：{ taskId, description, workflow, exportFormat } */
@@ -324,6 +343,37 @@ const canGrade = computed(
 )
 
 const canExport = computed(() => records.value.length > 0 && !grading.value)
+
+/**
+ * 把中断卡片交给用户：返回一个 promise，弹窗点「确定」→ `{ values }`，关掉弹窗 → `null`。
+ *
+ * 由 `runGradingWorkflow` 的 `onConfirm` 调用，执行链路会一直等这个决定 ——
+ * 提交的就是卡片里回显的那份原值（同名即只读回填，见 `views/workflow2/utils/card-fields.js`）。
+ *
+ * @param {object} card 中断卡片载荷
+ * @returns {Promise<{values: object}|null>}
+ */
+function askConfirm(card) {
+  pendingCard.value = card
+  confirmCardVisible.value = true
+  return new Promise((resolve) => {
+    settleConfirm = resolve
+  })
+}
+
+/** 弹窗点「确定」：把取值交回执行链路（取值是否可用由弹窗在提交时校验） */
+function handleConfirmSubmit({ values }) {
+  confirmCardVisible.value = false
+  settleConfirm?.({ values })
+  settleConfirm = null
+}
+
+/** 关掉弹窗（右上角 X / Esc / 点遮罩）＝取消本次批改 */
+watch(confirmCardVisible, (open) => {
+  if (open || !settleConfirm) return
+  settleConfirm(null)
+  settleConfirm = null
+})
 
 /** 上传阶段 */
 const uploading = computed(() => gradingPhase.value === 'upload')
@@ -378,25 +428,61 @@ const headerMeta = computed(() => {
   ].join(' · ')
 })
 
+/** 文本归一：`null` / `undefined` 当空串，避免把 "null" 摆到界面上 */
+const textOf = (value) => (value == null ? '' : String(value).trim())
+
+/** 列表归一：标量当单项（模型偶尔把单个值写成一个字符串而不是数组） */
+const listOf = (value) => {
+  if (value == null) return []
+  return Array.isArray(value) ? value : [value]
+}
+
 /**
- * 把后端返回的一份作业文件映射为卡片数据结构。
- * 评分与评语待批改接口接入，这里保留占位，UI 与批改结果卡完全一致。
+ * 该文件是否属于这个学生：按相对路径里是否出现学生姓名匹配。
+ *
+ * 上传返回的 `path` 形如 `<文件夹>/<学号 姓名>/<文件名>`，目录名里那一段姓名是唯一稳定的线索
+ * （前端拿不到"学生目录名"这个字段，而姓名来自规划节点的判断）。
  */
-function toRecord(item) {
+const belongsToStudent = (file, studentName) => {
+  if (!studentName) return false
+  const path = textOf(file?.path) || textOf(file?.name)
+  return path.includes(studentName)
+}
+
+/**
+ * 把输出节点的一条批改记录映射成卡片数据结构（**一个学生一张卡**）。
+ *
+ * 字段名来自工作流里输出节点声明的 `inputs`；这里对每个字段都做"取不到就留空"的处理 ——
+ * 让卡片照样渲染出来（哪一格空着，比整张卡消失更容易发现是工作流配置的问题）。
+ *
+ * @param {object} record 输出契约里的一条记录
+ * @param {Array} files 本次上传的文件清单（用来匹配该学生提交了哪些文件）
+ */
+function toRecordFromGrading(record, files, index = 0) {
+  const studentName = textOf(record?.student)
+  const ownFiles = listOf(files).filter((file) => belongsToStudent(file, studentName))
+  const score = Number(record?.score)
+
   return {
-    id: item.id ?? item.path,
-    fileName: item.name,
-    studentName: '',
-    score: null,
-    grade: '待批改',
-    comment: '本次仅完成作业文件上传，评分与评语待批改接口接入。',
-    originalText: `【相对路径】${item.path}\n\n（作业原文的解析结果待批改接口接入后展示）`,
+    // key 必须唯一：卡堆用 `record-${id}` 当 v-for 的 key，同名学生会互相顶掉
+    id: `${studentName || '未署名'}-${index + 1}`,
+    fileName: studentName || '未署名学生',
+    studentName,
+    score: Number.isFinite(score) ? score : null,
+    grade: textOf(record?.grade),
+    comment: textOf(record?.comment),
+    deductions: listOf(record?.deductions),
+    readFiles: listOf(record?.readFiles).map(textOf).filter(Boolean),
+    files: ownFiles,
+    // 这两项本轮拿不到真实值，但**必须给空值**：ScoreCard 会读它们，
+    // 缺字段是「渲染期抛错 → 整棵卡堆子树不挂载」的入口（见 tests/homework-card-fields.test.js）
     model: '',
     kbName: '',
-    fileId: item.fileId,
-    fileUrl: item.url,
-    size: item.size,
-    status: 0,
+    // 成绩卡是「一个学生」，可能对应多份文件，没有单一 URL —— 卡片头部的
+    // 「打开原文件」链接因此只出现在占位卡（单份文件）上
+    fileUrl: '',
+    size: ownFiles.reduce((sum, file) => sum + (Number(file?.size) || 0), 0) || null,
+    status: 1,
     errorMsg: '',
   }
 }
@@ -434,15 +520,70 @@ async function handleGrade() {
       exportFormat: config.exportFormat,
     }
 
-    records.value = (data.files ?? []).map(toRecord)
-    if (!records.value.length) {
+    if (!(data.files ?? []).length) {
       ElMessage.error('未返回作业文件清单，请重试')
       return
     }
+    // 画布**保持空白**：卡片由工作流每完成一份学生上一张（见 utils/grading-run 的 onRecord）。
+    // 不在上传后就铺一叠「待批改」空壳卡 —— 这时还没有任何成绩，铺出来只是噪声，
+    // 也会让「点开始批改 → 看确认名单 → 逐份出成绩」这个节奏看不出来。
+    gradingPhase.value = 'grading'
     ElMessage.success(`上传完成：共 ${data.fileCount} 份作业`)
 
-    // 第二步：把批改配置交给后端（当前后端只接收并记录，真实批改待接入）。
-    // 独立容错：这一步失败不应影响第一步已经展示出来的文件清单。
+    // 第二步：跑批改工作流。业务输入按**开始节点声明的变量名**传进去
+    // （file_tree 用第一步的返回 —— 里面的 fileId 是模型读原文的唯一凭据；description 是配置面板里那段批改要求）。
+    //
+    // 两处交互约定：
+    // - `onConfirm`：跑到人工确认节点时弹「确认批改列表」，用户点确定才继续、关掉即取消；
+    // - `onRecord`：迭代体每完成一份学生就上一张卡，不必等整轮跑完。
+    try {
+      const result = await runGradingWorkflow({
+        workflowId: config.workflow,
+        inputs: {
+          file_tree: data.files ?? [],
+          description: config.description.trim(),
+          know: [...config.spaceIds],
+        },
+        title: `作业批改 #${data.taskId}`,
+        onConfirm: askConfirm,
+        onRecord: (record) => {
+          records.value = [
+            ...records.value,
+            toRecordFromGrading(record, data.files ?? [], records.value.length),
+          ]
+        },
+      })
+
+      // 兜底：非迭代的工作流（或流式帧丢了）时，用最终结果把卡片补齐；
+      // 已经流式上过牌就不动 —— 以流式那一份为准，顺序与名单一致。
+      if (!records.value.length && result.records.length) {
+        records.value = result.records.map((record, index) => (
+          toRecordFromGrading(record, data.files ?? [], index)
+        ))
+        resetCardDeck()
+      }
+
+      if (records.value.length) {
+        // 流式上牌比最终记录少，说明有轮次没产出（模型没返回可解析的结果 / 轮次超时被跳过）：
+        // 逐份上牌时那一份根本不会出现，这里至少把差异说出来，别让它静默消失
+        const missed = result.records.length - records.value.length
+        ElMessage.success(missed > 0
+          ? `批改完成：共 ${result.records.length} 名学生，其中 ${missed} 份没有产出结果`
+          : `批改完成：共 ${records.value.length} 名学生`)
+      } else {
+        ElMessage.warning('批改已完成，但没有解析出任何学生；请检查作业文件夹的目录结构')
+      }
+    } catch (gradeError) {
+      // 用户主动取消不算故障：弹窗关掉时执行链路会抛这句话，不该弹红色错误
+      if (String(gradeError?.message).includes('已取消')) {
+        ElMessage.info('已取消本次批改')
+      } else {
+        ElMessage.error(gradeError?.message || '批改失败，请重试')
+      }
+    }
+
+    // 第三步：把本次批改的配置报给后端留痕（该端点当前只打日志；落库与导出接入后由它承担）。
+    // 独立容错：它失败不影响已经拿到的批改结果。
     try {
       await submitGrading({
         taskId: data.taskId,
@@ -453,9 +594,8 @@ async function handleGrade() {
         exportFormat: config.exportFormat,
         workflowId: config.workflow,
       })
-      ElMessage.success('批改请求已提交')
-    } catch (gradeError) {
-      ElMessage.error(gradeError?.message || '批改请求提交失败，请重试')
+    } catch {
+      // 留痕失败不提示：批改结果已经拿到，这一步只是记录
     }
   } catch (e) {
     ElMessage.error(e?.message || '上传失败，请重试')
@@ -464,6 +604,8 @@ async function handleGrade() {
     gradingPhase.value = ''
     uploadPercent.value = 0
     currentStage.value = null
+    // 收尾时把还挂着的确认弹窗放掉：否则异常/中止路径下执行链路会一直等一个永远不会来的决定
+    confirmCardVisible.value = false
   }
 }
 
@@ -784,6 +926,48 @@ onMounted(() => {
   /* border-radius: var(--tb-radius-xl); */
   /* 裁掉卡头的直角背景，让它顺着面板圆角收口 */
   overflow: hidden;
+}
+
+/* 班级汇总条：绝对定位贴画布上沿，不参与流式布局（卡堆的扇形几何不受影响） */
+.summary-bar {
+  position: absolute;
+  top: 0.9rem;
+  left: 4.5rem;
+  right: 3.6rem;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.75rem;
+  border: var(--tb-border-width) solid var(--tb-border);
+  background: var(--tb-bg-surface);
+  box-shadow: var(--tb-shadow-1);
+}
+
+/* ---------- 班级汇总条（本轮先不展示，样式留着，恢复时把上面的模板改回来即可） ---------- */
+.summary-bar__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.1rem;
+  font-size: 0.74rem;
+  color: var(--tb-text-tertiary);
+}
+
+.summary-bar__item b {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--tb-text-primary);
+}
+
+.summary-bar__text {
+  max-height: 3.4rem;
+  margin: 0;
+  overflow-y: auto;
+  font-size: 0.72rem;
+  line-height: 1.7;
+  color: var(--tb-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* 画布（对应文档模板页的 .display-box__canvas）：

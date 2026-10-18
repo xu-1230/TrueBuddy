@@ -23,11 +23,35 @@ import { runValidationErrors } from '../src/views/workflow2/utils/run-validation
 
 /* ===== 夹具（默认流程 default-flow.js 的真实数据） ===== */
 
-const START_ID = '100001'
-const UPSTREAM_ID = '100002'
-const CONTAINER_ID = '132996'
-const CHILD_ID = '173594'
-const END_ID = '900001'
+/**
+ * 默认流程里的关键 id / 名称：**从定义派生，不在这里硬编码**。
+ *
+ * id 是数据、不是契约 —— 上一版把 id 与容器名写死在这里，替换默认流程时本文件半数用例集体染红，
+ * 而它们真正关心的只是「顶层 / 迭代体的层级与链路」这类与具体 id 无关的行为。
+ */
+const idsOfType = (type) => DEFAULT_FLOW_DEFINITION.nodes
+  .filter((node) => String(node.type) === type)
+  .map((node) => node.id)
+const iterateNode = () => DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node.type) === '4')
+/** 全图（含迭代体子块）按 id 找定义 —— 断言里的节点名也从它取，免得连 label 一起钉死 */
+const definitionNodeOf = (id) => [
+  ...DEFAULT_FLOW_DEFINITION.nodes,
+  ...DEFAULT_FLOW_DEFINITION.nodes.flatMap((node) => node.blocks ?? []),
+].find((node) => node.id === id)
+const labelOfNode = (id) => definitionNodeOf(id)?.data?.label ?? id
+
+const [START_ID] = idsOfType('1')
+/** 顶层的一个大模型节点（规划） */
+const [UPSTREAM_ID] = idsOfType('3')
+const CONTAINER_ID = iterateNode().id
+/** 迭代体首个子块 */
+const CHILD_ID = iterateNode().blocks[0].id
+/** 迭代体全部子块 */
+const CHILD_IDS = iterateNode().blocks.map((block) => block.id)
+const [END_ID] = idsOfType('2')
+/** 迭代容器的下游顶层节点（汇总）：断链用例用它 */
+const SUMMARY_ID = DEFAULT_FLOW_DEFINITION.edges
+  .find((edge) => edge.sourceNodeID === CONTAINER_ID).targetNodeID
 
 /** 默认流程的画布表示：迭代节点展开成「容器 + 子块 + 内部边」（与画布页 toCanvasFlow 同口径） */
 const canvasOfDefaultFlow = () => {
@@ -91,11 +115,12 @@ test('默认流程：开始 / 结束齐全、无环 → 校验通过（不误报
 test('迭代容器内部：只有虚拟出入口边时不算环（防误报）', () => {
   const { nodes, edges } = canvasOfDefaultFlow()
   const onlyContainer = plainNodes(nodes.filter((node) => (
-    node.id === CONTAINER_ID || node.id === CHILD_ID
+    node.id === CONTAINER_ID || CHILD_IDS.includes(node.id)
   )))
+  // 入口 = 容器指向子块的那些边；出口 = 子块指回容器的那些边
   const onlyInnerEdges = edges.filter((edge) => (
-    (edge.source === CONTAINER_ID && edge.target === CHILD_ID)
-    || (edge.source === CHILD_ID && edge.target === CONTAINER_ID)
+    (edge.source === CONTAINER_ID && CHILD_IDS.includes(edge.target))
+    || (CHILD_IDS.includes(edge.source) && edge.target === CONTAINER_ID)
   ))
   assert.equal(onlyInnerEdges.length, 2, '（前置）默认流程的迭代体确实有入口 / 出口两条边')
 
@@ -170,31 +195,39 @@ const dangle = (names) => `工作流存在断链：${names}没有连入的连线
 const refSlot = (node, where, field, problem) => `节点「${node}」的${where}「${field}」：${problem}`
 const refIssue = (...problems) => `变量引用有问题：${problems.join('；')}`
 
-test('断链：删掉「迭代 → 结束」的连线 → 点名「结束」（后端会把它当并行起点）', () => {
+test('断链：漏连「汇总 → 结束」这条线 → 点名「结束」（后端会把它当独立起点）', () => {
   const { nodes, edges } = canvasOfDefaultFlow()
   // 这是最常见的漏连：中间的线都连了，最后一截「→ 结束」没连。后端 `createGraph` 会给「无入边」的节点
-  // 自动接 `StateGraph.START`，于是「结束」与主流程并行开跑、拿不到迭代结果——运行不报错，只在结果面板
+  // 自动接 `StateGraph.START`，于是「结束」与主流程并行开跑、拿不到汇总结果——运行不报错，只在结果面板
   // 上表现为「失败 / 本次无产出变量」，所以必须拦在运行之前
+  const endLabel = labelOfNode(END_ID)
+  const sourceLabel = labelOfNode(SUMMARY_ID)
+  const problem = (field) => refSlot(endLabel, '输入变量', field, `来源「${sourceLabel}」没有连到本节点（不在上游）`)
+  const endInputs = definitionNodeOf(END_ID).data.inputs.map((field) => field.name)
+
   assert.deepEqual(
-    runValidationErrors(nodes, withoutEdge(edges, 'e-132996-900001')),
+    runValidationErrors(nodes, withoutEdge(edges, `e-${SUMMARY_ID}-${END_ID}`)),
     [
-      dangle('「结束」'),
-      // 这条线一断，「结束」声明的取值（引用迭代容器的 result）也同时失去来源，两条错误一并给出
-      refIssue(refSlot('结束', '输入变量', 'input', '来源「逐份批改」没有连到本节点（不在上游）')),
+      dangle(`「${endLabel}」`),
+      // 这条线一断，「结束」声明的每个取值（都引用汇总节点的产出）同时失去来源；
+      // 超过 3 处按 run-validation 的折叠规则收成「等 N 处」
+      refIssue(problem(endInputs[0]), problem(endInputs[1]), problem(endInputs[2]), `等 ${endInputs.length} 处`),
     ],
   )
 })
 
 test('断链：新加的顶层节点还没连线 → 点名该节点，已连好的节点不误报', () => {
   const { nodes, edges } = canvasOfDefaultFlow()
-  const fresh = { id: '100003', type: '3', position: { x: 0, y: 0 }, data: { label: '新节点' } }
+  // id 必须取一个定义里没占用的值：默认流程里已有的 id 会被当成"已连入"，测不出断链
+  const fresh = { id: '100900', type: '3', position: { x: 0, y: 0 }, data: { label: '新节点' } }
   assert.deepEqual(runValidationErrors([...nodes, fresh], edges), [dangle('「新节点」')])
 })
 
 test('断链：同时多个节点断链时点名前 3 个并折叠成「等 N 个节点」', () => {
   const { nodes, edges } = canvasOfDefaultFlow()
+  // 同上：id 取默认流程没占用的段，否则会被当成"已连入"而不报断链
   const extra = ['A', 'B', 'C', 'D'].map((label, index) => ({
-    id: `10000${index + 3}`,
+    id: `80000${index + 1}`,
     type: '3',
     position: { x: 0, y: 0 },
     data: { label },
@@ -383,7 +416,7 @@ test('变量未绑定：迭代容器没绑迭代源 / 迭代变量 → 一并点
 
 test('顶层回边 → 报循环连接', () => {
   const { nodes, edges } = canvasOfDefaultFlow()
-  // 默认链路 100001 → 100002 → 132996 → 900001，补一条 100002 → 100001 即形成回路
+  // 默认链路 开始 → … → 容器 → … → 结束，补一条「规划 → 开始」的回边即形成回路
   const cyclic = [...edges, link('e-back', UPSTREAM_ID, START_ID)]
   assert.deepEqual(runValidationErrors(nodes, cyclic), [TOP_CYCLE])
 })
@@ -401,14 +434,14 @@ test('迭代容器内部的子块互连成环 → 报容器内部的循环连接
 
   assert.deepEqual(
     runValidationErrors([...nodes, second], innerCycle),
-    ['迭代容器「逐份批改」内部存在循环连接：子块首尾相连形成回路'],
+    [`迭代容器「${labelOfNode(CONTAINER_ID)}」内部存在循环连接：子块首尾相连形成回路`],
     '容器内部成环要指出是哪个容器，且不能误报成顶层环',
   )
 })
 
 test('多条错误一次性收集（复刻 TaskValidate 的 errors 列表语义）', () => {
   const { nodes, edges } = canvasOfDefaultFlow()
-  // 删掉开始节点，同时在剩下的顶层节点里连出回路 100002 → 132996 → 900001 → 100002
+  // 删掉开始节点，同时在剩下的顶层节点里连出回路：规划 → 容器 → … → 结束 → 规划
   const errors = runValidationErrors(
     withoutNode(plainNodes(nodes), START_ID),
     [...edges, link('e-loop', END_ID, UPSTREAM_ID)],
@@ -501,7 +534,7 @@ test('对抗：节点 type 写成数字（代码库明确容忍的脏数据）�
       [...numericTypes, second],
       [...edges, link('e-a-b', CHILD_ID, '173597'), link('e-b-a', '173597', CHILD_ID)],
     ),
-    ['迭代容器「逐份批改」内部存在循环连接：子块首尾相连形成回路'],
+    [`迭代容器「${labelOfNode(CONTAINER_ID)}」内部存在循环连接：子块首尾相连形成回路`],
   )
 })
 

@@ -40,12 +40,24 @@ const canvas = () => {
   return { nodes, edges }
 }
 
-/** 默认流程中的关键 id：迭代容器 / 迭代体子块 / 迭代源 / 结束节点 */
-const CONTAINER = '132996'
-const CHILD = '173594'
-const PLANNER = '100002'
-const START = '100001'
-const END = '900001'
+/**
+ * 默认流程中的关键 id：**从定义里取，不在这里硬编码**。
+ *
+ * `default-flow.js` 里的 id 是数据、不是契约 —— 上一版把 id 写死在这里，替换默认流程时
+ * 这批用例集体染红，而它们本来只关心「同层可见性」这类与 id 无关的行为。
+ */
+const idsOfType = (type) => DEFAULT_FLOW_DEFINITION.nodes
+  .filter((node) => String(node.type) === type)
+  .map((node) => node.id)
+const iterateNode = () => DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node.type) === '4')
+const [START] = idsOfType('1')
+const [PLANNER] = idsOfType('3')
+const [END] = idsOfType('2')
+const [CONTAINER] = idsOfType('4')
+/** 迭代体首个子块 */
+const CHILD = iterateNode().blocks[0].id
+/** 迭代节点的聚合产出变量名（迭代体要素同名，否则汇总恒为空） */
+const ITERATE_OUTPUT = iterateNode().data.outputs[0].name
 
 test('迭代容器下游的顶层节点看不到迭代体子块的产出（跨迭代体引用）', () => {
   const { nodes, edges } = canvas()
@@ -54,10 +66,10 @@ test('迭代容器下游的顶层节点看不到迭代体子块的产出（跨�
   assert.equal(
     outputs.some((item) => item.blockID === CHILD),
     false,
-    '子块 173594 的产出只活在迭代体子图里，不该出现在父图节点的候选里',
+    `子块 ${CHILD} 的产出只活在迭代体子图里，不该出现在父图节点的候选里`,
   )
   assert.ok(
-    outputs.some((item) => item.blockID === CONTAINER && item.name === 'result'),
+    outputs.some((item) => item.blockID === CONTAINER && item.name === ITERATE_OUTPUT),
     '容器自身的聚合产出对下游仍然可见',
   )
   assert.ok(outputs.some((item) => item.blockID === PLANNER), '同为顶层的上游节点仍然可见')
@@ -84,11 +96,18 @@ test('迭代体子块能拿到容器每轮注入的变量（index / item / 迭�
   const container = nodes.find((node) => node.id === CONTAINER)
   const inject = injectOutputsOf(nodes, container, CHILD)
   const names = inject.map((item) => item.name)
+  const paramNames = container.data.variableParameters.map((item) => item.name)
 
   assert.ok(names.includes('index'), '每轮注入轮次下标')
   assert.ok(names.includes('item'), '每轮注入当前项')
-  assert.ok(names.includes('jj'), '容器 variableParameters 声明的中间变量')
-  assert.equal(names.length, 3, '同名变量只出现一次（item 既在固定注入项里，也是子块声明的别名）')
+  for (const name of paramNames) {
+    assert.ok(names.includes(name), `容器 variableParameters 声明的中间变量：${name}`)
+  }
+  assert.equal(
+    names.length,
+    2 + paramNames.length,
+    '同名变量只出现一次（item 既在固定注入项里，也是子块声明的别名）',
+  )
   assert.equal(
     inject.every((item) => item.blockID === CONTAINER),
     true,
@@ -168,7 +187,11 @@ test('迭代输出与子块产出同名时不告警，不同名时告警', () =>
   const container = nodes.find((node) => node.id === CONTAINER)
   const children = nodes.filter((node) => node.parentNode === CONTAINER)
 
-  assert.equal(iterationOutputWarningsOf(container, children).size, 0, '默认流程里两边都是 result')
+  assert.equal(
+    iterationOutputWarningsOf(container, children).size,
+    0,
+    `默认流程里迭代输出与迭代体子块的产出同名（${ITERATE_OUTPUT}）`,
+  )
 
   const renamed = { ...container, data: { ...container.data, outputs: [{ name: 'summary' }] } }
   assert.deepEqual([...iterationOutputWarningsOf(renamed, children)], ['summary'])

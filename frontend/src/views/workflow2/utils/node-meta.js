@@ -16,6 +16,7 @@ import {
   QuestionFilled,
   RefreshRight,
   SwitchButton,
+  Upload,
   User,
   VideoPlay,
 } from '@element-plus/icons-vue'
@@ -52,6 +53,13 @@ export const NODE_META = {
     icon: User,
     desc: '人工确认：执行到此暂停，确认后从断点继续',
     flags: { prompt: false, inputs: true, outputs: true, variableParams: false },
+  },
+  '6': {
+    name: '输出',
+    icon: Upload,
+    desc: '输出：把上游产出按变量名透传成本节点的产出，声明「要展示的结果」',
+    // 只有「输出参数」一栏：它的产出名就是这些 inputs 的变量名，没有独立的 outputs 声明
+    flags: { prompt: false, inputs: true, outputs: false, variableParams: false },
   },
 }
 

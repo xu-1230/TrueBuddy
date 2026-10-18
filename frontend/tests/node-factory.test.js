@@ -52,8 +52,11 @@ test('nextNodeId：空画布从基准值起', () => {
 
 test('nextNodeId：取全图数字 id 最大值 +1（含迭代体子块）', () => {
   const nodes = canvasOfDefaultFlow()
-  // 默认流程含子块 173594，最大值仍是结束节点的 900001
-  assert.ok(nodes.some((node) => node.id === '173594'))
+  const blocks = DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node.type) === '4').blocks
+  // 默认流程含迭代体子块，最大值仍是结束节点的 900001
+  for (const block of blocks) {
+    assert.ok(nodes.some((node) => node.id === block.id), `子块 ${block.id} 应在画布节点里`)
+  }
   assert.equal(nextNodeId(nodes), '900002')
 })
 
@@ -232,8 +235,9 @@ test('nominalSizeOf：迭代容器取 containerSizeOf 的真实口径，与新�
   })
 })
 
-test('nominalSizeOf：五种类型的尺寸都是有限正数', () => {
-  for (const type of ['1', '2', '3', '4', '5']) {
+test('nominalSizeOf：各已登记类型的尺寸都是有限正数', () => {
+  // 类型清单从 NODE_META 派生：新增节点类型时这里自动覆盖，不用再手工补一个 id
+  for (const type of Object.keys(NODE_META)) {
     const size = nominalSizeOf(type)
     assert.ok(Number.isFinite(size.width) && size.width > 0, `${type} 宽度异常`)
     assert.ok(Number.isFinite(size.height) && size.height > 0, `${type} 高度异常`)
@@ -242,10 +246,10 @@ test('nominalSizeOf：五种类型的尺寸都是有限正数', () => {
 
 /* ===== 元数据单一真源 ===== */
 
-test('NODE_CATALOG：按 1→5 顺序覆盖全部可新建类型', () => {
+test('NODE_CATALOG：按元数据登记顺序覆盖全部可新建类型', () => {
   assert.deepEqual(
     NODE_CATALOG.map((item) => item.type),
-    ['1', '2', '3', '4', '5'],
+    Object.keys(NODE_META),
   )
   NODE_CATALOG.forEach((item) => {
     assert.equal(item.name, NODE_META[item.type].name)

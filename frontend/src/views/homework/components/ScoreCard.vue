@@ -5,7 +5,11 @@
         <el-icon><Document /></el-icon>
         {{ record.fileName }}
       </span>
-      <span v-if="record.studentName" class="score-card__student">{{ record.studentName }}</span>
+      <!-- 一学生一卡时「文件名」就是学生名，此时不重复挂一个学生标签 -->
+      <span
+        v-if="record.studentName && record.studentName !== record.fileName"
+        class="score-card__student"
+      >{{ record.studentName }}</span>
 
       <div class="score-card__nav">
         <button
@@ -42,15 +46,32 @@
     </header>
 
     <div class="score-card__body">
-      <!-- 作业原文 -->
+      <!-- 提交的文件：交了什么 + 模型实际读到了什么（漏读会导致少扣分，这里逐条核对） -->
       <section class="pane pane--origin">
         <header class="pane__head">
-          <span class="pane__title">作业原文</span>
-          <span class="pane__hint">由后端解析，可能与原文件排版存在差异</span>
+          <span class="pane__title">提交的文件</span>
+          <span class="pane__hint">共 {{ (record.files ?? []).length }} 份</span>
         </header>
-        <pre v-if="record.originalText" class="origin">{{ record.originalText }}</pre>
+        <ul v-if="(record.files ?? []).length" class="files">
+          <li v-for="(file, fileIndex) in record.files ?? []" :key="file.path ?? fileIndex" class="files__item">
+            {{ file.path || file.name || file }}
+          </li>
+        </ul>
         <div v-else class="origin origin--empty">
-          {{ record.errorMsg || '未能解析出作业文本内容' }}
+          未匹配到该学生提交的文件（可按学生姓名从作业文件夹里核对）
+        </div>
+
+        <header class="pane__head pane__head--sub">
+          <span class="pane__title">模型已读</span>
+          <span class="pane__hint">共 {{ (record.readFiles ?? []).length }} 份</span>
+        </header>
+        <ul v-if="(record.readFiles ?? []).length" class="files">
+          <li v-for="(path, readIndex) in record.readFiles ?? []" :key="readIndex" class="files__item">
+            {{ path }}
+          </li>
+        </ul>
+        <div v-else class="origin origin--empty">
+          {{ record.errorMsg || '本次没有记录到已读文件' }}
         </div>
       </section>
 
@@ -93,6 +114,28 @@
             <dd>{{ record.kbName }}</dd>
           </div>
         </dl>
+
+        <div v-if="(record.deductions ?? []).length" class="deductions">
+          <h4 class="comment__title">扣分明细</h4>
+          <table class="deductions__table">
+            <thead>
+              <tr>
+                <th>失分项</th>
+                <th class="deductions__diff">扣分</th>
+                <th>依据</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(item, index) in record.deductions ?? []" :key="index">
+                <td>{{ item?.item || '—' }}</td>
+                <td class="deductions__diff">
+                  {{ Number.isFinite(item?.diff) ? item.diff : '—' }}
+                </td>
+                <td>{{ item?.reason || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         <div class="comment">
           <h4 class="comment__title">AI 评语</h4>
@@ -473,5 +516,56 @@ const emit = defineEmits(['prev', 'next'])
   color: var(--tb-text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* ===== 文件清单（左栏：提交的文件 / 模型已读） ===== */
+.pane__head--sub {
+  margin-top: 0.9rem;
+}
+
+.files {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.74rem;
+  line-height: 1.85;
+  color: var(--tb-text-secondary);
+  word-break: break-all;
+}
+
+.files__item + .files__item {
+  margin-top: 2px;
+}
+
+/* ===== 扣分明细（右栏） ===== */
+.deductions {
+  margin-top: 0.9rem;
+}
+
+.deductions__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  line-height: 1.7;
+  color: var(--tb-text-secondary);
+}
+
+.deductions__table th,
+.deductions__table td {
+  padding: 0.35rem 0.4rem;
+  border-bottom: var(--tb-border-width) solid var(--tb-border);
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.deductions__table th {
+  font-weight: 700;
+  color: var(--tb-text-tertiary);
+}
+
+.deductions__diff {
+  width: 3.2rem;
+  white-space: nowrap;
+  color: var(--tb-danger);
 }
 </style>

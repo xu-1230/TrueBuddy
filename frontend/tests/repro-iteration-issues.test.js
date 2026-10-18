@@ -30,11 +30,13 @@ import {
   iterationChildExtent,
 } from '../src/views/workflow2/utils/iteration.js'
 
-/** 默认定义里的迭代节点（输入 1 + 迭代变量 1 + 输出 1） */
+/** 默认定义里的迭代节点 */
 const ITERATE_NODE = DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node.type) === '4')
 const CONTAINER_ID = ITERATE_NODE.id
-/** 迭代体子块（单份批改） */
-const CHILD_ID = '173594'
+/** 迭代体首个子块（id 从定义派生：写死会在替换默认流程时染红） */
+const CHILD_ID = ITERATE_NODE.blocks[0].id
+/** 迭代体子块个数：节点初始尺寸与子块坐标都按它算 */
+const CHILD_COUNT = ITERATE_NODE.blocks.length
 /** 顶部卡片的变量个数（用于估算行数上界） */
 const ROW_COUNT = cardRowCountOf(ITERATE_NODE.data)
 
@@ -58,7 +60,7 @@ test('问题 1：子块的拖拽约束与可见画布区重合（不再压到卡
   // extent 的 padding 顺序同 CSS 四值：上 右 下 左
   const [top, right, bottom, left] = extent.padding
   const border = CARD_LAYOUT.borderWidth
-  const box = containerSizeOf(1, TOP_AREA)
+  const box = containerSizeOf(CHILD_COUNT, TOP_AREA)
 
   // 约束矩形（相对父节点盒）= 画布区在卡片内的实际锚定矩形：
   // 画布区相对 `.node-card` 的 padding box 内缩 canvasInset，而父节点盒是 border box，故各加一个边框宽
@@ -78,14 +80,15 @@ test('问题 1：子块的拖拽约束与可见画布区重合（不再压到卡
     '约束上边界 = 顶部内容区 + 内缩（+ 边框）：子块不可能停到头部 / 变量行上')
 
   // 对照：初始位置仍在画布区内
-  const initial = childPositionOf(0, 1, TOP_AREA)
+  const initial = childPositionOf(0, CHILD_COUNT, TOP_AREA)
   assert.ok(initial.y >= top - border, '初始 y 在画布区内')
   assert.ok(initial.x >= left - border && initial.x < box.width - right, '初始 x 在画布区内')
 })
 
 test('问题 2：画布上移除内部边后，折叠回后端的 node.edges 里不应再有它', () => {
   const { nodes, edges } = expandIteration(ITERATE_NODE)
-  const target = edges.find((edge) => edge.source === CHILD_ID && edge.target === CONTAINER_ID)
+  // 「子块 → 容器」是迭代体的虚拟出口，只挂在**没有出边的那个子块**上（不一定是首个子块）
+  const target = edges.find((edge) => edge.target === CONTAINER_ID)
   assert.ok(target, '默认定义里存在「子块 → 容器」的内部边')
 
   const remaining = edges.filter((edge) => edge.id !== target.id)

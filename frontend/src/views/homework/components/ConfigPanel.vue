@@ -166,24 +166,11 @@
             </div>
           </div>
 
-          <div class="field field--row">
-            <span class="field__label">可识别图片</span>
-            <el-switch v-model="recognizeImage" :disabled="grading" />
-          </div>
-
-          <div class="field field--row">
-            <span class="field__label">批改并发数量</span>
-            <el-input-number
-              v-model="concurrency"
-              :min="1"
-              :max="MAX_CONCURRENCY"
-              :disabled="grading"
-              size="small"
-              controls-position="right"
-            />
-          </div>
+          <!-- 原「可识别图片 / 批改并发数量」两个开关只是摆了控件、从不进请求体，已摘掉。
+               能力本身仍是规划项（图片识别要多模态模型；并发批改要迭代节点从串行改成并行），
+               落地时再接回来 —— 见 docs/specs/2026-10-14-批改作业工作流定义替换.md 的规划项。 -->
           <p class="field__tip">
-            并发数越高批改越快，但会同步占用大模型额度；图片识别需多模态模型支持，暂不可用时会在评语中提示人工复核。
+            图片识别与并发批改属规划能力，当前工作流不支持，因此这里不再提供开关。
           </p>
         </div>
       </section>
@@ -221,8 +208,6 @@ import SquircleButton from './SquircleButton.vue'
 
 /** AI 描述说明字数上限（与后端 DESCRIPTION_MAX 一致） */
 const DESC_MAX = 500
-/** 并发数上限（与后端 tb.homework.max-concurrency 一致） */
-const MAX_CONCURRENCY = 5
 
 const EXPORT_OPTIONS = [
   { label: 'Excel', value: 'xlsx' },
@@ -233,8 +218,6 @@ const spaceIds = defineModel('spaceIds', { default: () => [] })
 const description = defineModel('description', { default: '' })
 const exportFormat = defineModel('exportFormat', { default: 'xlsx' })
 const workflow = defineModel('workflow', { default: 'standard' })
-const recognizeImage = defineModel('recognizeImage', { default: false })
-const concurrency = defineModel('concurrency', { default: 3 })
 const folder = defineModel('folder', { default: null })
 
 const props = defineProps({
@@ -363,12 +346,6 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-}
-
-.field--row {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .field__label {
@@ -587,16 +564,6 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 
 :deep(.el-segmented__item-selected) {
   box-shadow: var(--tb-shadow-1);
-}
-
-:deep(.el-input-number) {
-  width: 108px;
-}
-
-:deep(.el-input-number .el-input__wrapper) {
-  border-radius: 0;
-  background: var(--tb-bg-sunken);
-  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border) inset;
 }
 
 /* 底部主按钮 */
