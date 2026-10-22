@@ -43,5 +43,10 @@
             <artifactId>minio</artifactId>
             <version>8.5.10</version>
         </dependency>
+        <!-- 邮件发送（注册验证码、找回密码等） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
     </dependencies>
 </project>
