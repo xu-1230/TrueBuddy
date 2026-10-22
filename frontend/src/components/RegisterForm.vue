@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Key, Lock, Message, User } from '@element-plus/icons-vue'
+import { CircleCheck, Key, Lock, Message, Right } from '@element-plus/icons-vue'
 import { register, sendCode as sendEmailCode } from '@/api/auth'
 import { setRefreshToken, setToken } from '@/utils/auth'
 import { useCodeCooldown } from '@/composables/useCodeCooldown'
@@ -11,9 +11,8 @@ const emit = defineEmits(['login-success'])
 const formRef = ref()
 const submitting = ref(false)
 const sendingCode = ref(false)
-const form = reactive({ username: '', email: '', code: '', password: '', confirm: '' })
+const form = reactive({ email: '', code: '', password: '', confirm: '' })
 const rules = {
-  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   email: [
     { required: true, message: '请输入邮箱', trigger: 'blur' },
     { type: 'email', message: '邮箱格式不正确', trigger: 'blur' },
@@ -57,6 +56,10 @@ async function handleSendCode() {
   }
 }
 
+function normalizeCode() {
+  form.code = form.code.replace(/\D/g, '').slice(0, 6)
+}
+
 async function submit() {
   if (submitting.value) return
   const valid = await formRef.value.validate().catch(() => false)
@@ -65,7 +68,6 @@ async function submit() {
   submitting.value = true
   try {
     const data = await register({
-      username: form.username.trim(),
       email: form.email.trim(),
       password: form.password,
       code: form.code.trim(),
@@ -85,67 +87,118 @@ async function submit() {
 </script>
 
 <template>
-  <el-form
-    ref="formRef"
-    :model="form"
-    :rules="rules"
-    label-position="top"
-    hide-required-asterisk
-    size="large"
-    @submit.prevent
-    @keyup.enter="submit"
-  >
-    <el-form-item label="账号" prop="username">
-      <el-input v-model="form.username" placeholder="学号 / 工号" :prefix-icon="User" />
-    </el-form-item>
-    <el-form-item label="邮箱" prop="email">
-      <el-input v-model="form.email" placeholder="name@school.edu" :prefix-icon="Message" />
-    </el-form-item>
-    <el-form-item label="邮箱验证码" prop="code">
-      <div class="code-row">
-        <el-input v-model="form.code" placeholder="6 位数字" :prefix-icon="Key" />
-        <el-button
-          class="code-btn"
-          :disabled="running"
-          :loading="sendingCode"
-          @click="handleSendCode"
-        >
-          {{ running ? `${left}s 后重发` : '获取验证码' }}
-        </el-button>
-      </div>
-    </el-form-item>
-    <el-form-item label="密码" prop="password">
-      <el-input
-        v-model="form.password"
-        type="password"
-        placeholder="设置登录密码"
-        show-password
-        :prefix-icon="Lock"
-      />
-    </el-form-item>
-    <el-form-item label="确认密码" prop="confirm">
-      <el-input
-        v-model="form.confirm"
-        type="password"
-        placeholder="再输入一次"
-        show-password
-        :prefix-icon="Lock"
-      />
-    </el-form-item>
-    <el-button
-      type="primary"
-      class="submit-btn"
+  <div class="register-form">
+    <el-form
+      ref="formRef"
+      :model="form"
+      :rules="rules"
+      label-position="top"
+      hide-required-asterisk
       size="large"
-      :loading="submitting"
-      native-type="button"
-      @click="submit"
-      >注册</el-button
+      @submit.prevent
+      @keyup.enter="submit"
     >
-  </el-form>
+      <div class="register-form__grid">
+        <el-form-item class="register-form__item register-form__full" label="邮箱" prop="email">
+          <el-input
+            v-model="form.email"
+            placeholder="name@example.com"
+            maxlength="50"
+            autocomplete="email"
+            :prefix-icon="Message"
+          />
+        </el-form-item>
+
+        <el-form-item
+          class="register-form__item register-form__full"
+          label="邮箱验证码"
+          prop="code"
+        >
+          <div class="code-row">
+            <el-input
+              v-model="form.code"
+              placeholder="6 位数字"
+              maxlength="6"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              :prefix-icon="Key"
+              @input="normalizeCode"
+            />
+            <el-button
+              class="code-btn"
+              :disabled="running"
+              :loading="sendingCode"
+              @click="handleSendCode"
+            >
+              {{ running ? `${left}s 后重发` : '获取验证码' }}
+            </el-button>
+          </div>
+        </el-form-item>
+
+        <el-form-item class="register-form__item" label="密码" prop="password">
+          <el-input
+            v-model="form.password"
+            type="password"
+            placeholder="设置登录密码"
+            autocomplete="new-password"
+            show-password
+            :prefix-icon="Lock"
+          />
+        </el-form-item>
+
+        <el-form-item class="register-form__item" label="确认密码" prop="confirm">
+          <el-input
+            v-model="form.confirm"
+            type="password"
+            placeholder="再输入一次"
+            autocomplete="new-password"
+            show-password
+            :prefix-icon="Lock"
+          />
+        </el-form-item>
+      </div>
+
+      <el-button
+        type="primary"
+        class="submit-btn"
+        size="large"
+        :loading="submitting"
+        native-type="button"
+        @click="submit"
+      >
+        <span>创建账号</span>
+        <el-icon class="submit-btn__icon"><Right /></el-icon>
+      </el-button>
+
+      <p class="register-form__note">
+        <el-icon><CircleCheck /></el-icon>
+        注册成功后直接进入工作台，无需再次登录
+      </p>
+    </el-form>
+  </div>
 </template>
 
 <style scoped>
-/* 字段与按钮排版统一在 LoginView 的 .side__form :deep(...) 里 */
+.register-form {
+  width: 100%;
+}
+
+.register-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--tb-size-4);
+}
+
+.register-form__full {
+  grid-column: 1 / -1;
+}
+
+/* 两列布局压缩纵向空间，同时给校验提示留出足够高度；
+   选择器需压过 LoginView 中 .side__form .el-form-item 的同权重规则 */
+.register-form__grid .register-form__item.el-form-item {
+  margin-bottom: 20px;
+}
+
 .code-row {
   display: flex;
   gap: var(--tb-size-3);
@@ -163,18 +216,58 @@ async function submit() {
 }
 
 .submit-btn {
+  display: inline-flex;
+  gap: var(--tb-size-1);
   width: 100%;
-  margin-top: var(--tb-size-2);
+  margin-top: var(--tb-size-1);
+}
+
+.submit-btn__icon {
+  font-size: 14px;
+}
+
+.register-form__note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tb-size-1);
+  margin: var(--tb-size-1) 0 0;
+  color: var(--tb-text-secondary);
+  font-size: var(--tb-text-2xs);
+}
+
+.register-form__note .el-icon {
+  color: var(--tb-primary-text);
+  font-size: 12px;
 }
 
 @media (max-width: 768px) {
-  .code-row {
+  .register-form__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .register-form__grid .register-form__item.el-form-item {
+    margin-bottom: var(--tb-size-5);
+  }
+
+  /* 移动端保持验证码输入与按钮同一行，按钮固定宽度；仅极窄屏才换行 */
+  .register-form .code-row {
+    flex-wrap: nowrap;
+  }
+
+  .register-form .code-btn {
+    flex: 0 0 112px;
+    min-height: var(--tb-control-lg);
+  }
+}
+
+@media (max-width: 340px) {
+  .register-form .code-row {
     flex-wrap: wrap;
   }
 
-  .code-btn {
+  .register-form .code-btn {
     flex: 1 1 100%;
-    min-height: var(--tb-control-lg);
   }
 }
 </style>

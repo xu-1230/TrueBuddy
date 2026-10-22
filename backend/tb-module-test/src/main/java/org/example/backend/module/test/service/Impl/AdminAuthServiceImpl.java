@@ -1,5 +1,6 @@
 package org.example.backend.module.test.service.Impl;
 
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import jakarta.annotation.Resource;
 import org.example.backend.framework.common.util.object.BeanUtils;
@@ -68,9 +69,15 @@ public class AdminAuthServiceImpl implements AdminAuthService {
 
     @Override
     public AdminUserDO authenticate(String username, String password) {
+        String account = StrUtil.trim(username);
 
-        // 校验账号是否存在
-        AdminUserDO user = userService.getUserByUsername(username);
+        // 教师以邮箱为登录标识；管理员等旧账号仍可用 username 登录
+        AdminUserDO user;
+        if (StrUtil.contains(account, '@')) {
+            user = userService.getUserByEmail(account.toLowerCase(Locale.ROOT));
+        } else {
+            user = userService.getUserByUsername(account);
+        }
         if (user == null) {
 //            createLoginLog(null, username, logTypeEnum, LoginResultEnum.BAD_CREDENTIALS);
             throw exception(AUTH_LOGIN_BAD_CREDENTIALS);
@@ -80,7 +87,7 @@ public class AdminAuthServiceImpl implements AdminAuthService {
             throw exception(AUTH_LOGIN_BAD_CREDENTIALS);
         }
         // 校验是否禁用
-        validateUserStatus(user, username);
+        validateUserStatus(user, account);
         return user;
     }
 
@@ -127,16 +134,14 @@ public class AdminAuthServiceImpl implements AdminAuthService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public AuthLoginRespVO register(RegisterReqVO reqVO) {
-        String username = StrUtil.trim(reqVO.getUsername());
         String email = normalizeEmail(reqVO.getEmail());
         String password = reqVO.getPassword();
-        validateUsername(username);
         validatePassword(password);
         verifyCode(EmailCodeScene.REGISTER, email, reqVO.getCode());
 
         UserSaveReqVO createReqVO = new UserSaveReqVO();
-        createReqVO.setUsername(username);
-        createReqVO.setNickname(username);
+        createReqVO.setUsername(generateUsername());
+        createReqVO.setNickname(buildNickname(email));
         createReqVO.setEmail(email);
         createReqVO.setPassword(password);
         Long userId = userService.createUser(createReqVO);
@@ -147,7 +152,7 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         }
 
         AdminUserDO user = userService.getUser(userId);
-        AuthLoginRespVO respVO = createTokenAfterLoginSuccess(user, username);
+        AuthLoginRespVO respVO = createTokenAfterLoginSuccess(user, email);
         emailCodeStore.remove(EmailCodeScene.REGISTER, email);
         return respVO;
     }
@@ -182,7 +187,7 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         // 改密即撤销全部旧令牌，避免泄露的 token 继续可用
         oauth2TokenService.deleteByUserId(user.getId());
         emailCodeStore.remove(EmailCodeScene.RESET, email);
-        return new ResetPasswordRespVO(user.getUsername());
+        return new ResetPasswordRespVO(email);
     }
 
     @Override
@@ -239,11 +244,28 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         return normalized;
     }
 
-    /** 不限制用户名格式，仅挡住空值与超出列宽（username varchar(30)） */
-    private void validateUsername(String username) {
-        if (StrUtil.isBlank(username) || username.length() > 30) {
-            throw exception0(BAD_REQUEST.getCode(), "账号不能为空且不能超过 30 个字符");
+    /**
+     * 生成内部登录账号：教师不感知，邮箱才是对外身份；长度 18，满足 varchar(30)。
+     */
+    private String generateUsername() {
+        for (int i = 0; i < 5; i++) {
+            String candidate = "t_" + IdUtil.fastSimpleUUID().substring(0, 16);
+            if (userService.getUserByUsername(candidate) == null) {
+                return candidate;
+            }
         }
+        throw exception0(BAD_REQUEST.getCode(), "生成账号失败，请重试");
+    }
+
+    /** 教师昵称取邮箱 @ 前部分，超过 nickname 列宽时截断 */
+    private String buildNickname(String email) {
+        int at = email.indexOf('@');
+        String localPart = at > 0 ? email.substring(0, at) : "";
+        localPart = StrUtil.trim(localPart);
+        if (StrUtil.isBlank(localPart)) {
+            return "老师";
+        }
+        return StrUtil.subPre(localPart, 30);
     }
 
     /** 不限制密码格式，仅要求非空 */

@@ -19,7 +19,7 @@ const mode = ref('account')
 const accountFormRef = ref()
 const accountForm = reactive({ username: '', password: '', remember: true })
 const accountRules = {
-  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+  username: [{ required: true, message: '请输入邮箱或账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 const submitting = ref(false)
@@ -56,7 +56,7 @@ async function submitAccount() {
   submitting.value = true
   try {
     // 响应拦截器已解包 CommonResult：code !== 0 与网络异常都会 reject，故这里只需处理成功与失败两支
-    const data = await login(accountForm.username, accountForm.password)
+    const data = await login(accountForm.username.trim(), accountForm.password)
     // 勾选「记住我」才写 30 天持久 Cookie，否则维持会话级
     const expiresDays = accountForm.remember ? 30 : undefined
     setToken(data.accessToken, expiresDays)
@@ -133,8 +133,13 @@ async function sendCode() {
       @submit.prevent
       @keyup.enter="submitAccount"
     >
-      <el-form-item label="账号" prop="username">
-        <el-input v-model="accountForm.username" placeholder="学号 / 工号" :prefix-icon="User" />
+      <el-form-item label="邮箱 / 账号" prop="username">
+        <el-input
+          v-model="accountForm.username"
+          placeholder="name@example.com 或 admin"
+          autocomplete="username"
+          :prefix-icon="User"
+        />
       </el-form-item>
       <el-form-item label="密码" prop="password">
         <el-input
