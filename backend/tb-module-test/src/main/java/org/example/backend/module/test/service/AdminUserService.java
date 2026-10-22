@@ -16,7 +16,14 @@ public interface AdminUserService {
 
     AdminUserDO getUserByUsername(String username);
 
+    AdminUserDO getUserByEmail(String email);
+
     AdminUserDO getUser(Long id);
 
     boolean isPasswordMatch(String rawPassword, String encodedPassword);
+
+    /**
+     * 重置用户密码（入参为明文，内部做 MD5）。
+     */
+    void updatePassword(Long id, String rawPassword);
 }

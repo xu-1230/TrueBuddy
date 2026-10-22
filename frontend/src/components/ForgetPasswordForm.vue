@@ -2,12 +2,15 @@
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Key, Lock, Message } from '@element-plus/icons-vue'
+import { resetPassword, sendCode as sendEmailCode } from '@/api/auth'
 import { useCodeCooldown } from '@/composables/useCodeCooldown'
 
 const emit = defineEmits(['go-login'])
 
 const formRef = ref()
-const form = reactive({ email: '', code: '', password: '' })
+const submitting = ref(false)
+const sendingCode = ref(false)
+const form = reactive({ email: '', code: '', password: '', confirm: '' })
 const rules = {
   email: [
     { required: true, message: '请输入邮箱', trigger: 'blur' },
@@ -15,26 +18,62 @@ const rules = {
   ],
   code: [{ required: true, message: '请输入验证码', trigger: 'blur' }],
   password: [{ required: true, message: '请设置新密码', trigger: 'blur' }],
+  confirm: [
+    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    {
+      validator: (_rule, value, callback) => {
+        if (value !== form.password) {
+          callback(new Error('两次输入的密码不一致'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur',
+    },
+  ],
 }
 const { left, running, start } = useCodeCooldown()
 
-async function sendCode() {
+async function handleSendCode() {
   // 邮箱没填对时不进入冷却，避免白白等一分钟
   const emailValid = await formRef.value
     .validateField('email')
     .then(() => true)
     .catch(() => false)
   if (!emailValid) return
-  if (!start()) return
-  ElMessage.info('验证码已发送，请注意查收')
+  if (sendingCode.value || running.value) return
+
+  sendingCode.value = true
+  try {
+    await sendEmailCode(form.email.trim(), 'reset')
+    start()
+    ElMessage.success('验证码已发送，请注意查收')
+  } catch (error) {
+    ElMessage.error(error?.message || '验证码发送失败，请稍后重试')
+  } finally {
+    sendingCode.value = false
+  }
 }
 
-function submit() {
-  formRef.value.validate((valid) => {
-    if (!valid) return
-    ElMessage.success('密码重置成功')
-    emit('go-login')
-  })
+async function submit() {
+  if (submitting.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  submitting.value = true
+  try {
+    const data = await resetPassword({
+      email: form.email.trim(),
+      code: form.code.trim(),
+      password: form.password,
+    })
+    ElMessage.success('密码重置成功，请用新密码登录')
+    emit('go-login', data?.username || '')
+  } catch (error) {
+    ElMessage.error(error?.message || '密码重置失败，请稍后重试')
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 
@@ -55,7 +94,12 @@ function submit() {
     <el-form-item label="验证码" prop="code">
       <div class="code-row">
         <el-input v-model="form.code" placeholder="6 位数字" :prefix-icon="Key" />
-        <el-button class="code-btn" :disabled="running" @click="sendCode">
+        <el-button
+          class="code-btn"
+          :disabled="running"
+          :loading="sendingCode"
+          @click="handleSendCode"
+        >
           {{ running ? `${left}s 后重发` : '获取验证码' }}
         </el-button>
       </div>
@@ -69,7 +113,22 @@ function submit() {
         :prefix-icon="Lock"
       />
     </el-form-item>
-    <el-button type="primary" class="submit-btn" size="large" native-type="button" @click="submit"
+    <el-form-item label="确认新密码" prop="confirm">
+      <el-input
+        v-model="form.confirm"
+        type="password"
+        placeholder="再输入一次"
+        show-password
+        :prefix-icon="Lock"
+      />
+    </el-form-item>
+    <el-button
+      type="primary"
+      class="submit-btn"
+      size="large"
+      :loading="submitting"
+      native-type="button"
+      @click="submit"
       >重置密码</el-button
     >
     <p class="form-row">
@@ -77,8 +136,8 @@ function submit() {
         class="form-link"
         role="button"
         tabindex="0"
-        @click="emit('go-login')"
-        @keyup.enter="emit('go-login')"
+        @click="emit('go-login', '')"
+        @keyup.enter="emit('go-login', '')"
         >返回登录</a
       >
     </p>

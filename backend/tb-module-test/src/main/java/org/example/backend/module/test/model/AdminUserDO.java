@@ -16,7 +16,6 @@ public class AdminUserDO{
     private String nickname;
     private String remark;
     private String email;
-    private Integer sex;
     private String avatar;
     private Integer status;
     private String loginIp;

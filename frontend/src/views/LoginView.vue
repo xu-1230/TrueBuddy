@@ -49,6 +49,8 @@ const FORM_KEYS = Object.keys(FORM_MAP)
 /** /register 复用本页，初始态跟随路由名；页内切换不回写地址，避免路由与状态两份真相 */
 const initialKey = FORM_KEYS.includes(route.name) ? route.name : 'login'
 const formType = ref(initialKey)
+/** 找回密码成功后带回的账号，用于登录表单预填 */
+const prefillUsername = ref('')
 
 const currentComponent = computed(() => FORM_MAP[formType.value])
 const copy = computed(() => COPY[formType.value])
@@ -61,6 +63,12 @@ function switchForm(key) {
 
 function goForgot() {
   formType.value = 'forgot'
+}
+
+/** 找回密码成功：回登录态并预填账号 */
+function onResetSuccess(username) {
+  prefillUsername.value = username || ''
+  formType.value = 'login'
 }
 
 /**
@@ -128,10 +136,10 @@ function enterPreview() {
             <component
               :is="currentComponent"
               :key="formType"
+              v-bind="formType === 'login' ? { initialUsername: prefillUsername } : {}"
               @go-forgot="goForgot"
-              @go-login="switchForm('login')"
+              @go-login="onResetSuccess"
               @login-success="onLoginSuccess"
-              @register-success="switchForm('login')"
             />
           </Transition>
         </div>

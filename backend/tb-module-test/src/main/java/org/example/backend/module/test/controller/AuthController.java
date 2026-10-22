@@ -6,6 +6,11 @@ import org.example.backend.framework.common.pojo.CommonResult;
 import org.example.backend.module.test.model.vo.AuthLoginReqVO;
 import org.example.backend.module.test.model.vo.AuthLoginRespVO;
 import org.example.backend.module.test.model.vo.AuthRefreshReqVO;
+import org.example.backend.module.test.model.vo.EmailCodeSendReqVO;
+import org.example.backend.module.test.model.vo.LoginByCodeReqVO;
+import org.example.backend.module.test.model.vo.RegisterReqVO;
+import org.example.backend.module.test.model.vo.ResetPasswordReqVO;
+import org.example.backend.module.test.model.vo.ResetPasswordRespVO;
 import org.example.backend.module.test.service.AdminAuthService;
 import org.springframework.web.bind.annotation.*;
 
@@ -38,5 +43,33 @@ public class AuthController {
         return success(authService.refreshToken(reqVO.getRefreshToken()));
     }
 
+    /** 发送邮箱验证码：scene = register / reset / login */
+    @PostMapping("/send-code")
+    @PermitAll
+    public CommonResult<Boolean> sendCode(@RequestBody EmailCodeSendReqVO reqVO) {
+        authService.sendCode(reqVO);
+        return success(true);
+    }
+
+    /** 邮箱验证码注册，成功后直接返回登录令牌 */
+    @PostMapping("/register")
+    @PermitAll
+    public CommonResult<AuthLoginRespVO> register(@RequestBody RegisterReqVO reqVO) {
+        return success(authService.register(reqVO));
+    }
+
+    /** 邮箱验证码登录 */
+    @PostMapping("/login/code")
+    @PermitAll
+    public CommonResult<AuthLoginRespVO> loginByCode(@RequestBody LoginByCodeReqVO reqVO) {
+        return success(authService.loginByCode(reqVO));
+    }
+
+    /** 邮箱验证码重置密码 */
+    @PostMapping("/reset-password")
+    @PermitAll
+    public CommonResult<ResetPasswordRespVO> resetPassword(@RequestBody ResetPasswordReqVO reqVO) {
+        return success(authService.resetPassword(reqVO));
+    }
 
 }
