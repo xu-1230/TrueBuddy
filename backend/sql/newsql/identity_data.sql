@@ -12,10 +12,14 @@ INSERT INTO system_role (id, name, code, status, remark) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 用户
-INSERT INTO system_user (id, username, password, nickname, status) VALUES
-    (2, 'normal', 'e10adc3949ba59abbe56e057f20f883e', '普通用户', 0),
-    (3, 'member', 'e10adc3949ba59abbe56e057f20f883e', '会员', 0)
+INSERT INTO "system_user" (id, username, password, nickname, email, status) VALUES
+    (2, 'normal', 'e10adc3949ba59abbe56e057f20f883e', '普通用户', 'normal@example.com', 0),
+    (3, 'member', 'e10adc3949ba59abbe56e057f20f883e', '会员', 'member@example.com', 0)
 ON CONFLICT (id) DO NOTHING;
+
+-- 已存在的演示账号补齐邮箱，不覆盖已有值
+UPDATE "system_user" SET email = 'normal@example.com' WHERE username = 'normal' AND email IS NULL;
+UPDATE "system_user" SET email = 'member@example.com' WHERE username = 'member' AND email IS NULL;
 
 -- 用户-角色关联
 INSERT INTO system_user_role (user_id, role_id) VALUES

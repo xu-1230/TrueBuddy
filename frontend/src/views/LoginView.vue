@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { MoonNight, Sunny } from '@element-plus/icons-vue'
+import { MoonNight, Right, Sunny } from '@element-plus/icons-vue'
 import LoginForm from '@/components/LoginForm.vue'
 import RegisterForm from '@/components/RegisterForm.vue'
 import ForgetPasswordForm from '@/components/ForgetPasswordForm.vue'
@@ -35,7 +35,7 @@ const COPY = {
   register: {
     eyebrow: 'Sign up · 注册',
     title: 'JOIN US.',
-    lede: '开一个账号，把模板、批改、知识库与演讲收进同一张工作台。',
+    lede: '用邮箱开一个账号，把模板、批改、知识库与演讲收进同一张工作台。',
   },
   forgot: {
     eyebrow: 'Reset · 重置密码',
@@ -54,7 +54,7 @@ const prefillUsername = ref('')
 
 const currentComponent = computed(() => FORM_MAP[formType.value])
 const copy = computed(() => COPY[formType.value])
-/** 忘记密码态由表单自带的「返回登录」收尾，底部不再重复一个导航 */
+/** 忘记密码态由表单自带的「返回登录」收尾；登录/注册共用底部切换 */
 const showSwitch = computed(() => formType.value !== 'forgot')
 
 function switchForm(key) {
@@ -65,8 +65,8 @@ function goForgot() {
   formType.value = 'forgot'
 }
 
-/** 找回密码成功：回登录态并预填账号 */
-function onResetSuccess(username) {
+/** 找回密码成功或注册页点「去登录」：回登录态，有账号时预填 */
+function onGoLogin(username) {
   prefillUsername.value = username || ''
   formType.value = 'login'
 }
@@ -131,32 +131,32 @@ function enterPreview() {
         </div>
 
         <!-- 表单落在 1fr 行里：卡片总高由展台锚定，切换三态不再顶开版面 -->
-        <div class="side__form">
-          <Transition name="form-swap" mode="out-in">
-            <component
-              :is="currentComponent"
-              :key="formType"
-              v-bind="formType === 'login' ? { initialUsername: prefillUsername } : {}"
-              @go-forgot="goForgot"
-              @go-login="onResetSuccess"
-              @login-success="onLoginSuccess"
-            />
-          </Transition>
+        <div class="side__form" :class="{ 'side__form--register': formType === 'register' }">
+          <div class="side__form__scroll">
+            <Transition name="form-swap" mode="out-in">
+              <component
+                :is="currentComponent"
+                :key="formType"
+                v-bind="formType === 'login' ? { initialUsername: prefillUsername } : {}"
+                @go-forgot="goForgot"
+                @go-login="onGoLogin"
+                @login-success="onLoginSuccess"
+              />
+            </Transition>
+          </div>
+
+          <button
+            v-if="showSwitch"
+            type="button"
+            class="mode-switch"
+            @click="switchForm(formType === 'register' ? 'login' : 'register')"
+          >
+            <span>{{ formType === 'register' ? '已经开过账号？直接登录' : '还没有账号？注册一个' }}</span>
+            <el-icon><Right /></el-icon>
+          </button>
         </div>
 
         <footer class="side__foot">
-          <p v-if="showSwitch" class="account-switch">
-            <span>{{ formType === 'register' ? '已经开过账号？' : '还没有账号？' }}</span>
-            <a
-              class="account-switch__link"
-              role="button"
-              tabindex="0"
-              @click="switchForm(formType === 'register' ? 'login' : 'register')"
-              @keyup.enter="switchForm(formType === 'register' ? 'login' : 'register')"
-            >
-              {{ formType === 'register' ? '直接登录' : '注册一个' }}
-            </a>
-          </p>
           <p v-if="isDev" class="preview-entry">
             <a role="button" tabindex="0" @click="enterPreview" @keyup.enter="enterPreview">
               以演示数据预览管理端
@@ -341,10 +341,23 @@ function enterPreview() {
 
 /* —— 表单槽 —— */
 .side__form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-width: 440px;
+}
+
+/* 仅表单内容滚动，底部切换按钮始终保持可见 */
+.side__form__scroll {
+  flex: 0 1 auto;
   min-height: 0;
   overflow: auto;
   scrollbar-width: thin;
-  max-width: 440px;
+}
+
+/* 注册表单字段更多，双列布局需要更宽的容器；登录/找回保持原宽度 */
+.side__form--register {
+  max-width: 560px;
 }
 
 /* 三态表单共用一套字段语言：标签在上、行距收紧、控件对齐刻度。
@@ -450,31 +463,32 @@ function enterPreview() {
   gap: var(--tb-size-2);
 }
 
-.account-switch {
-  margin: 0;
-  font-size: var(--tb-text-sm);
+.side__form > .mode-switch {
+  flex: 0 0 auto;
+  margin-top: var(--tb-size-1);
+}
+
+.mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-size-1);
+  padding: var(--tb-size-1) 0;
+  border: 0;
+  background: none;
   color: var(--tb-text-secondary);
-}
-
-.account-switch__link {
-  margin-left: var(--tb-size-1);
-  color: var(--tb-primary-text);
+  font-family: inherit;
+  font-size: var(--tb-text-sm);
   cursor: pointer;
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition:
-    color var(--tb-motion-dur) var(--tb-motion-ease),
-    border-color var(--tb-motion-dur) var(--tb-motion-ease);
+  transition: color var(--tb-motion-dur) var(--tb-motion-ease);
 }
 
-.account-switch__link:hover {
-  color: var(--tb-primary);
-  border-bottom-color: var(--tb-primary-border);
+.mode-switch:hover {
+  color: var(--tb-primary-text);
 }
 
-.account-switch__link:focus-visible {
+.mode-switch:focus-visible {
   outline: 2px solid var(--tb-primary);
-  outline-offset: 2px;
+  outline-offset: 3px;
   border-radius: var(--tb-radius-xs);
 }
 
@@ -557,6 +571,10 @@ function enterPreview() {
     max-width: none;
     overflow: visible;
   }
+
+  .side__form__scroll {
+    overflow: visible;
+  }
 }
 
 @media (max-width: 768px) {
@@ -588,7 +606,7 @@ function enterPreview() {
     height: var(--tb-control-lg);
   }
 
-  .account-switch {
+  .mode-switch {
     font-size: var(--tb-text-md);
   }
 
@@ -628,7 +646,7 @@ function enterPreview() {
 
   .page-appearance__icon,
   .page-appearance,
-  .account-switch__link {
+  .mode-switch {
     transition: none;
   }
 

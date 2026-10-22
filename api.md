@@ -211,7 +211,7 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `username` | String | 是 | 登录账号 |
+| `username` | String | 是 | 教师填邮箱；管理员可填 `admin`。含 `@` 时按小写邮箱查，否则按用户名查 |
 | `password` | String | 是 | 登录密码（明文传输，内网部署；服务端按 MD5 比对） |
 
 **请求示例**
@@ -379,10 +379,17 @@ curl -X POST http://localhost:8086/api/system/auth/send-code \
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `username` | String | 是 | 登录账号，最长 30，注册后不可改 |
-| `email` | String | 是 | 已验证邮箱，最长 50 |
+| `email` | String | 是 | 已验证邮箱，最长 50，注册后作为登录标识 |
 | `password` | String | 是 | 明文传输，服务端存 MD5 |
 | `code` | String | 是 | `register` 场景的 6 位验证码 |
+
+**请求示例**
+
+```bash
+curl -X POST http://localhost:8086/api/system/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"teacher@example.com","password":"123456","code":"123456"}'
+```
 
 **响应**：`data` 结构同 [3.1.1](#311-登录) 的 `AuthLoginRespVO`，注册成功后直接签发登录令牌。
 
@@ -390,15 +397,14 @@ curl -X POST http://localhost:8086/api/system/auth/send-code \
 
 | code | message |
 | --- | --- |
-| `1002000001` | 用户账号已经存在 |
 | `1002000002` | 该邮箱已注册 |
 | `1002003000` | 验证码不存在，请先获取 |
 | `1002003001` | 验证码已过期，请重新获取 |
 | `1002003006` | 验证码不正确 |
 | `1002003005` | 默认角色不存在，请先执行 rbac_seed.sql |
-| `400` | 账号不能为空且不能超过 30 个字符 / 密码不能为空 |
+| `400` | 密码不能为空 |
 
-> 注册成功即自动登录；新用户默认绑定 `normal` 角色，`status=0`。
+> 注册成功即自动登录；新用户默认绑定 `normal` 角色，`status=0`。`username` 由服务端生成内部标识，教师对外只用邮箱登录；`nickname` 取邮箱 `@` 前部分（最长 30，空则「老师」）。
 
 ---
 
@@ -451,7 +457,7 @@ curl -X POST http://localhost:8086/api/system/auth/send-code \
 | `code` | String | 是 | `reset` 场景的 6 位验证码 |
 | `password` | String | 是 | 新密码，服务端存 MD5 |
 
-**响应**：`data` 为 `{ "username": "normal" }`，供前端回登录页预填账号。
+**响应**：`data` 为 `{ "email": "teacher@example.com" }`，供前端回登录页预填登录标识。
 
 **可能错误**
 

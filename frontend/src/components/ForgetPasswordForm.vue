@@ -68,7 +68,7 @@ async function submit() {
       password: form.password,
     })
     ElMessage.success('密码重置成功，请用新密码登录')
-    emit('go-login', data?.username || '')
+    emit('go-login', data?.email || '')
   } catch (error) {
     ElMessage.error(error?.message || '密码重置失败，请稍后重试')
   } finally {

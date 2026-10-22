@@ -216,10 +216,10 @@ load()
       :using-mock="usingMock"
       @change="load"
     >
-      <el-table-column prop="username" label="账号" min-width="130">
+      <el-table-column prop="username" label="邮箱 / 账号" min-width="180">
         <template #default="{ row }">
           <div class="user-cell">
-            <span class="user-cell__name">{{ row.username }}</span>
+            <span class="user-cell__name">{{ row.email || row.username }}</span>
             <span class="user-cell__nick">{{ row.nickname }}</span>
           </div>
         </template>
