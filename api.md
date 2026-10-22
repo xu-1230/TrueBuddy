@@ -97,6 +97,10 @@
 | --- | --- |
 | `/system/auth/login` | 登录（另标注了 `@PermitAll`） |
 | `/system/auth/refresh` | 刷新令牌（accessToken 往往已过期，必须免登录） |
+| `/system/auth/send-code` | 发送邮箱验证码（注册 / 找回密码 / 验证码登录） |
+| `/system/auth/register` | 邮箱验证码注册 |
+| `/system/auth/login/code` | 邮箱验证码登录 |
+| `/system/auth/reset-password` | 邮箱验证码重置密码 |
 | `/doc-template/**` | 文档模板生成模块全部接口 |
 | `/workflow/**` | 工作流定义模块全部接口（含联调接口 `/workflow/text`） |
 | `/homework/**` | 作业批改模块全部接口 |
@@ -183,6 +187,10 @@
 | 41 | 管理端身份 | GET | `/admin/auth/profile` | 当前账号资料 + 角色 + 权限 | 需登录 + `admin:dashboard` |
 | 42 | 管理端身份 | GET | `/admin/auth/permissions` | 当前账号权限码 | 需登录 + `admin:dashboard` |
 | 43 | 认证 | POST | `/system/auth/refresh` | 刷新令牌换取新令牌（旧 refreshToken 一次性消费） | 免登录 |
+| 44 | 认证 | POST | `/system/auth/send-code` | 发送邮箱验证码（scene=register/reset/login） | 免登录 |
+| 45 | 认证 | POST | `/system/auth/register` | 邮箱验证码注册，成功即登录 | 免登录 |
+| 46 | 认证 | POST | `/system/auth/login/code` | 邮箱验证码登录 | 免登录 |
+| 47 | 认证 | POST | `/system/auth/reset-password` | 邮箱验证码重置密码 | 免登录 |
 
 ---
 
@@ -204,14 +212,14 @@
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `username` | String | 是 | 登录账号 |
-| `password` | String | 是 | 登录密码（明文传输，内网部署） |
+| `password` | String | 是 | 登录密码（明文传输，内网部署；服务端按 MD5 比对） |
 
 **请求示例**
 
 ```bash
 curl -X POST http://localhost:8086/api/system/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}'
+  -d '{"username":"admin","password":"123456"}'
 ```
 
 **响应字段（data，`AuthLoginRespVO`）**
@@ -250,7 +258,7 @@ curl -X POST http://localhost:8086/api/system/auth/login \
 | `1002002001` | 登录失败，账号被禁用 |
 
 > 角色与权限随登录一并下发；管理端初始化仍以 `/admin/auth/profile` 为权威。
-> **安全提示**：当前 `AdminUserServiceImpl.isPasswordMatch` 恒为 `true`（演示便利），上线前必须改为 BCrypt 校验。
+> **安全提示**：当前密码按无盐 MD5 存储与比对，仅适用于毕业设计演示；生产环境应替换为 bcrypt / argon2。
 
 ---
 
@@ -306,6 +314,156 @@ curl -X POST http://localhost:8086/api/system/auth/refresh \
 | `401` | 刷新令牌已被使用，请重新登录 | 并发刷新时后到的请求 |
 
 > 旧 refreshToken 在刷新成功后立即从 `system_oauth2_refresh_token` 删除；重复使用同一个 refreshToken 会被拒绝，客户端应清空本地登录态并重新登录。
+
+---
+
+#### 3.1.3 发送邮箱验证码
+
+| 项 | 值 |
+| --- | --- |
+| 请求方法 | `POST` |
+| 请求路径 | `/system/auth/send-code` |
+| 鉴权 | 免登录 |
+| Content-Type | `application/json` |
+
+**请求参数（Body，`EmailCodeSendReqVO`）**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `email` | String | 是 | 收件邮箱，最长 50，服务端统一转小写 |
+| `scene` | String | 是 | `register` / `reset` / `login` |
+
+**场景前置条件**
+
+| scene | 条件 |
+| --- | --- |
+| `register` | 邮箱未被注册 |
+| `reset` | 邮箱对应的用户存在 |
+| `login` | 用户存在且 `status=0` |
+
+**请求示例**
+
+```bash
+curl -X POST http://localhost:8086/api/system/auth/send-code \
+  -H "Content-Type: application/json" \
+  -d '{"email":"780692702@qq.com","scene":"register"}'
+```
+
+**响应**：`data` 为 `true`。
+
+**可能错误**
+
+| code | message | 触发条件 |
+| --- | --- | --- |
+| `1002000002` | 该邮箱已注册 | `register` 场景邮箱已存在 |
+| `1002000003` | 该邮箱未注册 | `reset` / `login` 场景无此邮箱 |
+| `1002003002` | 验证码场景不合法 | `scene` 不在枚举内 |
+| `1002003003` | 验证码发送失败，请稍后重试 | SMTP 发信失败 |
+| `1002003004` | 邮箱格式不正确 | 为空、超长或格式不合法 |
+| `1002002001` | 登录失败，账号被禁用 | `login` 场景账号被禁用 |
+
+> 验证码为 6 位数字，5 分钟内有效，按 `scene:email` 独立存储；同一场景新码覆盖旧码，验证成功后立即删除。服务端当前不做发送频率限制，前端有 60 秒按钮冷却。
+
+---
+
+#### 3.1.4 邮箱验证码注册
+
+| 项 | 值 |
+| --- | --- |
+| 请求方法 | `POST` |
+| 请求路径 | `/system/auth/register` |
+| 鉴权 | 免登录 |
+| Content-Type | `application/json` |
+
+**请求参数（Body，`RegisterReqVO`）**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `username` | String | 是 | 登录账号，最长 30，注册后不可改 |
+| `email` | String | 是 | 已验证邮箱，最长 50 |
+| `password` | String | 是 | 明文传输，服务端存 MD5 |
+| `code` | String | 是 | `register` 场景的 6 位验证码 |
+
+**响应**：`data` 结构同 [3.1.1](#311-登录) 的 `AuthLoginRespVO`，注册成功后直接签发登录令牌。
+
+**可能错误**
+
+| code | message |
+| --- | --- |
+| `1002000001` | 用户账号已经存在 |
+| `1002000002` | 该邮箱已注册 |
+| `1002003000` | 验证码不存在，请先获取 |
+| `1002003001` | 验证码已过期，请重新获取 |
+| `1002003006` | 验证码不正确 |
+| `1002003005` | 默认角色不存在，请先执行 rbac_seed.sql |
+| `400` | 账号不能为空且不能超过 30 个字符 / 密码不能为空 |
+
+> 注册成功即自动登录；新用户默认绑定 `normal` 角色，`status=0`。
+
+---
+
+#### 3.1.5 邮箱验证码登录
+
+| 项 | 值 |
+| --- | --- |
+| 请求方法 | `POST` |
+| 请求路径 | `/system/auth/login/code` |
+| 鉴权 | 免登录 |
+| Content-Type | `application/json` |
+
+**请求参数（Body，`LoginByCodeReqVO`）**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `email` | String | 是 | 已注册邮箱 |
+| `code` | String | 是 | `login` 场景的 6 位验证码 |
+
+**响应**：`data` 结构同 [3.1.1](#311-登录) 的 `AuthLoginRespVO`。
+
+**可能错误**
+
+| code | message |
+| --- | --- |
+| `1002000003` | 该邮箱未注册 |
+| `1002002001` | 登录失败，账号被禁用 |
+| `1002003000` | 验证码不存在，请先获取 |
+| `1002003001` | 验证码已过期，请重新获取 |
+| `1002003006` | 验证码不正确 |
+
+> 验证码不自动注册新用户；邮箱不存在时直接拒绝。
+
+---
+
+#### 3.1.6 邮箱验证码重置密码
+
+| 项 | 值 |
+| --- | --- |
+| 请求方法 | `POST` |
+| 请求路径 | `/system/auth/reset-password` |
+| 鉴权 | 免登录 |
+| Content-Type | `application/json` |
+
+**请求参数（Body，`ResetPasswordReqVO`）**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `email` | String | 是 | 已注册邮箱 |
+| `code` | String | 是 | `reset` 场景的 6 位验证码 |
+| `password` | String | 是 | 新密码，服务端存 MD5 |
+
+**响应**：`data` 为 `{ "username": "normal" }`，供前端回登录页预填账号。
+
+**可能错误**
+
+| code | message |
+| --- | --- |
+| `1002000003` | 该邮箱未注册 |
+| `1002003000` | 验证码不存在，请先获取 |
+| `1002003001` | 验证码已过期，请重新获取 |
+| `1002003006` | 验证码不正确 |
+| `400` | 密码不能为空 |
+
+> 重置成功后该用户全部 accessToken / refreshToken 立即删除，旧登录态失效。
 
 ---
 

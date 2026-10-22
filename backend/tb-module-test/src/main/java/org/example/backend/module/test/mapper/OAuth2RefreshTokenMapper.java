@@ -31,4 +31,8 @@ public interface OAuth2RefreshTokenMapper {
      */
     @Delete("delete from system_oauth2_refresh_token where id = #{id}")
     int deleteById(Long id);
+
+    /** 重置密码后清空该用户的全部刷新令牌 */
+    @Delete("delete from system_oauth2_refresh_token where user_id = #{userId}")
+    int deleteByUserId(Long userId);
 }

@@ -102,6 +102,13 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
         return accessTokenDO;
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteByUserId(Long userId) {
+        oauth2AccessTokenMapper.deleteByUserId(userId);
+        oauth2RefreshTokenMapper.deleteByUserId(userId);
+    }
+
     private OAuth2AccessTokenDO createOAuth2AccessToken(OAuth2RefreshTokenDO refreshTokenDO) {
         OAuth2AccessTokenDO accessTokenDO = new OAuth2AccessTokenDO().setAccessToken(generateAccessToken())
                 .setUserId(refreshTokenDO.getUserId())
