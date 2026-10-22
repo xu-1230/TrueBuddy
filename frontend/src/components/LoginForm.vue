@@ -1,10 +1,14 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Key, Lock, Message, Right, User } from '@element-plus/icons-vue'
-import { login } from '@/api/test'
+import { login, loginByCode, sendCode as sendEmailCode } from '@/api/auth'
 import { setRefreshToken, setToken } from '@/utils/auth'
 import { useCodeCooldown } from '@/composables/useCodeCooldown'
+
+const props = defineProps({
+  initialUsername: { type: String, default: '' },
+})
 
 const emit = defineEmits(['go-forgot', 'login-success'])
 
@@ -19,6 +23,16 @@ const accountRules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 const submitting = ref(false)
+const sendingCode = ref(false)
+
+// 找回密码成功后带回账号，直接落到输入框
+watch(
+  () => props.initialUsername,
+  (value) => {
+    if (value) accountForm.username = value
+  },
+  { immediate: true },
+)
 
 // 邮箱登录
 const mailFormRef = ref()
@@ -60,9 +74,18 @@ async function submitAccount() {
 async function submitMail() {
   const valid = await mailFormRef.value.validate().catch(() => false)
   if (!valid) return
-  // 邮箱验证码目前是演示路径，没有真实登录响应，按普通用户分流
-  ElMessage.success('登录成功')
-  emit('login-success', null)
+  submitting.value = true
+  try {
+    const data = await loginByCode(mailForm.email.trim(), mailForm.code.trim())
+    setToken(data.accessToken)
+    setRefreshToken(data.refreshToken)
+    ElMessage.success('登录成功')
+    emit('login-success', data)
+  } catch (error) {
+    ElMessage.error(error?.message || '登录失败，请检查验证码或后端服务')
+  } finally {
+    submitting.value = false
+  }
 }
 
 function submit() {
@@ -81,8 +104,18 @@ async function sendCode() {
     .then(() => true)
     .catch(() => false)
   if (!emailValid) return
-  if (!start()) return
-  ElMessage.info('验证码已发送，请注意查收')
+  if (sendingCode.value || running.value) return
+
+  sendingCode.value = true
+  try {
+    await sendEmailCode(mailForm.email.trim(), 'login')
+    start()
+    ElMessage.success('验证码已发送，请注意查收')
+  } catch (error) {
+    ElMessage.error(error?.message || '验证码发送失败，请稍后重试')
+  } finally {
+    sendingCode.value = false
+  }
 }
 </script>
 
@@ -143,7 +176,12 @@ async function sendCode() {
       <el-form-item label="验证码" prop="code">
         <div class="code-row">
           <el-input v-model="mailForm.code" placeholder="6 位数字" :prefix-icon="Key" />
-          <el-button class="code-btn" :disabled="running" @click="sendCode">
+          <el-button
+            class="code-btn"
+            :disabled="running"
+            :loading="sendingCode"
+            @click="sendCode"
+          >
             {{ running ? `${left}s 后重发` : '获取验证码' }}
           </el-button>
         </div>

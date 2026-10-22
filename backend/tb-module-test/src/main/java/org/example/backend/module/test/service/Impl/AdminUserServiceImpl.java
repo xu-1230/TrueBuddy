@@ -7,6 +7,7 @@ import cn.hutool.core.util.StrUtil;
 import com.google.common.annotations.VisibleForTesting;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.example.backend.framework.common.util.crypto.MD5Utils;
 import org.example.backend.framework.common.util.object.BeanUtils;
 import org.example.backend.module.test.mapper.AdminUserMapper;
 import org.example.backend.module.test.model.AdminUserDO;
@@ -42,8 +43,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         // 2.1 插入用户
         AdminUserDO user = BeanUtils.toBean(createReqVO, AdminUserDO.class);
         user.setStatus(0); // 默认开启
-        // TODO 安全风险：演示阶段明文入库，上线前改为 passwordEncoder.encode(createReqVO.getPassword())
-        user.setPassword(createReqVO.getPassword());
+        user.setPassword(MD5Utils.encrypt(createReqVO.getPassword()));
         userMapper.insert(user);
         return user.getId();
     }
@@ -54,19 +54,30 @@ public class AdminUserServiceImpl implements AdminUserService {
     }
 
     @Override
+    public AdminUserDO getUserByEmail(String email) {
+        return userMapper.selectByEmail(email);
+    }
+
+    @Override
+    public void updatePassword(Long id, String rawPassword) {
+        validateUserExists(id);
+        userMapper.updatePassword(id, MD5Utils.encrypt(rawPassword));
+    }
+
+    @Override
     public AdminUserDO getUser(Long id) {
         return userMapper.selectById(id);
     }
 
     /**
-     * TODO 安全风险（演示阶段已知）：恒返回 true，任意密码都能通过。
-     *
-     * <p>上线前必须改为 {@code passwordEncoder.matches(rawPassword, encodedPassword)}，
-     * 并同步修正 {@link #createUser} 的明文入库问题；当前决策见 docs/08 §1.3。
+     * 按 MD5 比对密码；空值一律视为不匹配。
      */
     @Override
     public boolean isPasswordMatch(String rawPassword, String encodedPassword) {
-        return true;
+        if (StrUtil.isBlank(rawPassword) || StrUtil.isBlank(encodedPassword)) {
+            return false;
+        }
+        return MD5Utils.encrypt(rawPassword).equalsIgnoreCase(encodedPassword);
     }
 
     private AdminUserDO validateUserForCreateOrUpdate(Long id, String username, String email) {

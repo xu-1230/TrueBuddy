@@ -14,7 +14,6 @@ public class UserSaveReqVO {
     private String nickname;
     private String remark;
     private String email;
-    private Integer sex;
     private String avatar;
 
     // ========== 仅【创建】时，需要传递的字段 ==========

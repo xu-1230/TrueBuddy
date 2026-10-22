@@ -311,7 +311,6 @@ CACHE 1
   "nickname" varchar(30) COLLATE "pg_catalog"."default",
   "remark" varchar(500) COLLATE "pg_catalog"."default",
   "email" varchar(50) COLLATE "pg_catalog"."default",
-  "sex" int4,
   "avatar" varchar(512) COLLATE "pg_catalog"."default",
   "status" int4 NOT NULL DEFAULT 0,
   "login_ip" varchar(50) COLLATE "pg_catalog"."default",
@@ -323,7 +322,7 @@ COMMENT ON TABLE "public"."system_user" IS '用户表';
 -- ----------------------------
 -- Records of system_user
 -- ----------------------------
-INSERT INTO "public"."system_user" VALUES (1, 'admin', '$2a$10$kk8vivAz5ykChy.x5SjkpuuvJp47zapJmdl.pzdBiBF1t2zEpC2.O', '管理员', '模拟测试用户', 'admin@example.com', 1, NULL, 0, NULL, NULL);
+INSERT INTO "public"."system_user" VALUES (1, 'admin', 'e10adc3949ba59abbe56e057f20f883e', '管理员', '模拟测试用户', 'admin@example.com', NULL, 0, NULL, NULL);
 
 -- ----------------------------
 -- Table structure for system_user_role
@@ -1521,6 +1520,9 @@ SELECT setval('"public"."system_user_id_seq"', 1, true);
 -- ----------------------------
 CREATE UNIQUE INDEX "uk_system_user_username" ON "public"."system_user" USING btree (
   "username" COLLATE "pg_catalog"."default" "pg_catalog"."text_ops" ASC NULLS LAST
+);
+CREATE UNIQUE INDEX "uk_system_user_email" ON "public"."system_user" USING btree (
+  "email" COLLATE "pg_catalog"."default" "pg_catalog"."text_ops" ASC NULLS LAST
 );
 
 -- ----------------------------

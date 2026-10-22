@@ -1,7 +1,7 @@
 -- =============================================================
 -- TrueBuddy - 身份测试补充数据（种子数据）
 -- 普通用户 / 会员 / 管理员 三种身份
--- 密码列当前不参与校验（AdminUserServiceImpl.isPasswordMatch 恒 true），占位即可
+-- 密码统一为 MD5(123456)，与 TestView.vue 的演示提示一致
 -- =============================================================
 
 -- 角色
@@ -13,8 +13,8 @@ ON CONFLICT (id) DO NOTHING;
 
 -- 用户
 INSERT INTO system_user (id, username, password, nickname, status) VALUES
-    (2, 'normal', '123456', '普通用户', 0),
-    (3, 'member', '123456', '会员', 0)
+    (2, 'normal', 'e10adc3949ba59abbe56e057f20f883e', '普通用户', 0),
+    (3, 'member', 'e10adc3949ba59abbe56e057f20f883e', '会员', 0)
 ON CONFLICT (id) DO NOTHING;
 
 -- 用户-角色关联

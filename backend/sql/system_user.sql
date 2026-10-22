@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS "system_user" (
     nickname   VARCHAR(30),                             -- 用户昵称
     remark     VARCHAR(500),                            -- 备注
     email      VARCHAR(50),                             -- 邮箱
-    sex        INTEGER,                                 -- 性别：0=未知，1=男，2=女
     avatar     VARCHAR(512),                            -- 头像 URL
     status     INTEGER      NOT NULL DEFAULT 0,         -- 状态：0=正常，1=禁用
     login_ip   VARCHAR(50),                             -- 最后登录 IP
@@ -22,3 +21,6 @@ COMMENT ON TABLE "system_user" IS '用户表';
 
 -- 用户名唯一
 CREATE UNIQUE INDEX uk_system_user_username ON "system_user" (username);
+
+-- 邮箱唯一（PostgreSQL 允许多个 NULL，未填邮箱的账号不受影响）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_system_user_email ON "system_user" (email);

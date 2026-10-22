@@ -20,4 +20,9 @@ public interface OAuth2TokenService {
     OAuth2AccessTokenDO getAccessToken(String accessToken);
 
     OAuth2AccessTokenDO checkAccessToken(String accessToken);
+
+    /**
+     * 撤销指定用户的全部访问令牌与刷新令牌（改密后调用）。
+     */
+    void deleteByUserId(Long userId);
 }
