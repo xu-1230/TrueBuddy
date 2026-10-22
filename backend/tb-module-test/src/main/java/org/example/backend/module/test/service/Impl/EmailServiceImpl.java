@@ -1,44 +1,30 @@
 package org.example.backend.module.test.service.Impl;
 
 import jakarta.annotation.Resource;
-import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
+import org.example.backend.module.infra.service.MailService;
 import org.example.backend.module.test.model.enums.EmailCodeScene;
 import org.example.backend.module.test.service.EmailService;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 import static org.example.backend.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static org.example.backend.module.test.enums.ErrorCodeConstants.EMAIL_SEND_FAILURE;
 
 /**
- * QQ 邮箱 SMTP 发信实现。
- *
- * <p>同步发送：失败直接抛业务异常，调用方负责把已写入内存的验证码删掉。
+ * 验证码邮件内容组装；真正的 SMTP 发送交给基础设施模块的 {@link MailService}。
  */
 @Slf4j
 @Service
 public class EmailServiceImpl implements EmailService {
 
     @Resource
-    private JavaMailSender mailSender;
-
-    @Value("${spring.mail.username:}")
-    private String from;
+    private MailService mailService;
 
     @Override
     public void sendVerificationCode(String email, String code, EmailCodeScene scene) {
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(from, "TrueBuddy");
-            helper.setTo(email);
-            helper.setSubject(subject(scene));
-            helper.setText(content(code, scene), true);
-            mailSender.send(message);
-        } catch (Exception ex) {
+            mailService.sendHtml(email, subject(scene), content(code, scene));
+        } catch (RuntimeException ex) {
             log.error("[sendVerificationCode] 邮件发送失败 email={} scene={}", email, scene.getValue(), ex);
             throw exception(EMAIL_SEND_FAILURE);
         }

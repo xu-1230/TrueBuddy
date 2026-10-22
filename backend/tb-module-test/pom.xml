@@ -30,10 +30,11 @@
             <groupId>org.mybatis.spring.boot</groupId>
             <artifactId>mybatis-spring-boot-starter</artifactId>
         </dependency>
-        <!-- 注册/找回密码验证码邮件 -->
+        <!-- 基础设施模块：邮件发送等通用能力 -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-mail</artifactId>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-infra</artifactId>
+            <version>${revision}</version>
         </dependency>
         <!-- 统一返回对象 CommonResult -->
         <dependency>
