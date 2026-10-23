@@ -26,7 +26,7 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -55,6 +55,11 @@ import static org.example.backend.module.knowledgebase.enums.ErrorCodeConstants.
  * <p>状态机：0=待处理 → 1=解析中 → 5=解析完成待分片 → 6=AI分片中 → 4=分片待确认
  * →（向量化成功）2=已完成；任一步失败为 3=失败。
  * 「待确认」表示分片已落库但尚未向量化，此时用户放弃登记则执行逻辑删除（{@link #abandonDocument(Long)}）。
+ *
+ * <p>事务边界：本类不使用方法级 {@code @Transactional}。链路上的每一步都要调用解析引擎、大模型、
+ * MinIO 或向量库，这些外部调用既不能回滚、也不该长时间持有数据库连接；改为用
+ * {@link TransactionTemplate} 只把连续的数据库写入包成短事务，进度状态则单条自动提交、
+ * 让并发轮询立刻可见。
  */
 @Slf4j
 @Service
@@ -103,6 +108,9 @@ public class KbDocumentServiceImpl implements KbDocumentService {
     @Resource
     private DocumentChunkService documentChunkService;
 
+    @Resource
+    private TransactionTemplate transactionTemplate;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** 正在落块 / AI 分片的文档 id：前端会持续轮询，用于阻断并发重入（重复调用 LLM 会重复计费） */
@@ -132,7 +140,6 @@ public class KbDocumentServiceImpl implements KbDocumentService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void deleteDocument(Long id) {
         KbDocumentDO document = documentMapper.selectById(id);
         if (document == null) {
@@ -142,7 +149,6 @@ public class KbDocumentServiceImpl implements KbDocumentService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void abandonDocument(Long documentId) {
         KbDocumentDO document = documentMapper.selectById(documentId);
         if (document == null) {
@@ -158,15 +164,18 @@ public class KbDocumentServiceImpl implements KbDocumentService {
     }
 
     /**
-     * 逻辑删除文档：分片 -> 文档 -> 向量库 -> 解析任务资源。
+     * 逻辑删除文档：分片 -> 文档（事务内）-> 向量库 -> 解析任务资源（事务外）。
      *
-     * <p>向量清理与解析任务释放均为 best-effort，失败只记录日志，不影响删除结果。
+     * <p>向量清理与解析任务释放均为 best-effort，失败只记录日志，不影响删除结果；
+     * 放在事务提交之后执行，避免外部调用拖住数据库连接。
      */
     private void logicalDelete(KbDocumentDO document) {
         Long documentId = document.getId();
-        // 级联逻辑删除：分片 -> 文档
-        chunkMapper.deleteByDocumentId(documentId);
-        documentMapper.deleteById(documentId);
+        // 级联逻辑删除：分片 -> 文档（两步原子，避免「文档已删、分片还在」的孤儿行）
+        transactionTemplate.executeWithoutResult(status -> {
+            chunkMapper.deleteByDocumentId(documentId);
+            documentMapper.deleteById(documentId);
+        });
         // 清理向量库
         try {
             vectorStore.delete("documentId == '" + documentId + "'");
@@ -185,7 +194,6 @@ public class KbDocumentServiceImpl implements KbDocumentService {
 
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public List<Map<String, Object>> uploadAndSubmit(List<MultipartFile> files, Long spaceId) {
         if (spaceId == null || spaceMapper.selectById(spaceId) == null) {
             throw exception(SPACE_NOT_EXISTS);
@@ -229,7 +237,7 @@ public class KbDocumentServiceImpl implements KbDocumentService {
             throw new ServiceException(500, "提交解析任务失败: " + e.getMessage());
         }
 
-        // 2. 上传原文件到 MinIO 并记录 infra_file
+        // 2. 上传原文件到 MinIO（外部调用，留在事务外）
         String objectName = minioFileStorageService.uploadFile(file, UPLOAD_DIR);
         String fileUrl = minioFileStorageService.getFileUrl(objectName);
         InfraFileDO infraFile = new InfraFileDO();
@@ -239,19 +247,21 @@ public class KbDocumentServiceImpl implements KbDocumentService {
         infraFile.setUrl(fileUrl);
         infraFile.setSize(fileSize);
         infraFile.setType(file.getContentType());
-        infraFileMapper.insert(infraFile);
 
-        // 3. 落 kb_document（解析中）
+        // 3. 落库：infra_file + kb_document 放进同一个短事务（fileId 依赖前者的自增主键）
         KbDocumentDO document = new KbDocumentDO();
         document.setSpaceId(spaceId);
-        document.setFileId(infraFile.getId());
         document.setName(originalName);
         document.setType(ext.toUpperCase());
         document.setChunkCount(0);
         document.setStatus(STATUS_PARSING);
         document.setDocmindJobId(jobId);
         document.setParseProgress(0);
-        documentMapper.insert(document);
+        transactionTemplate.executeWithoutResult(status -> {
+            infraFileMapper.insert(infraFile);
+            document.setFileId(infraFile.getId());
+            documentMapper.insert(document);
+        });
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("documentId", document.getId());
@@ -263,8 +273,14 @@ public class KbDocumentServiceImpl implements KbDocumentService {
         return result;
     }
 
+    /**
+     * 轮询解析状态；解析成功时就地推进「落块 -> AI 分片 -> 分片落库」。
+     *
+     * <p>刻意不加 {@code @Transactional}：本方法会调用解析引擎与大模型，前端还在持续轮询，
+     * 用事务包住外部调用会让每个轮询请求都长时间占住一个数据库连接。
+     * 需要原子的多步写入由 {@link #handleParseSuccess} 内部按段各自开短事务。
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> getParseStatus(Long documentId) {
         KbDocumentDO document = documentMapper.selectById(documentId);
         if (document == null) {
@@ -349,8 +365,12 @@ public class KbDocumentServiceImpl implements KbDocumentService {
     /**
      * 解析成功：解析产物落库（块级）-> AI 语义分片 -> 分片落库 -> 置为待确认。
      *
-     * <p>本方法含两次外部调用（拉取解析结果、调用大模型分片），耗时较长；
-     * 前端会持续轮询 {@link #getParseStatus(Long)}，故以 {@link #processingDocuments} 阻断并发重入。
+     * <p>本方法含两次外部调用（拉取解析结果、调用大模型分片），耗时较长，所以不整体放进事务：
+     * 只在两段连续的数据库写入上各开一个短事务，中间的大模型调用不持有连接。
+     * 大模型调用失败时前面的落块结果保留（覆盖式写入，重试安全），文档停在「解析完成待分片」，
+     * 下一轮轮询会重新触发本方法。
+     *
+     * <p>前端会持续轮询 {@link #getParseStatus(Long)}，故以 {@link #processingDocuments} 阻断并发重入。
      */
     private Map<String, Object> handleParseSuccess(KbDocumentDO document, String jobId, ParseTaskStatus status) {
         Long documentId = document.getId();
@@ -370,7 +390,7 @@ public class KbDocumentServiceImpl implements KbDocumentService {
 
             // 2. 解析产物落库（覆盖式），作为 AI 分片与后续溯源的唯一输入
             documentMapper.updateParseState(documentId, STATUS_PARSE_DONE, 100, null);
-            saveParseBlocks(documentId, spaceId, blocks);
+            transactionTemplate.executeWithoutResult(ignored -> saveParseBlocks(documentId, spaceId, blocks));
 
             // 3. AI 语义分片
             documentMapper.updateParseState(documentId, STATUS_CHUNKING, 100, null);
@@ -381,8 +401,11 @@ public class KbDocumentServiceImpl implements KbDocumentService {
             }
 
             // 4. 覆盖式保存分片并置为「待确认」，等待用户确认后向量化
-            List<Map<String, Object>> preview = persistChunks(documentId, spaceId, chunkTexts);
-            documentMapper.updateParseSuccess(documentId, chunkTexts.size());
+            List<Map<String, Object>> preview = transactionTemplate.execute(ignored -> {
+                List<Map<String, Object>> saved = persistChunks(documentId, spaceId, chunkTexts);
+                documentMapper.updateParseSuccess(documentId, chunkTexts.size());
+                return saved;
+            });
             releaseQuietly(jobId);
             log.info("文档解析与分片完成: documentId={}, blocks={}, chunks={}, pages={}, tables={}",
                     documentId, blocks.size(), chunkTexts.size(), status.getPageCount(), status.getTableCount());
@@ -463,6 +486,34 @@ public class KbDocumentServiceImpl implements KbDocumentService {
         return buildStateResult(document, error);
     }
 
+    /**
+     * 覆盖式写入用户确认后的分片，并按落库结果构建向量文档。
+     *
+     * <p>只在事务内调用：向量元数据里的 chunkId 来自分片行的自增主键，删旧与插新必须一起生效。
+     */
+    private List<Document> saveConfirmedChunks(Long documentId, Long docSpaceId,
+                                               List<Map<String, Object>> confirmedChunks) {
+        chunkMapper.deleteByDocumentId(documentId);
+        List<Document> vectorDocs = new ArrayList<>(confirmedChunks.size());
+        for (int i = 0; i < confirmedChunks.size(); i++) {
+            String content = String.valueOf(confirmedChunks.get(i).getOrDefault("content", ""));
+
+            KbDocumentChunkDO chunk = new KbDocumentChunkDO();
+            chunk.setDocumentId(documentId);
+            chunk.setSpaceId(docSpaceId);
+            chunk.setChunkIndex(i);
+            chunk.setContent(content);
+            chunkMapper.insert(chunk);
+
+            Document vectorDoc = new Document(content);
+            vectorDoc.getMetadata().put("chunkId", String.valueOf(chunk.getId()));
+            vectorDoc.getMetadata().put("documentId", String.valueOf(documentId));
+            vectorDoc.getMetadata().put("spaceId", String.valueOf(docSpaceId));
+            vectorDocs.add(vectorDoc);
+        }
+        return vectorDocs;
+    }
+
     /** 覆盖式写入分片（AI 分片结果与前端确认结果共用） */
     private List<Map<String, Object>> persistChunks(Long documentId, Long spaceId, List<String> chunkTexts) {
         chunkMapper.deleteByDocumentId(documentId);
@@ -480,8 +531,15 @@ public class KbDocumentServiceImpl implements KbDocumentService {
         return preview;
     }
 
+    /**
+     * 用户确认分片后向量化：分片覆盖式落库（短事务）-> 向量库重建（事务外）-> 置为已完成。
+     *
+     * <p>向量库写入不能被事务包住：它不随数据库回滚。一旦半途失败又把分片事务一起回滚，
+     * 向量库里就留下一批指向已消失分片的脏数据，而数据库认为这篇文档什么都没发生。
+     * 改成先提交分片、再写向量；向量写失败时补偿清干净并原样抛出，
+     * 文档停在「待确认」，用户重试即可（重试会再清一次旧向量）。
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> vectorize(Long documentId, Long spaceId, String chunksJson) {
         KbDocumentDO document = documentMapper.selectById(documentId);
         if (document == null) {
@@ -523,26 +581,9 @@ public class KbDocumentServiceImpl implements KbDocumentService {
         Long docSpaceId = document.getSpaceId();
         log.info("向量化开始: documentId={}, chunks={}, spaceId={}", documentId, total, docSpaceId);
 
-        // 1. 覆盖式保存分片并构建向量文档
-        chunkMapper.deleteByDocumentId(documentId);
-        List<Document> vectorDocs = new ArrayList<>();
-        for (int i = 0; i < total; i++) {
-            Map<String, Object> item = confirmedChunks.get(i);
-            String content = String.valueOf(item.getOrDefault("content", ""));
-
-            KbDocumentChunkDO chunk = new KbDocumentChunkDO();
-            chunk.setDocumentId(documentId);
-            chunk.setSpaceId(docSpaceId);
-            chunk.setChunkIndex(i);
-            chunk.setContent(content);
-            chunkMapper.insert(chunk);
-
-            Document vectorDoc = new Document(content);
-            vectorDoc.getMetadata().put("chunkId", String.valueOf(chunk.getId()));
-            vectorDoc.getMetadata().put("documentId", String.valueOf(documentId));
-            vectorDoc.getMetadata().put("spaceId", String.valueOf(docSpaceId));
-            vectorDocs.add(vectorDoc);
-        }
+        // 1. 覆盖式保存分片并构建向量文档：删旧 + 插新必须原子，向量元数据还要回读分片自增 id
+        List<Document> vectorDocs = transactionTemplate.execute(ignored ->
+                saveConfirmedChunks(documentId, docSpaceId, confirmedChunks));
 
         // 2. 清理该文档旧向量，避免重复向量化产生脏数据
         try {
@@ -551,12 +592,24 @@ public class KbDocumentServiceImpl implements KbDocumentService {
             log.warn("清理旧向量失败（已忽略）: documentId={}, error={}", documentId, e.getMessage());
         }
 
-        // 3. 分批写入向量库
-        for (int i = 0; i < total; i += VECTOR_BATCH_SIZE) {
-            int end = Math.min(i + VECTOR_BATCH_SIZE, total);
-            vectorStore.add(vectorDocs.subList(i, end));
+        // 3. 分批写入向量库（外部调用，事务外）
+        try {
+            for (int i = 0; i < total; i += VECTOR_BATCH_SIZE) {
+                int end = Math.min(i + VECTOR_BATCH_SIZE, total);
+                vectorStore.add(vectorDocs.subList(i, end));
+            }
+        } catch (Exception e) {
+            // 半途已写入的向量不清就会成为永久脏数据（分片行还在，但文档没被置为已完成）
+            log.error("向量化写入失败，清理半成品向量: documentId={}, error={}", documentId, e.getMessage(), e);
+            try {
+                vectorStore.delete("documentId == '" + documentId + "'");
+            } catch (Exception cleanupError) {
+                log.warn("清理半成品向量失败（已忽略）: documentId={}, error={}", documentId, cleanupError.getMessage());
+            }
+            throw e;
         }
 
+        // 4. 向量库写入成功后才把文档置为「已完成」
         documentMapper.updateChunkCount(documentId, total);
         log.info("向量化完成: documentId={}, savedChunks={}", documentId, total);
 

@@ -27,6 +27,7 @@ import org.example.backend.module.lecture.service.MeetingService;
 import org.example.backend.module.lecture.util.LanAddressUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -94,6 +95,8 @@ public class MeetingServiceImpl implements MeetingService {
     private LiveKitTokenService liveKitTokenService;
     @Resource
     private LiveKitRoomServiceClient liveKitRoomServiceClient;
+    @Resource
+    private TransactionTemplate transactionTemplate;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -192,18 +195,27 @@ public class MeetingServiceImpl implements MeetingService {
                 meeting.getMeetingNo(), attendee.getId(), updated);
     }
 
+    /**
+     * 结束会议：状态与离会补记先落库并提交，之后才删 LiveKit 房间。
+     *
+     * <p>顺序不能颠倒。原来两步写和删房间同处一个事务里，删房间自身吞异常，所以事务只可能
+     * 因为提交失败而回滚——那时房间已经没了，会议在库里却还是「进行中」，学生被踢下线、
+     * 老师却还能继续发消息。改成提交后再删，最坏情况只是房间多留一会儿，
+     * 而 {@link LiveKitRoomServiceClient#deleteRoom} 本来就是 best-effort，
+     * 房间内客户端拿不到 Disconnected 也还有 GET /meeting/state 轮询兜底。
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void close(MeetingCloseReqVO reqVO) {
         LectureMeetingDO meeting = getMeetingOrThrow(reqVO.getMeetingNo());
         validateHostToken(meeting, reqVO.getHostToken());
         if (STATUS_CLOSED == meeting.getStatus()) {
             throw exception(MEETING_ALREADY_CLOSED);
         }
-        meetingMapper.updateStatus(meeting.getId(), STATUS_CLOSED, LocalDateTime.now());
-        attendeeMapper.markAllLeft(meeting.getId());
+        transactionTemplate.executeWithoutResult(status -> {
+            meetingMapper.updateStatus(meeting.getId(), STATUS_CLOSED, LocalDateTime.now());
+            attendeeMapper.markAllLeft(meeting.getId());
+        });
         // 删掉 LiveKit 房间：房间内所有客户端会立刻收到 Disconnected，这正是「会议已结束」的实时通知
-        // （best-effort，失败只记日志 —— 学生端还有 GET /meeting/state 轮询兜底）
         liveKitRoomServiceClient.deleteRoom(meeting.getMeetingNo());
         log.info("[close][会议已结束 meetingNo={}, meetingId={}]", meeting.getMeetingNo(), meeting.getId());
     }

@@ -1,1 +1,2 @@
 org.example.backend.framework.mybatis.config.MybatisPlusAutoConfiguration
+org.example.backend.framework.mybatis.config.TransactionTemplateAutoConfiguration

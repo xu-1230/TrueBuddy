@@ -21,8 +21,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.lang.reflect.Field;
 import java.time.LocalDateTime;
@@ -45,6 +49,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -79,6 +85,13 @@ class MeetingServiceImplTest {
     private LiveKitTokenService liveKitTokenService;
     @Mock
     private LiveKitRoomServiceClient liveKitRoomServiceClient;
+
+    /**
+     * 真实事务模板跑在 mock 的事务管理器上：只要求回调被执行，不模拟提交与回滚。
+     * 用实例而不是 mock，是为了让 {@code close} 里「先提交数据库、后删房间」的顺序真的被走一遍。
+     */
+    @Spy
+    private TransactionTemplate transactionTemplate = new TransactionTemplate(mock(PlatformTransactionManager.class));
 
     @InjectMocks
     private MeetingServiceImpl meetingService;
@@ -239,8 +252,10 @@ class MeetingServiceImplTest {
 
         meetingService.close(reqVO);
 
-        verify(attendeeMapper).markAllLeft(MEETING_ID);
-        verify(liveKitRoomServiceClient).deleteRoom(MEETING_NO);
+        // 房间必须在会议状态落库提交之后才删：反过来做会留下「房间没了、库里还在进行中」的会议
+        InOrder inOrder = inOrder(attendeeMapper, liveKitRoomServiceClient);
+        inOrder.verify(attendeeMapper).markAllLeft(MEETING_ID);
+        inOrder.verify(liveKitRoomServiceClient).deleteRoom(MEETING_NO);
     }
 
 }
