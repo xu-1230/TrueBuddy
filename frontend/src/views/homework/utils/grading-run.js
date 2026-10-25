@@ -109,7 +109,7 @@ async function runOnce({ baseState, body, signal, onEvent, onNode }) {
  *
  * @param {object} options 选项
  * @param {string} options.workflowId 批改工作流 id（必须已落库，`/chat` 不接受内联定义）
- * @param {object} options.inputs 首轮业务输入：`{ file_tree, description, know }`，键名与工作流开始节点声明的变量一致
+ * @param {object} options.inputs 首轮业务输入：`{ taskId }`，开始节点按它取本次批改的真实数据
  * @param {string} [options.title] 会话标题
  * @param {AbortSignal} [options.signal] 取消信号
  * @param {(stage: string) => void} [options.onStage] 阶段回调：`conversation` / `grade` / `confirm`

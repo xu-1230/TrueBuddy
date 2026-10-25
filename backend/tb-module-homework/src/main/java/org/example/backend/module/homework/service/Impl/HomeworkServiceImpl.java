@@ -14,7 +14,7 @@ import org.example.backend.module.infra.mapper.InfraFileMapper;
 import org.example.backend.module.infra.model.InfraFileDO;
 import org.example.backend.module.infra.service.MinioFileStorageService;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -68,9 +68,18 @@ public class HomeworkServiceImpl implements HomeworkService {
     private HomeworkTaskMapper taskMapper;
     @Resource
     private HomeworkFileMapper fileMapper;
+    @Resource
+    private TransactionTemplate transactionTemplate;
 
+    /**
+     * 上传整份作业文件夹并建任务。
+     *
+     * <p>先把所有文件传到 MinIO（外部调用，一次最多 50 份，不能包在事务里持有数据库连接），
+     * 再把 infra_file / 任务 / 作业清单收进同一个短事务，落库仍然全成或全败。
+     * 换过顺序以后语义也变了：原来第 20 份上传失败会把前 19 份的库记录一起回滚，
+     * 而那 19 个对象已经躺在 MinIO 里回滚不掉；现在前 19 份照常落库，只有第 20 份自己失败。
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public HomeworkUploadRespVO uploadAndBuildTree(List<MultipartFile> files, List<String> paths, String folderName) {
         long start = System.currentTimeMillis();
 
@@ -86,37 +95,45 @@ public class HomeworkServiceImpl implements HomeworkService {
         }
         List<String> normalizedPaths = normalizePaths(paths);
 
-        // 2. 逐份存储到 MinIO 并写入 infra_file，同时收集落库实体
+        // 2. 逐份校验并存储到 MinIO，收集待落库实体（此时 infra_file 尚未插入，fileId 留空）
         long totalSize = 0L;
+        List<InfraFileDO> pendingInfraFiles = new ArrayList<>(files.size());
         List<HomeworkFileDO> entities = new ArrayList<>(files.size());
         Map<String, InfraFileDO> storedByPath = new HashMap<>(files.size());
         for (int i = 0; i < files.size(); i++) {
             MultipartFile file = files.get(i);
             String relativePath = normalizedPaths.get(i);
-            InfraFileDO stored = storeOne(file, relativePath);
+            InfraFileDO stored = storeToMinio(file, relativePath);
             long size = stored.getSize() == null ? 0L : stored.getSize();
 
             HomeworkFileDO entity = new HomeworkFileDO();
-            entity.setFileId(stored.getId());
             entity.setRelativePath(relativePath);
             entity.setName(fileNameOf(relativePath));
             entity.setSize(size);
+            pendingInfraFiles.add(stored);
             entities.add(entity);
             storedByPath.put(relativePath, stored);
             totalSize += size;
         }
 
-        // 3. 落库：任务 + 该任务下每份作业
+        // 3. 落库：infra_file -> 任务 -> 该任务下每份作业
         HomeworkTaskDO task = new HomeworkTaskDO();
         task.setFolderName(resolveFolderName(folderName, normalizedPaths));
         task.setFileCount(entities.size());
         task.setTotalSize(totalSize);
         task.setStatus(0);
-        taskMapper.insert(task);
+        transactionTemplate.executeWithoutResult(status -> {
+            for (int i = 0; i < pendingInfraFiles.size(); i++) {
+                InfraFileDO infraFile = pendingInfraFiles.get(i);
+                infraFileMapper.insert(infraFile);
+                entities.get(i).setFileId(infraFile.getId());
+            }
+            taskMapper.insert(task);
+            entities.forEach(entity -> entity.setTaskId(task.getId()));
+            fileMapper.insertBatch(entities);
+        });
 
         Long taskId = task.getId();
-        entities.forEach(entity -> entity.setTaskId(taskId));
-        fileMapper.insertBatch(entities);
 
         // 4. 组装返回：按上传顺序输出相对路径与文件明细（自增 id 由落库后回查得到）
         HomeworkUploadRespVO respVO = buildRespVO(taskId, task.getFolderName(), normalizedPaths, storedByPath);
@@ -130,15 +147,17 @@ public class HomeworkServiceImpl implements HomeworkService {
     /**
      * 接收批改请求（第二步）。
      *
-     * <p>当前只把请求内容落日志，便于联调核对参数；真实批改（知识库检索 +
-     * 工作流编排 + 大模型评分）待后续接入，届时按 taskId 关联 homework_task / homework_file。
+     * <p>把批改要求与知识库写进该任务，工作流的开始节点随后按 taskId 回查（文件清单读 homework_file），
+     * 因此**必须在跑工作流之前调用**。
      */
     @Override
     public void receiveGradeRequest(HomeworkGradeReqVO reqVO) {
         List<HomeworkFileItemVO> fileItems = reqVO.getFiles() == null ? List.of() : reqVO.getFiles();
+        List<String> spaceIds = reqVO.getSpaceIds() == null ? List.of() : reqVO.getSpaceIds();
+        taskMapper.updateGradeConfig(reqVO.getTaskId(), reqVO.getDescription(), String.join(",", spaceIds));
         int descriptionLength = reqVO.getDescription() == null ? 0 : reqVO.getDescription().length();
         log.info("收到批改请求: taskId={}, spaceIds={}, fileCount={}, exportFormat={}, workflowId={}, descriptionLength={}",
-                reqVO.getTaskId(), reqVO.getSpaceIds(), fileItems.size(),
+                reqVO.getTaskId(), spaceIds, fileItems.size(),
                 reqVO.getExportFormat(), reqVO.getWorkflowId(), descriptionLength);
         // 批改取文件以 fileId 为准（fileId → infra_file 的 bucket/path → MinIO）；
         // 请求里的预签名 URL 7 天过期，只作辅助，不记录以免日志冗长
@@ -149,16 +168,42 @@ public class HomeworkServiceImpl implements HomeworkService {
         }
     }
 
+    @Override
+    public HomeworkTaskDO getTask(Long taskId) {
+        return taskMapper.selectById(taskId);
+    }
+
+    @Override
+    public List<HomeworkFileItemVO> listFileItems(Long taskId) {
+        List<HomeworkFileDO> files = fileMapper.selectListByTaskId(taskId);
+        List<HomeworkFileItemVO> items = new ArrayList<>(files.size());
+        for (HomeworkFileDO file : files) {
+            InfraFileDO infraFile = file.getFileId() == null ? null : infraFileMapper.selectById(file.getFileId());
+            HomeworkFileItemVO item = new HomeworkFileItemVO();
+            item.setId(file.getId());
+            item.setFileId(file.getFileId());
+            item.setName(file.getName());
+            item.setPath(file.getRelativePath());
+            item.setSize(file.getSize());
+            item.setType(infraFile == null ? null : infraFile.getType());
+            item.setUrl(infraFile == null ? null : infraFile.getUrl());
+            items.add(item);
+        }
+        return items;
+    }
+
     /**
-     * 单份存储：校验（错误信息带相对路径）→ MinIO → infra_file。
+     * 单份存储：校验（错误信息带相对路径）→ MinIO，返回尚未落库的 infra_file 实体。
      *
      * <p>刻意不复用 infra 的 {@code FileService.uploadFile}：它会拒绝 0 字节文件，
      * 而作业文件夹里带上空占位文件是常见情况，这里按「照常上传」处理，
      * 空文件同样会写入对象存储并落 infra_file（size = 0）。
      * 校验规则（扩展名 + 单文件 50MB）与 infra 保持一致，差别只在错误信息带上相对路径，
      * 便于批量上传时直接定位到具体是哪一份。
+     *
+     * <p>写库由调用方在短事务里统一完成，所以这里只填充字段、不插入（id 为空）。
      */
-    private InfraFileDO storeOne(MultipartFile file, String relativePath) {
+    private InfraFileDO storeToMinio(MultipartFile file, String relativePath) {
         if (file == null) {
             throw exception(HOMEWORK_FILE_EMPTY);
         }
@@ -180,7 +225,6 @@ public class HomeworkServiceImpl implements HomeworkService {
         infraFile.setUrl(fileUrl);
         infraFile.setSize(file.getSize());
         infraFile.setType(file.getContentType());
-        infraFileMapper.insert(infraFile);
         return infraFile;
     }
 

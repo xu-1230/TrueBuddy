@@ -12,6 +12,7 @@ import org.example.backend.framework.common.exception.ServiceException;
 import org.example.backend.framework.common.exception.enums.GlobalErrorCodeConstants;
 import org.example.backend.framework.security.LoginUser;
 import org.example.backend.framework.security.util.SecurityFrameworkUtils;
+import org.example.backend.module.homework.service.HomeworkService;
 import org.example.textflow.entity.WorkflowProcessRespVO;
 import org.example.textflow.model.ChatProtocol;
 import org.example.textflow.model.WorkflowConstants;
@@ -98,6 +99,9 @@ public class ChatServiceImpl implements ChatService {
     /** 大模型节点可自主调用的工具（当前为作业文件读取），装配图时传给节点 */
     private final WorkflowToolCallbacks workflowToolCallbacks;
 
+    /** 作业模块：开始节点按 taskId 取本次批改的真实输入 */
+    private final HomeworkService homeworkService;
+
     /**
      * 跑图的线程池：请求线程只负责把 {@link SseEmitter} 交回 Spring MVC，
      * 建图与执行全部在这里的线程上完成（**必须在请求线程之外**，原因见 {@link #runGraph}）。
@@ -110,13 +114,15 @@ public class ChatServiceImpl implements ChatService {
                           WorkflowConversationRepository conversationRepository,
                           WorkflowRunRepository runRepository,
                           @Qualifier("nodeChatClient") ChatClient nodeChatClient,
-                          WorkflowToolCallbacks workflowToolCallbacks) {
+                          WorkflowToolCallbacks workflowToolCallbacks,
+                          HomeworkService homeworkService) {
         this.workflowService = workflowService;
         this.workflowRepository = workflowRepository;
         this.conversationRepository = conversationRepository;
         this.runRepository = runRepository;
         this.nodeChatClient = nodeChatClient;
         this.workflowToolCallbacks = workflowToolCallbacks;
+        this.homeworkService = homeworkService;
         this.graphExecutor = Executors.newFixedThreadPool(GRAPH_MAX_CONCURRENT, runnable -> {
             Thread thread = new Thread(runnable, "workflow-graph");
             thread.setDaemon(true);
@@ -209,7 +215,7 @@ public class ChatServiceImpl implements ChatService {
         try {
             CompiledGraph graph = WorkflowGraphFactory.createGraph(
                     process, output -> push(publisher, executeId, output), nodeChatClient, checkpointSaver,
-                    workflowToolCallbacks.callbacks());
+                    workflowToolCallbacks.callbacks(), homeworkService);
 
             RunnableConfig.Builder configBuilder = RunnableConfig.builder().threadId(executeId);
             Map<String, Object> input = Map.of();

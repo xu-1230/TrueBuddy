@@ -339,7 +339,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 const descriptionFilled = computed(() => Boolean(config.description.trim()))
 
 const canGrade = computed(
-  () => fileCount.value > 0 && !grading.value,
+  () => fileCount.value > 0 && descriptionFilled.value && !grading.value,
 )
 
 const canExport = computed(() => records.value.length > 0 && !grading.value)
@@ -530,20 +530,28 @@ async function handleGrade() {
     gradingPhase.value = 'grading'
     ElMessage.success(`上传完成：共 ${data.fileCount} 份作业`)
 
-    // 第二步：跑批改工作流。业务输入按**开始节点声明的变量名**传进去
-    // （file_tree 用第一步的返回 —— 里面的 fileId 是模型读原文的唯一凭据；description 是配置面板里那段批改要求）。
+    // 第二步：先把本次批改的配置交给后端落库（批改要求与知识库写进该任务）。
+    // 第三步：跑批改工作流。业务输入只带 taskId —— 文件清单 / 批改要求 / 知识库都由开始节点
+    // 按 taskId 从作业模块取，避免「请求里传一份、库里存一份」两处都能送值。
     //
     // 两处交互约定：
     // - `onConfirm`：跑到人工确认节点时弹「确认批改列表」，用户点确定才继续、关掉即取消；
     // - `onRecord`：迭代体每完成一份学生就上一张卡，不必等整轮跑完。
     try {
+      await submitGrading({
+        taskId: data.taskId,
+        // 面板里的「默认知识库」占位项不对应任何真实空间，不进批改配置
+        spaceIds: config.spaceIds.filter((id) => id !== DEFAULT_KB.id),
+        // 文件清单（含相对路径、fileId 与 MinIO 预签名 URL），直接透传第一步的返回
+        files: data.files ?? [],
+        description: config.description.trim(),
+        exportFormat: config.exportFormat,
+        workflowId: config.workflow,
+      })
+
       const result = await runGradingWorkflow({
         workflowId: config.workflow,
-        inputs: {
-          file_tree: data.files ?? [],
-          description: config.description.trim(),
-          know: [...config.spaceIds],
-        },
+        inputs: { taskId: data.taskId },
         title: `作业批改 #${data.taskId}`,
         onConfirm: askConfirm,
         onRecord: (record) => {
@@ -580,22 +588,6 @@ async function handleGrade() {
       } else {
         ElMessage.error(gradeError?.message || '批改失败，请重试')
       }
-    }
-
-    // 第三步：把本次批改的配置报给后端留痕（该端点当前只打日志；落库与导出接入后由它承担）。
-    // 独立容错：它失败不影响已经拿到的批改结果。
-    try {
-      await submitGrading({
-        taskId: data.taskId,
-        spaceIds: [...config.spaceIds],
-        // 文件清单（含相对路径、fileId 与 MinIO 预签名 URL），直接透传第一步的返回
-        files: data.files ?? [],
-        description: config.description.trim(),
-        exportFormat: config.exportFormat,
-        workflowId: config.workflow,
-      })
-    } catch {
-      // 留痕失败不提示：批改结果已经拿到，这一步只是记录
     }
   } catch (e) {
     ElMessage.error(e?.message || '上传失败，请重试')

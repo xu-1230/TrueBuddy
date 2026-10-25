@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS homework_task (
     file_count  INTEGER      NOT NULL DEFAULT 0,         -- 作业份数
     total_size  BIGINT       NOT NULL DEFAULT 0,         -- 文件总大小（字节）
     status      SMALLINT     NOT NULL DEFAULT 0,         -- 任务状态，见下方 COMMENT
+    description VARCHAR(500),                            -- AI 描述说明（批改要求），由 POST /homework/grade 写入
+    space_ids   VARCHAR(512),                            -- 知识库 id 列表（逗号分隔），由 POST /homework/grade 写入
     create_time TIMESTAMP    NOT NULL DEFAULT now(),     -- 创建时间
     update_time TIMESTAMP    NOT NULL DEFAULT now(),     -- 更新时间
     creator     BIGINT,                                  -- 创建人 id
@@ -26,7 +28,13 @@ COMMENT ON COLUMN homework_task.folder_name IS '作业文件夹名';
 COMMENT ON COLUMN homework_task.file_count IS '作业份数';
 COMMENT ON COLUMN homework_task.total_size IS '文件总大小（字节）';
 COMMENT ON COLUMN homework_task.status IS '任务状态：0=已上传待批改，1=批改中，2=成功，3=部分成功，4=失败';
+COMMENT ON COLUMN homework_task.description IS 'AI 描述说明（批改要求），工作流开始节点按 taskId 读取';
+COMMENT ON COLUMN homework_task.space_ids IS '知识库 id 列表（逗号分隔），工作流开始节点按 taskId 读取为 know';
 
 -- 列表按创建时间倒序（仅约束未删除记录）
 CREATE INDEX IF NOT EXISTS idx_homework_task_create_time
     ON homework_task (create_time DESC) WHERE deleted = FALSE;
+
+-- 已建表的环境补列（新环境由上面的 CREATE TABLE 直接建出）
+ALTER TABLE homework_task ADD COLUMN IF NOT EXISTS description VARCHAR(500);
+ALTER TABLE homework_task ADD COLUMN IF NOT EXISTS space_ids   VARCHAR(512);

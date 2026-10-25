@@ -2,12 +2,12 @@ package org.example.textflow.node;
 
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
+import org.example.backend.module.homework.model.HomeworkTaskDO;
 import org.example.backend.module.homework.model.vo.HomeworkFileItemVO;
-import org.example.textflow.entity.NodeData;
-import org.example.textflow.entity.NodeField;
-import org.example.textflow.entity.NodeFieldRef;
+import org.example.backend.module.homework.service.HomeworkService;
 import org.example.textflow.entity.WorkflowNode;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,9 +15,15 @@ import java.util.Map;
 /**
  * 开始节点（type = 1）：把本次运行的业务输入写进状态（{@code state[节点id][变量名]}）。
  *
- * <p><b>输入优先取状态，缺失才回落下面的演示常量</b>：{@code POST /chat} 的 {@code inputs} 会被
- * 并入初始状态的顶层键（见 {@code ChatServiceImpl#initialState}），键名与本文的变量名一致，
- * 于是批改页能把「上传得到的文件清单 + 教师填的批改要求」直接喂进来。
+ * <p><b>取值优先级：批改任务 &gt; 状态里的显式变量 &gt; 演示常量</b>：
+ * <ol>
+ *   <li>状态里有 {@code taskId}（批改页在 {@code POST /chat} 的 {@code inputs} 里带上，
+ *       见 {@code HomeworkGradingView} 的 {@code handleGrade}）时，按它回查 {@code tb-module-homework}：
+ *       {@code file_tree} 取 {@code homework_file}、{@code description} / {@code know} 取
+ *       {@code POST /homework/grade} 写进 {@code homework_task} 的那一份 —— 这是批改页的唯一常态路径；</li>
+ *   <li>没有 {@code taskId} 时（画布页试运行、冒烟脚本）用 {@code inputs} 直接并入顶层状态的同名变量；</li>
+ *   <li>两者都缺时才落到下面的演示常量。</li>
+ * </ol>
  *
  * <p>仍**不读 {@code data.outputs}**：产出哪些变量由本文决定，与内置定义里开始节点声明的
  * {@code file_tree} / {@code description} / {@code know} 保持一致即可。
@@ -28,6 +34,9 @@ import java.util.Map;
 public class StartNode implements NodeAction {
 
     private final WorkflowNode definition;
+
+    /** 作业模块：按 taskId 取本次批改的真实输入；为 null 时（单测）只用状态里的显式变量 */
+    private final HomeworkService homeworkService;
 
     /** docx 的 MIME；Tika 的文本提取按扩展名优先，type 只作展示 */
     private static final String DOCX_TYPE =
@@ -69,27 +78,51 @@ public class StartNode implements NodeAction {
                     + "重点考查教案主题与课程内容的契合度、内容深度、环节呈现效果与格式规范性；"
                     + "概念性错误整项扣分，缺少图例或案例每处扣 3 分；评语需给出具体修改建议。";
 
-    private static final List<Integer> DEFAULT_AI_know = List.of(1,2,3,4);
-
     public StartNode(WorkflowNode definition) {
+        this(definition, null);
+    }
+
+    public StartNode(WorkflowNode definition, HomeworkService homeworkService) {
         this.definition = definition;
+        this.homeworkService = homeworkService;
     }
 
     @Override
     public Map<String, Object> apply(OverAllState state) {
         Map<String, Object> outputs = new HashMap<>();
+        Long taskId = taskIdOf(state);
+        if (taskId != null && homeworkService != null) {
+            HomeworkTaskDO task = homeworkService.getTask(taskId);
+            if (task == null) {
+                throw new IllegalStateException("批改任务不存在: " + taskId);
+            }
+            outputs.put("file_tree", homeworkService.listFileItems(taskId));
+            outputs.put("description", task.getDescription() == null ? "" : task.getDescription());
+            outputs.put("know", spaceIdsOf(task.getSpaceIds()));
+            return Map.of(definition.getId(), outputs);
+        }
         outputs.put("file_tree", orDefault(state, "file_tree", DEFAULT_FILE_TREE));
         outputs.put("description", stringOrDefault(state, "description", DEFAULT_AI_DESCRIPTION));
-        outputs.put("know", orDefault(state, "know", DEFAULT_AI_know));
+        outputs.put("know", orDefault(state, "know", List.of()));
         return Map.of(definition.getId(), outputs);
+    }
+
+    /** 批改任务 id：由批改页在 {@code POST /chat} 的 {@code inputs} 里带进来，键名与上传返回一致 */
+    private static Long taskIdOf(OverAllState state) {
+        Object value = state == null ? null : state.value("taskId").orElse(null);
+        return value == null ? null : Long.valueOf(String.valueOf(value).trim());
+    }
+
+    /** {@code homework_task.space_ids} 以逗号分隔存储；未选知识库时为空列表 */
+    private static List<String> spaceIdsOf(String spaceIds) {
+        if (spaceIds == null || spaceIds.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(spaceIds.split(",")).map(String::trim).filter(id -> !id.isEmpty()).toList();
     }
 
     /**
      * 读调用方传进来的业务输入（{@code POST /chat} 的 {@code inputs} 会被并入顶层状态），缺失时回落演示常量。
-     *
-     * <p>在此之前本节点只能读 Java 常量，"换数据集必须改代码 + 重启"（见
-     * docs/specs/2026-10-14-批改作业工作流定义替换.md §7 第 1 条）。现在批改页可以把上传得到的
-     * 文件清单与教师填的批改要求直接传进来。
      */
     private static Object orDefault(OverAllState state, String name, Object fallback) {
         Object value = state == null ? null : state.value(name).orElse(null);
