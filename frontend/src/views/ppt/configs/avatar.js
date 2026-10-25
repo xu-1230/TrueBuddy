@@ -119,30 +119,49 @@ const MOUTH_PARAM_CANDIDATES = ['ParamMouthOpenY', 'ParamMouthOpen', 'ParamMouth
 /**
  * 找出这个模型真正的「嘴张开」参数 ID。
  *
- * 鲸鱼娘模型（c_0120）的 model3.json 里 LipSync 组是空数组，
- * 直接写死 ParamMouthOpenY 有可能是在给一个不存在的参数赋值，嘴巴不会动。
- * 这里先用候选名精确匹配，再退化为遍历参数表找含 MouthOpen 的项。
+ * 各家的命名差得很远，按可信度依次试三条路：
  *
- * @param {any} coreModel Cubism 4 的 coreModel（可能为 undefined）
+ * 1. 模型自己在 model3.json 的 LipSync 组里声明的 ID —— 作者说了算。
+ *    Mao 声明的是 `ParamA`，Wanko 是 Cubism 2 风格的 `PARAM_MOUTH_OPEN_Y`，
+ *    这两个都不是标准驼峰名，只看命名规则永远匹配不到。
+ * 2. Cubism 3/4 的标准名。
+ * 3. 兜底扫描：把下划线、空格、连字符去掉再比，让 `PARAM_MOUTH_OPEN_Y`
+ *    这类老命名也能落到 `mouthopen` 上。
+ *
+ * 三步都拿不到就返回 null，调用方据此跳过口型 —— 例如 Rice 模型里
+ * 压根没有嘴部参数，硬写只会是空转。
+ *
+ * @param {any} internalModel Cubism4 的 internalModel（可能为 undefined）
  * @returns {string | null} 参数 ID，找不到返回 null
  */
-export const resolveMouthParamId = (coreModel) => {
+export const resolveMouthParamId = (internalModel) => {
+  const coreModel = internalModel?.coreModel
   if (!coreModel) return null
 
-  for (const id of MOUTH_PARAM_CANDIDATES) {
+  const hasParam = (id) => {
     try {
-      if (coreModel.getParameterIndex?.(id) >= 0) return id
+      return (coreModel.getParameterIndex?.(id) ?? -1) >= 0
     }
     catch {
-      // coreModel 是 Cubism 内部对象，版本差异可能没有这个方法，跳过即可
+      // coreModel 是 Cubism 内部对象，版本差异可能没有这个方法，当作不存在
+      return false
     }
+  }
+
+  const declared = internalModel.settings?.groups?.find((group) => group.Name === 'LipSync')?.Ids ?? []
+  for (const id of declared) {
+    if (hasParam(id)) return id
+  }
+
+  for (const id of MOUTH_PARAM_CANDIDATES) {
+    if (hasParam(id)) return id
   }
 
   try {
     const count = coreModel.getParameterCount?.() ?? 0
     for (let i = 0; i < count; i++) {
       const id = coreModel.getParameterId?.(i)
-      if (typeof id === 'string' && /MouthOpen/i.test(id)) return id
+      if (typeof id === 'string' && /mouthopen/i.test(id.replace(/[_\s-]/g, ''))) return id
     }
   }
   catch {

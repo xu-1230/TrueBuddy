@@ -195,8 +195,18 @@
       <!-- 右侧：数字人展示页面占位（参考 PPTist 布局：layout-content-right） -->
       <div class="toolbar layout-content-right" :style="{ width: sidebarWidth + 'px' }">
         <!-- <div class="resize-handler" @mousedown="resizeSidebar($event)"></div> -->
-        <div class="digital-human-placeholder" :class="{ 'screening-mode': screening }">
-          <canvas ref="canvasRef" class="digital-human-canvas" />
+        <div
+          class="digital-human-placeholder"
+          :class="{ 'screening-mode': screening, 'is-dragging': draggingAvatar }"
+          @pointerdown="startAvatarDrag"
+          @dblclick="resetAvatarDrag"
+        >
+          <!-- 位移只加在 canvas 上：拖动的是数字人本身，切换按钮留在原位 -->
+          <canvas
+            ref="canvasRef"
+            class="digital-human-canvas"
+            :style="screening ? { transform: `translate3d(${avatarDragOffset.x}px, ${avatarDragOffset.y}px, 0)` } : null"
+          />
 
           <!-- 形象切换：点一下按登记表顺序换下一个，加载不出来的自动跳过 -->
           <button
@@ -568,6 +578,7 @@ onMounted(() => {
 })
 // 放在 beforeUnmount：此时 canvas 仍在 DOM 中，PIXI 可安全释放渲染器与 WebGL 上下文
 onBeforeUnmount(() => {
+  endAvatarDrag()
   destroyLive2D()
   // 离开 PPT 页就别再念了：掐断请求即取消后端合成，随后收掉播放器与总线
   stopSpeaking()
@@ -994,6 +1005,11 @@ const currentAvatarId = ref(DEFAULT_AVATAR_MODEL) // 当前挂在舞台上的形
 const switchingAvatar = ref(false) // 切换进行中：防止连点把加载流程叠起来
 const currentAvatarLabel = computed(() => getAvatarModelConfig(currentAvatarId.value).label)
 
+// 放映时数字人的拖拽位移，相对「贴右 + 垂直居中」的默认位置；编辑模式下不生效
+const avatarDragOffset = ref({ x: 0, y: 0 })
+const draggingAvatar = ref(false)
+let avatarDragState = null // { pointerX, pointerY, originX, originY, left, top, width, height }
+
 /** 加载器：把 URL 变成 Live2DModel，交给 configs/avatar 决定先试哪个地址 */
 const createLive2DModel = (url) => Live2DModel.from(url, {
   autoInteract: true,
@@ -1148,7 +1164,7 @@ const initLive2D = async () => {
   applyWatermarkPolicy(model, loaded.id)
   app.stage.addChild(model)
 
-  mouthParamId = resolveMouthParamId(model.internalModel?.coreModel)
+  mouthParamId = resolveMouthParamId(model.internalModel)
   if (!mouthParamId) console.warn('[数字人] 该模型没有嘴部开合参数，口型同步将被跳过')
 
   model.on('hit', () => {
@@ -1186,7 +1202,7 @@ const mountAvatar = async (id) => {
   // 同上：先关水印再上舞台，避免切换瞬间闪一下
   applyWatermarkPolicy(model, id)
   app.stage.addChild(model)
-  mouthParamId = resolveMouthParamId(model.internalModel?.coreModel)
+  mouthParamId = resolveMouthParamId(model.internalModel)
 
   if (previous) {
     app.stage.removeChild(previous)
@@ -1228,6 +1244,73 @@ const switchAvatar = async () => {
   finally {
     switchingAvatar.value = false
   }
+}
+
+/** 拖动时至少留这么多像素留在视口内，避免把数字人拖丢找不回来 */
+const AVATAR_DRAG_KEEP = 100
+
+const clampValue = (value, min, max) => Math.min(Math.max(value, min), max)
+
+/**
+ * 开始拖动数字人（仅放映模式生效）。
+ *
+ * 事件挂在容器上，但真正能命中的只有 canvas：放映时整个面板是
+ * `pointer-events: none`（为了不挡住翻页和工具栏），下面只把 canvas
+ * 那一块收回 auto，四周的透明留白照样穿透。
+ */
+const startAvatarDrag = (e) => {
+  if (!screening.value || !canvasRef.value) return
+  // 只认左键，右键留给浏览器菜单
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+
+  const rect = canvasRef.value.getBoundingClientRect()
+  avatarDragState = {
+    pointerX: e.clientX,
+    pointerY: e.clientY,
+    originX: avatarDragOffset.value.x,
+    originY: avatarDragOffset.value.y,
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+  }
+  draggingAvatar.value = true
+
+  // 监听挂 window：鼠标拖快了会跑出 canvas，只绑在元素上会中途断掉
+  window.addEventListener('pointermove', moveAvatarDrag)
+  window.addEventListener('pointerup', endAvatarDrag)
+  window.addEventListener('pointercancel', endAvatarDrag)
+}
+
+const moveAvatarDrag = (e) => {
+  if (!avatarDragState) return
+
+  const state = avatarDragState
+  const nextLeft = state.left + (e.clientX - state.pointerX)
+  const nextTop = state.top + (e.clientY - state.pointerY)
+
+  // 两端各留一点在视口里
+  const left = clampValue(nextLeft, AVATAR_DRAG_KEEP - state.width, window.innerWidth - AVATAR_DRAG_KEEP)
+  const top = clampValue(nextTop, AVATAR_DRAG_KEEP - state.height, window.innerHeight - AVATAR_DRAG_KEEP)
+
+  avatarDragOffset.value = {
+    x: state.originX + (left - state.left),
+    y: state.originY + (top - state.top),
+  }
+}
+
+const endAvatarDrag = () => {
+  draggingAvatar.value = false
+  avatarDragState = null
+  window.removeEventListener('pointermove', moveAvatarDrag)
+  window.removeEventListener('pointerup', endAvatarDrag)
+  window.removeEventListener('pointercancel', endAvatarDrag)
+}
+
+/** 双击回到默认位置：贴右、垂直居中 */
+const resetAvatarDrag = () => {
+  if (!screening.value) return
+  avatarDragOffset.value = { x: 0, y: 0 }
 }
 </script>
 
@@ -1637,16 +1720,21 @@ const switchAvatar = async () => {
   pointer-events: none;
 }
 
-/* 放映时面板占满全屏，切换按钮改挂右下角，别压在字幕上 */
-.digital-human-placeholder.screening-mode .avatar-switch {
-  left: auto;
-  right: 24px;
-  bottom: 24px;
-  transform: none;
+/* 放映时只有 canvas 这一块收回指针事件，用来拖动；四周留白仍然穿透。
+   整块面板若设成 auto 会挡住右侧 400px 的翻页与工具栏。 */
+.digital-human-placeholder.screening-mode .digital-human-canvas {
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
 }
 
-/* 放映模式下 already 取消过 translateX，hover 不能再把它加回来 */
-.digital-human-placeholder.screening-mode .avatar-switch:hover:not(:disabled) {
-  transform: translateY(-1px);
+.digital-human-placeholder.screening-mode.is-dragging .digital-human-canvas {
+  cursor: grabbing;
+  will-change: transform;
+}
+
+/* 放映时只让数字人上屏：切换按钮属于编辑期控件，不给观众看到 */
+.digital-human-placeholder.screening-mode .avatar-switch {
+  display: none;
 }
 </style>
