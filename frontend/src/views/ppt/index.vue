@@ -197,6 +197,19 @@
         <!-- <div class="resize-handler" @mousedown="resizeSidebar($event)"></div> -->
         <div class="digital-human-placeholder" :class="{ 'screening-mode': screening }">
           <canvas ref="canvasRef" class="digital-human-canvas" />
+
+          <!-- 形象切换：点一下按登记表顺序换下一个，加载不出来的自动跳过 -->
+          <button
+            type="button"
+            class="avatar-switch"
+            :class="{ 'is-loading': switchingAvatar }"
+            :disabled="switchingAvatar"
+            :title="`当前：${currentAvatarLabel}，点击切换下一个`"
+            @click="switchAvatar"
+          >
+            <el-icon class="avatar-switch__icon"><Refresh /></el-icon>
+            <span class="avatar-switch__label">{{ currentAvatarLabel }}</span>
+          </button>
         </div>
       </div>
     </div>
@@ -256,7 +269,7 @@ import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUnmounted
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  CaretLeft, CaretRight, DocumentChecked, FullScreen, Microphone, Minus, Monitor, Plus, UploadFilled, VideoCamera, VideoPlay,
+  CaretLeft, CaretRight, DocumentChecked, FullScreen, Microphone, Minus, Monitor, Plus, Refresh, UploadFilled, VideoCamera, VideoPlay,
 } from '@element-plus/icons-vue'
 import * as PIXI from 'pixi.js'
 import { Live2DModel } from 'pixi-live2d-display/cubism4'
@@ -265,6 +278,7 @@ import { useSlidesStore } from './stores/slides'
 import { useScreenStore } from './stores/screen'
 import { useRoute, useRouter } from 'vue-router'
 import { VIEWPORT_SIZE } from './configs/canvas'
+import { AVATAR_MODEL_IDS, DEFAULT_AVATAR_MODEL, FALLBACK_AVATAR_MODEL, applyFraming, getAvatarModelConfig, loadAvatarModel, resolveMouthParamId } from './configs/avatar'
 import useScreening from './hooks/useScreening'
 
 import './styles/prosemirror.css'
@@ -970,23 +984,80 @@ const importSlideData = (data) => {
 // pixi-live2d-display 依赖全局 PIXI 注册 Ticker，必须在任何 Live2DModel 使用前赋值
 window.PIXI = PIXI
 
-const LIVE2D_MODEL_URL = '/live2d/Haru/Haru.model3.json'
-
 const canvasRef = ref(null)
 let app = null // PIXI.Application 单实例
 let model = null // Live2DModel 单实例
 let live2dDisposed = false // 卸载标记：阻断「组件已卸载后才 resolve」的异步回调写入已销毁实例
+let mouthParamId = null // 当前模型真正的嘴部参数 ID，加载后探测一次并复用
+
+const currentAvatarId = ref(DEFAULT_AVATAR_MODEL) // 当前挂在舞台上的形象
+const switchingAvatar = ref(false) // 切换进行中：防止连点把加载流程叠起来
+const currentAvatarLabel = computed(() => getAvatarModelConfig(currentAvatarId.value).label)
+
+/** 加载器：把 URL 变成 Live2DModel，交给 configs/avatar 决定先试哪个地址 */
+const createLive2DModel = (url) => Live2DModel.from(url, {
+  autoInteract: true,
+  // 兜底地址在 jsDelivr，贴图属于跨域资源；不显式带 CORS，纹理进不了 WebGL 会直接黑屏
+  crossOrigin: 'anonymous',
+})
+
+/** 大肥鱼作者留的「水印消除」开关参数，写 1 时模型内部把水印部件透明度压到 0 */
+const WATERMARK_OFF_PARAM = 'Paramcol_3'
+
+/**
+ * 关掉模型自带的宣传水印。
+ *
+ * 大肥鱼身上印着「免费公皮请勿盗用售卖 / 作者@Mao绒绒家园 / UID xxx」，
+ * 投到大屏上整页红字，讲课没法看。作者把水印做成了两个独立部件
+ * （Part45 水印2.png / Part46 水印.png），并留了 Paramcol_3 这个开关和
+ * 同名表情，这里走的是作者自己提供的关闭方式，不是抠图改素材。
+ *
+ * 不用 model.expression('13 水印消除')：表情默认有 1 秒淡入，
+ * 起播那一下水印还清清楚楚地挂着，看起来就是「闪一下才消失」。
+ * 改成挂在 beforeModelUpdate 上（coreModel.update() 之前最后一站）逐帧写，
+ * 第一帧就是干净的。只写一次不行 —— Cubism 每帧会把参数还原，下一帧水印会回来。
+ *
+ * 调用方必须在 stage.addChild 之前调用，否则第一帧已经画出去了。
+ *
+ * 关的只是画面上的字，署名义务不因此消失 —— 答辩致谢与 NOTICE 里
+ * 仍要写明 @Mao绒绒家园，商用另需作者授权。
+ *
+ * @param {any} target 已加载的 Live2DModel
+ * @param {string} id 形象 id
+ */
+const applyWatermarkPolicy = (target, id) => {
+  if (id !== 'DeepSeekDaFeiyu') return
+
+  const internal = target.internalModel
+  const coreModel = internal?.coreModel
+  if (!coreModel) return
+
+  const hide = () => {
+    try {
+      coreModel.setParameterValueById(WATERMARK_OFF_PARAM, 1)
+    }
+    catch {
+      // 参数不存在时 Cubism 本来就不报错，这里只是兜住接口缺失的极端情况
+    }
+  }
+
+  internal.on('beforeModelUpdate', hide)
+  hide()
+}
 
 /**
  * 把口型开合度写给本页这份 Live2D（本页唯一会动嘴的入口）。
  *
  * <p>Cubism 4 才有 `setParameterValueById`；缺了就静默不动，不能让渲染循环抛错。
+ * <p>参数名不能写死：鲸鱼娘（c_0120）的 model3.json 里 LipSync 组是空数组，
+ * 硬写 `ParamMouthOpenY` 有可能是在给一个不存在的参数赋值，嘴不会动也不报错。
  *
  * @param {number} level 开合度 0–1，来自**本页正在播的音频**的逐帧响度
  */
 const writeMouthOpen = (level) => {
+  if (!mouthParamId) return
   const coreModel = model?.internalModel?.coreModel
-  coreModel?.setParameterValueById?.('ParamMouthOpenY', Math.max(0, Math.min(1, level)))
+  coreModel?.setParameterValueById?.(mouthParamId, Math.max(0, Math.min(1, level)))
 }
 
 /** 数字人一开口，这一屏的嘴就要跟着动 —— 学生看到的就是这一屏，听到的声音也从这里出去 */
@@ -997,12 +1068,15 @@ watch(mouthLevel, writeMouthOpen)
 // WebGL 上下文发起 bindBuffer/bindTexture，产生 INVALID_OPERATION 刷屏
 const destroyLive2D = () => {
   live2dDisposed = true
+  mouthParamId = null
 
   // 先停循环，避免销毁过程中 Ticker 仍在绘制
   if (app?.ticker) app.ticker.stop()
 
   if (model) {
     model.removeAllListeners()
+    // 水印开关挂在 internalModel 的 beforeModelUpdate 上，这里一并摘掉
+    model.internalModel?.removeAllListeners()
     model.destroy({ children: true, texture: true, baseTexture: true })
     model = null
   }
@@ -1011,6 +1085,30 @@ const destroyLive2D = () => {
     // removeView 传 false：canvas 由 Vue 托管，不能由 PIXI 从 DOM 中移除
     app.destroy(false, { children: true, texture: true, baseTexture: true })
     app = null
+  }
+}
+
+/**
+ * 按「首选形象 → 兜底形象」的顺序找一只能加载的模型。
+ *
+ * 首选是 DeepSeek 鲸鱼娘：先读 public/live2d/deepseek-whale（跑过 fetch 脚本才有），
+ * 没有再走 jsDelivr。两处都拿不到就退回仓库里一定有的 Haru，
+ * 保证放映现场不出现一块空白 —— 断网时至少还有个人站在那儿念稿。
+ */
+const loadPreferredAvatar = async () => {
+  try {
+    return await loadAvatarModel(createLive2DModel, DEFAULT_AVATAR_MODEL)
+  }
+  catch (e) {
+    console.error(`[数字人] ${DEFAULT_AVATAR_MODEL} 加载失败，回退 ${FALLBACK_AVATAR_MODEL}`, e)
+  }
+
+  try {
+    return await loadAvatarModel(createLive2DModel, FALLBACK_AVATAR_MODEL)
+  }
+  catch (e) {
+    console.error('[数字人] 兜底形象也加载失败，右侧面板保持空白', e)
+    return null
   }
 }
 
@@ -1027,26 +1125,108 @@ const initLive2D = async () => {
     autoDensity: true,
   })
 
-  try {
-    const loadedModel = await Live2DModel.from(LIVE2D_MODEL_URL, { autoInteract: true })
+  const loaded = await loadPreferredAvatar()
 
-    // 加载期间组件可能已卸载：此时 app 已销毁，丢弃模型而不是挂到失效实例上
-    if (live2dDisposed || !app) {
-      loadedModel.destroy({ children: true, texture: true, baseTexture: true })
-      return
-    }
-
-    model = loadedModel
-    model.scale.set(0.2)
-    model.position.set(-30, -46)
-    app.stage.addChild(model)
-
-    model.on('hit', () => {
-      //  model.expression(4)
-    })
+  // 加载期间组件可能已卸载：此时 app 已销毁，丢弃模型而不是挂到失效实例上
+  if (!loaded || live2dDisposed || !app) {
+    loaded?.model.destroy({ children: true, texture: true, baseTexture: true })
+    return
   }
-  catch (e) {
-    console.error('Live2D 模型加载失败:', e)
+
+  model = loaded.model
+  currentAvatarId.value = loaded.id
+  if (loaded.id !== DEFAULT_AVATAR_MODEL) {
+    console.warn(`[数字人] 当前显示的是兜底形象 ${loaded.id}，DeepSeek 鲸鱼娘未能加载`)
+  }
+  // 取景按模型原始宽高算，换形象不需要再回来改数字
+  applyFraming(
+    model,
+    { width: app.screen.width, height: app.screen.height },
+    getAvatarModelConfig(loaded.id).framing,
+  )
+  // 必须赶在 addChild 之前：一旦上舞台就开始出帧，第一帧就会把水印画出去
+  applyWatermarkPolicy(model, loaded.id)
+  app.stage.addChild(model)
+
+  mouthParamId = resolveMouthParamId(model.internalModel?.coreModel)
+  if (!mouthParamId) console.warn('[数字人] 该模型没有嘴部开合参数，口型同步将被跳过')
+
+  model.on('hit', () => {
+    //  model.expression(4)
+  })
+}
+
+/**
+ * 把指定形象挂到舞台上，成功返回 true。
+ *
+ * 顺序是「先挂新的、再拆旧的」：新模型解析完之前旧模型留在原地，
+ * 切换过程中右侧不会闪一下空白；代价是同一时刻短暂持两份贴图，可接受。
+ *
+ * @param {string} id 形象 id
+ * @returns {Promise<boolean>} 是否挂载成功
+ */
+const mountAvatar = async (id) => {
+  if (!app || live2dDisposed) return false
+
+  const loaded = await loadAvatarModel(createLive2DModel, id)
+
+  // 加载期间组件被卸载：app 已经没了，把刚拿到的模型直接丢掉
+  if (!app || live2dDisposed) {
+    loaded.model.destroy({ children: true, texture: true, baseTexture: true })
+    return false
+  }
+
+  const previous = model
+  model = loaded.model
+  applyFraming(
+    model,
+    { width: app.screen.width, height: app.screen.height },
+    getAvatarModelConfig(id).framing,
+  )
+  // 同上：先关水印再上舞台，避免切换瞬间闪一下
+  applyWatermarkPolicy(model, id)
+  app.stage.addChild(model)
+  mouthParamId = resolveMouthParamId(model.internalModel?.coreModel)
+
+  if (previous) {
+    app.stage.removeChild(previous)
+    previous.removeAllListeners()
+    previous.internalModel?.removeAllListeners()
+    previous.destroy({ children: true, texture: true, baseTexture: true })
+  }
+
+  return true
+}
+
+/**
+ * 按登记表顺序切到下一个形象。
+ *
+ * 用一个形象要过「本地文件 → CDN」两关，任何一关拿到模型就算数；
+ * 两关都失败的（例如没跑过取模型脚本）直接跳过，最多转一圈回到原点，
+ * 免得用户点了按钮却像没反应。
+ */
+const switchAvatar = async () => {
+  if (switchingAvatar.value || !app) return
+  switchingAvatar.value = true
+
+  const start = AVATAR_MODEL_IDS.indexOf(currentAvatarId.value)
+  try {
+    for (let step = 1; step <= AVATAR_MODEL_IDS.length; step++) {
+      const id = AVATAR_MODEL_IDS[(start + step) % AVATAR_MODEL_IDS.length]
+      try {
+        if (await mountAvatar(id)) {
+          currentAvatarId.value = id
+          return
+        }
+      }
+      catch (e) {
+        console.warn(`[数字人] ${id} 加载失败，跳过`, e)
+      }
+    }
+    ElMessage.warning('没有可以加载的形象，请确认 public/live2d 下的模型文件是否完整')
+  }
+  finally {
+    switchingAvatar.value = false
   }
 }
 </script>
@@ -1366,6 +1546,7 @@ const initLive2D = async () => {
   z-index: 2;
 }
 .digital-human-placeholder {
+  position: relative;
   height: 100%;
   display: flex;
   align-items: center;
@@ -1383,6 +1564,64 @@ const initLive2D = async () => {
   display: block;
 }
 
+/* 形象切换：贴在数字人面板底部 */
+.avatar-switch {
+  position: absolute;
+  left: 50%;
+  /* canvas 固定 800 高，比面板高时底部会溢出视口，按钮得往上让一点 */
+  bottom: 28px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 32px);
+  padding: 7px 14px;
+  border: none;
+  border-radius: 999px;
+  /* 面板底色是浅色，浅底浅边框的按钮完全看不见，直接用深色实心胶囊 */
+  background: color-mix(in oklab, var(--tb-text-primary) 82%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 20%);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.18s, transform 0.18s;
+
+  /* 放映模式下父级 pointer-events: none，这里必须自己收回来，否则点不到 */
+  pointer-events: auto;
+}
+
+.avatar-switch:hover:not(:disabled) {
+  background: var(--tb-primary);
+  transform: translateX(-50%) translateY(-1px);
+}
+
+.avatar-switch:disabled {
+  cursor: progress;
+}
+
+.avatar-switch__icon {
+  font-size: 14px;
+}
+
+/* 加载中让图标转起来，比只改鼠标样式更能说明「正在换」 */
+.avatar-switch.is-loading .avatar-switch__icon {
+  animation: avatar-switch-spin 1s linear infinite;
+}
+
+@keyframes avatar-switch-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.avatar-switch__label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* 放映模式下：数字人浮于放映覆盖层之上，随放映一起展示 */
 .digital-human-placeholder.screening-mode {
   position: fixed;
@@ -1396,5 +1635,18 @@ const initLive2D = async () => {
   background: transparent;
   /* 不拦截鼠标事件，避免遮挡放映翻页/工具栏操作 */
   pointer-events: none;
+}
+
+/* 放映时面板占满全屏，切换按钮改挂右下角，别压在字幕上 */
+.digital-human-placeholder.screening-mode .avatar-switch {
+  left: auto;
+  right: 24px;
+  bottom: 24px;
+  transform: none;
+}
+
+/* 放映模式下 already 取消过 translateX，hover 不能再把它加回来 */
+.digital-human-placeholder.screening-mode .avatar-switch:hover:not(:disabled) {
+  transform: translateY(-1px);
 }
 </style>

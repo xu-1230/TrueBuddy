@@ -2,7 +2,7 @@ import { createMockQuery, mockMeetingRecords } from './data'
 
 /** 数字人形象配置（对应 public/live2d 下的模型资源） */
 export const mockAvatarConfig = {
-  model: 'Haru',
+  model: 'DeepSeekWhale',
   voice: 'zh-CN-Xiaoxiao',
   speed: 1,
   scene: 'classroom',
@@ -11,14 +11,23 @@ export const mockAvatarConfig = {
   updatedBy: '系统管理员',
 }
 
+/**
+ * 可选形象清单。
+ *
+ * 前 7 项是 Live2D 官方示例模型（免费可商用），
+ * DeepSeekWhale 是社区二创的鲸鱼娘模型，素材 CC BY-NC-SA 4.0，只能非商业使用。
+ * 具体地址与取景参数见 src/views/ppt/configs/avatar.js —— 两边要保持一致。
+ */
 export const AVATAR_MODEL_OPTIONS = [
-  { value: 'Haru', label: 'Haru（默认）' },
-  { value: 'Hiyori', label: 'Hiyori' },
-  { value: 'Mao', label: 'Mao' },
-  { value: 'Mark', label: 'Mark' },
-  { value: 'Natori', label: 'Natori' },
-  { value: 'Rice', label: 'Rice' },
-  { value: 'Wanko', label: 'Wanko' },
+  { value: 'DeepSeekWhale', label: 'DeepSeek 鲸鱼娘（默认）' },
+  { value: 'DeepSeekDaFeiyu', label: 'DeepSeek 大肥鱼' },
+  { value: 'Haru', label: 'Haru（示例）' },
+  { value: 'Hiyori', label: 'Hiyori（示例）' },
+  { value: 'Mao', label: 'Mao（示例）' },
+  { value: 'Mark', label: 'Mark（示例）' },
+  { value: 'Natori', label: 'Natori（示例）' },
+  { value: 'Rice', label: 'Rice（示例）' },
+  { value: 'Wanko', label: 'Wanko（示例）' },
 ]
 
 export const AVATAR_VOICE_OPTIONS = [
