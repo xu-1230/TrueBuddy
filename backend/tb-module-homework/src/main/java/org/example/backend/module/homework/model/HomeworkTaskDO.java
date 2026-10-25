@@ -21,6 +21,10 @@ public class HomeworkTaskDO {
     private Long totalSize;
     /** 任务状态：0=已上传待批改，1=批改中，2=成功，3=部分成功，4=失败 */
     private Integer status;
+    /** AI 描述说明（批改要求），由批改请求写入 */
+    private String description;
+    /** 知识库 id 列表（逗号分隔），由批改请求写入 */
+    private String spaceIds;
     /** 创建时间 */
     private LocalDateTime createTime;
     /** 更新时间 */
