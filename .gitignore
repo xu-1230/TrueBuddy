@@ -30,6 +30,11 @@ devserver.err
 .trae/
 .codebuddy/
 .codeartsdoer/
+.workbuddy/
+
+# Local database backups (binary dumps, environment specific)
+.db-backup/
+*.dump
 
 # IDE / editor
 .idea/
