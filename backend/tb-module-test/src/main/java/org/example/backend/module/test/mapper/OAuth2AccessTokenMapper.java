@@ -1,6 +1,5 @@
 package org.example.backend.module.test.mapper;
 
-import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Result;
@@ -28,8 +27,4 @@ public interface OAuth2AccessTokenMapper {
     @Select("select id, access_token, refresh_token, user_id, user_info, scopes, expires_time " +
             "from \"system_oauth2_access_token\" where access_token = #{accessToken}")
     OAuth2AccessTokenDO selectByAccessToken(String accessToken);
-
-    /** 重置密码后清空该用户的全部访问令牌 */
-    @Delete("delete from \"system_oauth2_access_token\" where user_id = #{userId}")
-    int deleteByUserId(Long userId);
 }

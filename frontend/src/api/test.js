@@ -1,7 +1,13 @@
 import service from './index'
 
-// 登录已迁移到 auth.js；此处转出以兼容 TestView 的既有引用
-export { login } from './auth'
+// 登录：POST /system/auth/login，携带账号密码
+export const login = (username, password) => {
+  return service({
+    url: '/system/auth/login',
+    method: 'post',
+    data: { username, password },
+  })
+}
 
 // 访问需要登录才能调用的接口
 export const ping = () => service({ url: '/test/ping', method: 'get' })
