@@ -126,10 +126,9 @@ onBeforeUnmount(() => {
 }
 
 .navbar.is-scrolled {
-  /* 半透明 + 背景虚化：内容从导航条下穿过时保留层次，不遮挡阅读 */
-  background: color-mix(in oklab, var(--tb-bg-surface) 86%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(1.5);
-  backdrop-filter: blur(14px) saturate(1.5);
+  /* 滚动越阈后落成实底 + 一条描边：亮色下改用玻璃会糊成一层灰雾，
+     实底在纸面上反而更干净；层级交给投影与描边 */
+  background: var(--tb-bg-surface);
   border-bottom-color: var(--tb-border);
   box-shadow: var(--tb-shadow-1);
 }
@@ -137,13 +136,6 @@ onBeforeUnmount(() => {
 /* 菜单展开时抬升层级，避免面板被页面右侧章节导航（z-index: 200）压住 */
 .navbar.is-menu-open {
   z-index: 300;
-}
-
-/* 不支持背景虚化的内核退回不透明底色，避免文字叠字 */
-@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
-  .navbar.is-scrolled {
-    background: var(--tb-bg-surface);
-  }
 }
 
 .navbar__container {

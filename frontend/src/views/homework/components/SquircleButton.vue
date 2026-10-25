@@ -74,9 +74,9 @@ let uidSeed = 0
 
 const props = defineProps({
   /** 顶面颜色 */
-  base: { type: String, default: '#3d7ab5' },
+  base: { type: String, default: '#2b4a80' },
   /** 侧壁基色（通常比顶面暗一档） */
-  dark: { type: String, default: '#2f5f8f' },
+  dark: { type: String, default: '#24406f' },
   /** 顶面高度（px），整体元素高度 = 该值 × 1.5 */
   height: { type: Number, default: 42 },
   /** 是否撑满父容器宽度 */
