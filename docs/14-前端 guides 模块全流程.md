@@ -71,7 +71,7 @@ frontend/src/
 │   ├── springTo.js                    # 弹簧补间（Mega 菜单 / 指示器使用）
 │   └── spring.js                      # 弹簧数值求解
 ├── assets/
-│   ├── theme.css                      # 全局设计 Token（Harbor 主题）
+│   ├── theme.css                      # 全局设计 Token（Ink 主题）
 │   └── fonts.css                      # 字体变量（Inter / Playfair Display / JetBrains Mono）
 └── utils/auth.js                      # Token（js-cookie）
 
@@ -172,7 +172,7 @@ const OUT = MID   // 退出段与进场段等长
 
 ### 4.6 主题与明暗
 
-- Token 分层（`assets/theme.css`）：① 刻度（尺寸 / 字号 / 时长 / 缓动）→ ② 原始色板 `html[data-theme="harbor"]` → ③ 语义层 `:root`（组件唯一入口）→ ④ 明暗 `light-dark()` → ⑤ `--el-*` 映射（写在 `:root:root` 下，稳定压过 Element Plus 暗色包）。
+- Token 分层（`assets/theme.css`）：① 刻度（尺寸 / 字号 / 时长 / 缓动）→ ② 原始色板 `html[data-theme="ink"]` → ③ 语义层 `:root`（组件唯一入口）→ ④ 明暗 `light-dark()` → ⑤ `--el-*` 映射（写在 `:root:root` 下，稳定压过 Element Plus 暗色包）。
 - 明暗态由 `useAppearance.js` 维护：单一写入口 `apply()` 同时写 `html[data-appearance]` 与 `html.dark`；优先级为「localStorage(`tb-ui-mode`) → 首帧脚本已写属性 → 系统偏好」；跟随系统变化与多标签 `storage` 同步。
 - 首帧防闪由 `index.html` 内联脚本完成，键名与 `useAppearance.js` 必须保持一致。
 - 本模块的切换入口：`NavbarItem.vue`（顶栏按钮）。
@@ -216,7 +216,7 @@ const OUT = MID   // 退出段与进场段等长
 | 依赖 | 提供 | 本模块用法 |
 | --- | --- | --- |
 | `assets/theme.css` | `--tb-*` 语义 Token 与明暗两态 | 全部颜色 / 间距 / 圆角 / 阴影 / 动效时长 |
-| `assets/fonts.css` | `--font-sans` / `--font-serif` / `--font-mono` | 标题走 `--tb-font-display`（Harbor 下即无衬线路由） |
+| `assets/fonts.css` | `--font-sans` / `--font-serif` / `--font-mono` | 标题走 `--tb-font-display`（Ink 下即衬线路由；h3 及以下仍无衬线） |
 | `composables/useSmoothScroll.js` | Lenis 实例 + `refresh` / `scrollTo` | `HomeView.vue` 全部滚动动效 |
 | `composables/useAppearance.js` | 明暗态 `mode` / `isDark` / `setMode` / `toggle` | 顶栏按钮、粒子颜色跟随 |
 | `lib/particleMorph.js` | `new ParticleMorph(host, opts)`，`setShapes` / `setColor` / `start` / `pause` / `destroy` | `HeroParticles.vue` |
@@ -235,7 +235,7 @@ const OUT = MID   // 退出段与进场段等长
 | 增删首页章节 | `HomeView.vue`：模板 `<section>` + 脚本 `sections` 数组 | 两处必须同时改（`sections` 供 CTA `goTo(idx)` 锚点）；改动后核对 `.section__index` 的「N / 08」与总段数 |
 | 调度动效节奏（快慢 / 幅度 / 时序） | `HomeView.vue` 的 `setupAnimations()`：`MID`、各 `tl.fromTo` 的 `duration` / `stagger` / 位置参数 | 退场统一挂在 `MID`，改动进场时长需同步评估 `MID` 与 `OUT` |
 | 改粒子形状 / 采样密度 | `public/shapes/*.svg` + `HeroParticles.vue` 的 `SHAPES` / `MORPH_FROM_TO` / 采样参数 | `spacing` 与 `pointRadius` 需配成一对（点径×2 ≈ 间隔） |
-| 改主题色 / 圆角 / 阴影 | `assets/theme.css` | 先改样张 [ui.html](./ui.html) 的 `[data-theme="harbor"]` 块再同步，见 [09-样式规范.md](./09-样式规范.md) §3.3 |
+| 改主题色 / 圆角 / 阴影 | `assets/theme.css` | 先改样张 [ui.html](./ui.html) 的 `[data-theme="ink"]` 块再同步，见 [09-样式规范.md](./09-样式规范.md) §3.3 |
 | 改登录表单 | `components/LoginForm.vue` | 同时影响 `/docs` 与 `/login`；发事件名（`login-success` / `go-forgot`）需与父组件监听保持一致 |
 | 改 `/docs` 品牌区文案 / 评价 | `views/guides/DocsView.vue` 的 `testimonials` | — |
 | 改锚点跳转行为 | `useSmoothScroll.js` / `HomeView.vue` 的 `goTo()` | 锚点元素 id 必须与 `sections[i].id` 一致 |
