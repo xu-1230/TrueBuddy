@@ -394,6 +394,10 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   color: var(--tb-primary);
 }
 
+:deep(.kb-select .el-select__placeholder) {
+  color: var(--tb-text-tertiary);
+}
+
 .kb-option {
   display: flex;
   align-items: center;
@@ -412,13 +416,14 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   border-radius: 0;
   font-size: 15px;
   color: var(--tb-primary-text);
-  background: var(--tb-primary-soft);
+  background: linear-gradient(135deg, var(--tb-primary-soft), var(--tb-primary-border));
   box-shadow: 0 0 0 var(--tb-border-width) var(--tb-primary-border) inset;
+  transition: color 0.18s ease, background 0.18s ease;
 }
 
 .kb-option__tile--active {
   color: var(--tb-on-primary);
-  background: var(--tb-primary);
+  background: linear-gradient(135deg, var(--tb-primary-hover), var(--tb-primary));
   box-shadow: none;
 }
 
@@ -427,6 +432,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 1px;
 }
 
 .kb-option__name {
@@ -449,21 +455,26 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 .kb-option__count,
 .kb-option__tag {
   flex: 0 0 auto;
-  padding: 1px 8px;
   border-radius: 0;
-  font-size: 0.66rem;
   font-weight: 600;
 }
 
 .kb-option__count {
+  padding: 1px 8px;
+  font-size: 0.66rem;
   color: var(--tb-text-secondary);
   background: var(--tb-bg-sunken);
+  transition: color 0.18s ease, background 0.18s ease;
 }
 
+/* 内置默认知识库标记：与模板页一致取 accent 色系 */
 .kb-option__tag {
-  color: var(--tb-warning);
-  background: var(--tb-warning-soft);
-  border: var(--tb-border-width) solid var(--tb-warning-soft);
+  padding: 1px 7px;
+  font-size: 0.64rem;
+  color: color-mix(in oklab, var(--tb-accent) 72%, #000000);
+  background: var(--tb-accent-soft);
+  border: var(--tb-border-width) solid var(--tb-accent-soft);
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
 .kb-option__check {
@@ -665,6 +676,17 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   color: var(--tb-primary-text);
 }
 
+.hw-kb-select-popper .el-select-dropdown__item.is-selected .kb-option__count {
+  color: var(--tb-primary-text);
+  background: var(--tb-bg-surface);
+}
+
+.hw-kb-select-popper .el-select-dropdown__item.is-selected .kb-option__tag {
+  color: var(--tb-primary-text);
+  background: var(--tb-bg-surface);
+  border-color: var(--tb-primary-border);
+}
+
 .hw-kb-select-popper .el-select-dropdown__empty {
   padding: 18px 0;
   font-size: 0.76rem;
@@ -674,7 +696,7 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 .hw-kb-select-popper .el-select-dropdown__footer {
   padding: 6px 12px;
   border-top: 1px solid var(--tb-border);
-  background: var(--tb-bg-raised);
+  background: var(--tb-bg-sunken);
   font-size: 0.68rem;
   color: var(--tb-text-tertiary);
   text-align: right;

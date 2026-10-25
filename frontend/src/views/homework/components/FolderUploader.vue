@@ -454,19 +454,20 @@ function getExt(name) {
   gap: 0.5rem;
   width: 100%;
   height: 50px;
-  padding: 0 2.1rem 0 0.7rem;
+  padding: 0 0.7rem;
   overflow: hidden;
-  border: var(--tb-border-width) dashed var(--tb-border-strong);
+  border: var(--tb-border-width) dashed var(--tb-border);
   border-radius: 0;
-  background: var(--tb-bg-raised);
+  background: var(--tb-bg-sunken);
   text-align: left;
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease,
     transform 0.2s ease;
 }
 
-.folder__drop:hover:not(:disabled) {
-  border-color: var(--tb-primary);
+/* 拖拽悬停时交给下方的 --dragging 态接管，避免 hover 的阴影盖掉 4px 落点环 */
+.folder__drop:hover:not(:disabled):not(.folder__drop--dragging) {
+  border-color: var(--tb-primary-text);
   background: var(--tb-primary-soft);
   box-shadow: var(--tb-shadow-brand);
   transform: translateY(-1px);
@@ -474,7 +475,7 @@ function getExt(name) {
 
 .folder__drop--filled {
   /* 右侧给悬浮的移除按钮留位，避免「已选 n/m · 大小」被裁掉 */
-  padding-right: 2.2rem;
+  padding-right: 2.1rem;
   border-style: solid;
   border-color: var(--tb-border);
   background: var(--tb-bg-surface);
@@ -490,6 +491,7 @@ function getExt(name) {
   border-color: var(--tb-primary);
   background: var(--tb-primary-soft);
   box-shadow: 0 0 0 4px var(--tb-ring);
+  transform: translateY(-1px);
 }
 
 .folder__drop:disabled {
@@ -497,6 +499,7 @@ function getExt(name) {
   opacity: 0.6;
 }
 
+/* 空态图标：直角方块（镂空：描边 + 线性图标，无实心底色） */
 .folder__tile {
   flex: 0 0 auto;
   display: inline-flex;
@@ -505,15 +508,25 @@ function getExt(name) {
   width: 26px;
   height: 26px;
   border-radius: 0;
-  font-size: 14px;
+  font-size: 15px;
+  color: var(--tb-primary);
+  background: var(--tb-bg-surface);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-primary-border) inset;
+  transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+/* 空态悬停：方块转浅主色底 + 主色描边（与模板页上传槽一致） */
+.folder__drop:hover:not(:disabled) .folder__tile:not(.folder__tile--filled) {
   color: var(--tb-primary-text);
   background: var(--tb-primary-soft);
-  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-primary-border) inset;
+  box-shadow: 0 0 0 1px var(--tb-primary) inset;
+  transform: translateY(-1px);
 }
 
 .folder__tile--filled {
   color: var(--tb-on-primary);
-  background: var(--tb-primary);
+  background: linear-gradient(135deg, var(--tb-primary-hover), var(--tb-primary));
   box-shadow: none;
 }
 
