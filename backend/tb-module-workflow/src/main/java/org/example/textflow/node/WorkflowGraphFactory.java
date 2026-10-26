@@ -10,6 +10,7 @@ import com.alibaba.cloud.ai.graph.checkpoint.savers.MemorySaver;
 import com.alibaba.cloud.ai.graph.exception.GraphStateException;
 import com.alibaba.cloud.ai.graph.state.strategy.AppendStrategy;
 import com.alibaba.cloud.ai.graph.state.strategy.ReplaceStrategy;
+import org.example.backend.module.homework.service.HomeworkService;
 import org.example.textflow.entity.WorkflowEdge;
 import org.example.textflow.entity.WorkflowNode;
 import org.example.textflow.entity.WorkflowProcessRespVO;
@@ -43,7 +44,7 @@ public final class WorkflowGraphFactory {
      */
     public static CompiledGraph createGraph(WorkflowProcessRespVO process, NodeEventListener listener,
                                            ChatClient chatClient, MemorySaver saver) throws GraphStateException {
-        return createGraph(process, listener, chatClient, saver, List.of());
+        return createGraph(process, listener, chatClient, saver, List.of(), null);
     }
 
     /**
@@ -55,10 +56,24 @@ public final class WorkflowGraphFactory {
     public static CompiledGraph createGraph(WorkflowProcessRespVO process, NodeEventListener listener,
                                            ChatClient chatClient, MemorySaver saver,
                                            List<ToolCallback> toolCallbacks) throws GraphStateException {
+        return createGraph(process, listener, chatClient, saver, toolCallbacks, null);
+    }
+
+    /**
+     * 同 {@link #createGraph(WorkflowProcessRespVO, NodeEventListener, ChatClient, MemorySaver, List)}，
+     * 并让开始节点能按 taskId 回查作业模块的真实输入。
+     *
+     * @param homeworkService 作业模块服务；为空时开始节点只用状态里的显式变量
+     */
+    public static CompiledGraph createGraph(WorkflowProcessRespVO process, NodeEventListener listener,
+                                           ChatClient chatClient, MemorySaver saver,
+                                           List<ToolCallback> toolCallbacks,
+                                           HomeworkService homeworkService) throws GraphStateException {
         StateGraph stateGraph = new StateGraph("text-flow", keyStrategyFactory());
 
         for (WorkflowNode node : process.getNodes()) {
-            stateGraph.addNode(node.getId(), NodeActionFactory.of(node, listener, chatClient, toolCallbacks));
+            stateGraph.addNode(node.getId(),
+                    NodeActionFactory.of(node, listener, chatClient, toolCallbacks, homeworkService));
         }
         for (WorkflowEdge edge : process.getEdges()) {
             stateGraph.addEdge(edge.getSource(), edge.getTarget());

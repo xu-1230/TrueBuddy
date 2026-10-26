@@ -1,24 +1,22 @@
 /**
- * 全局字体系统（Google Fonts）
+ * 全局字体系统（纯系统字体栈，不加载外部 Web 字体）
  *
- * - 无衬线 `--font-sans`：Inter —— 极简、几何、字重齐全，用于正文与全部 UI 控件
- * - 衬线   `--font-serif`：Playfair Display —— 高对比优雅衬线，用于品牌名、展示性大标题与数字
+ * - 无衬线 `--font-sans`：系统中英文字体，用于正文与全部 UI 控件
+ * - 衬线   `--font-serif`：系统中英文字体，用于品牌名、展示性大标题与数字
  * - 等宽   `--font-mono`：代码 / 片段等高信息密度文本
  *
- * 说明：两款西文字体均不含中文字形，中文会自动落到字体栈中的系统中文字体；
- * 因此把各平台的中文字体（PingFang SC / 微软雅黑 / Noto 系列）追加在栈尾，
- * 保证中英文混排时的字重与观感一致。
- * 字体加载依赖 index.html 中的 Google Fonts <link>，加载失败时整体回退到系统字体栈。
+ * 说明：字体栈按各平台依次回退（macOS PingFang SC / Windows 微软雅黑 /
+ * Linux Noto 系列），中英文混排时字重与观感保持一致，且无外部请求、无首屏阻塞。
  */
 
 :root {
   --font-sans:
-    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC',
     'Helvetica Neue', Arial, sans-serif;
   --font-serif:
-    'Playfair Display', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC',
-    'STSong', 'SimSun', Georgia, 'Times New Roman', serif;
+    'Noto Serif SC', 'Source Han Serif SC', 'Songti SC',
+    'STSong', SimSun, Georgia, 'Times New Roman', serif;
   --font-mono:
     'JetBrains Mono', 'SFMono-Regular', Consolas, Monaco, 'Courier New', monospace;
 }

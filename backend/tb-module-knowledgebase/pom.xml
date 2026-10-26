@@ -62,5 +62,11 @@
             <artifactId>docmind_api20220711</artifactId>
         </dependency>
         <!-- MinIO 对象存储由 tb-module-infra 传递提供，此处不再直接依赖 -->
+        <!-- 测试：锁定「外部调用不进事务」这条边界（本模块唯一容易写错、又最难现场排查的部分） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

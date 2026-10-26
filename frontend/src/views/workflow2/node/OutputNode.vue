@@ -111,7 +111,7 @@ const runtime = computed(() => (runState ? nodeRuntimeOf(runState.value, props.i
   height: 28px;
   border-radius: 8px;
   background: var(--tb-primary);
-  color: #fff;
+  color: var(--tb-on-primary);
 }
 
 .node-icon-svg {

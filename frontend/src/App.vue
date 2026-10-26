@@ -22,10 +22,14 @@ body {
 }
 
 h1,
-h2,
+h2 {
+  /* 大标题走 --tb-font-display（Ink 下是衬线，与"教案/文档"的书卷气质一致），
+     与小标题拉开层级；h3 及以下保持无衬线，避免小字号下发虚 */
+  font-family: var(--tb-font-display);
+  letter-spacing: var(--tb-tracking-display);
+}
+
 h3 {
-  /* 标题默认走优雅衬线体，与正文形成层级对比 */
-  font-family: var(--font-serif);
   letter-spacing: -0.01em;
 }
 

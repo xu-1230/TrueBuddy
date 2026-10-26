@@ -161,16 +161,13 @@
               </div>
             </div>
           </section>
-
-
         </div>
-
         <footer class="config-panel__footer">
           <SquircleButton
             block
             class="create-btn"
-            base="#3d7ab5"
-            dark="#2f5f8f"
+            base="#2b4a80"
+            dark="#24406f"
             :height="42"
             :disabled="!canGenerate"
             @click="handleGenerate"
