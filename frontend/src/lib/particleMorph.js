@@ -22,7 +22,7 @@ export const PARTICLE_DEFAULTS = {
   // （原实现直接用设备像素，同一份参数在 2 倍屏上点距与点径都只有一半）。
   spacing: 4, // 采样间隔（CSS 像素）
   speed: 0.05, // 每帧朝目标靠近的比例
-  color: '#3d7ab5', // 粒子颜色
+  color: '#2b4a80', // 粒子颜色（兜底值；实际由 HeroParticles 从 --tb-primary-text 解析后覆盖）
   pointRadius: 1, // 点的半径（CSS 像素）
   // 图片形状的缩放：先按「contain」等比铺满画布，再乘该系数。
   // >1 会裁掉素材自身的外留白（素材通常留白较多，放大后主体更饱满）；

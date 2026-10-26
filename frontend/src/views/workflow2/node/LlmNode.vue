@@ -123,7 +123,7 @@ const unboundInputNames = computed(() => unboundNamesOf(inputs.value))
   height: 28px;
   border-radius: 8px;
   background: var(--tb-success);
-  color: #fff;
+  color: var(--tb-on-primary);
 }
 
 .node-icon-svg {

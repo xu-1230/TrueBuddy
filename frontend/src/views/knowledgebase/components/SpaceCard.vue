@@ -251,25 +251,25 @@ defineEmits(['click', 'edit', 'delete'])
   left: 0;
   right: 0;
   height: 60px;
-  background: var(--tb-accent);
+  /* 强调色不再承载白字（白压琥珀仅 2.1:1）：改浅底 + 深字，两态都达标 */
+  background: var(--tb-accent-soft);
+  border: 1px solid color-mix(in oklab, var(--tb-accent) 30%, transparent);
   border-radius: var(--tb-radius-md);
-  box-shadow: 0 4px 10px color-mix(in oklab, var(--tb-accent) 40%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--tb-on-primary);
+  color: var(--tb-accent);
 }
 
 .folder__count {
   font-size: 22px;
   font-weight: 700;
-  color: var(--tb-on-primary);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  color: var(--tb-accent);
 }
 
 .folder__empty {
   font-size: 28px;
-  color: color-mix(in oklab, var(--tb-on-primary) 85%, transparent);
+  color: color-mix(in oklab, var(--tb-accent) 62%, transparent);
 }
 
 .space-card__name {

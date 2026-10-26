@@ -564,7 +564,7 @@ function goTo(idx) {
   ========================================================================== */
 .page {
   /* 面片取值（卡片 / 芯片共用），随明暗态自动换算 */
-  --hv-alt-surface: light-dark(var(--tb-neutral-0), var(--tb-neutral-800));
+  --hv-alt-surface: light-dark(#fdfdfb, #1f232d);
   --hv-block-surface: var(--tb-bg-surface);
   color: var(--tb-text-primary);
   /* 铺在 .page 而不是某个内容容器上：fixed 顶栏所在的那条顶部区域也落在同一张纸面上，

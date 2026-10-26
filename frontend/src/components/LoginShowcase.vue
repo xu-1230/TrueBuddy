@@ -301,20 +301,21 @@ onBeforeUnmount(() => {
   height: 100%;
   padding: clamp(var(--tb-size-5), 3.4vw, var(--tb-size-7));
   overflow: hidden;
-  /* 容器级换肤：本块及其后代（含 Element Plus）的 light-dark() 都按暗色取值，
-     于是文字、描边、软底全部自动落到暗色一套，无需硬编码色值。
-     展台**底色**不在这里决定——它由父层 .stage 按全局明暗画好（见 LoginView），
-     因为 light-dark() 在使用处解析，写在本块的表达式会恒取暗支。 */
-  color-scheme: dark;
+  /* 容器跟随全局明暗（不再强制 color-scheme: dark）：
+     亮色下展台是暖纸上的浅色画板，暗色下是深墨蓝画板，
+     文字、描边、软底仍由语义变量自动换算，无需硬编码色值。
+     展台**底色**由父层 .stage 画出（见 LoginView），本块保持透明。 */
   color: var(--tb-text-primary);
   isolation: isolate;
 
-  /* 以下四枚是叠加在展台底上的光、发丝线、纸背与投影，取值刻意不含 light-dark()：
-     它们是白/品牌色的半透明 mix，在夜蓝与近黑两种底上都成立 */
-  --stage-glow: color-mix(in oklab, var(--tb-brand-400) 42%, transparent);
-  --stage-line: color-mix(in oklab, var(--tb-neutral-0) 16%, transparent);
-  --stage-ghost: color-mix(in oklab, var(--tb-neutral-0) 10%, transparent);
-  --stage-card-shadow: color-mix(in oklab, var(--tb-brand-950) 70%, transparent);
+  /* 四枚叠加装饰：用语义色派生，两态自动成立 */
+  --stage-glow: color-mix(in oklab, var(--tb-primary) 20%, transparent);
+  --stage-line: color-mix(in oklab, var(--tb-text-primary) 14%, transparent);
+  --stage-ghost: color-mix(in oklab, var(--tb-text-primary) 8%, transparent);
+  --stage-card-shadow: light-dark(
+    color-mix(in oklab, #191d24 14%, transparent),
+    color-mix(in oklab, #000000 60%, transparent)
+  );
 }
 
 /* —— 装饰层：全部不响应指针，且只动画 transform / opacity —— */
@@ -452,7 +453,7 @@ onBeforeUnmount(() => {
   inset: 6% 8%;
   border-radius: var(--tb-radius-lg);
   background: var(--stage-ghost);
-  border: 1px solid color-mix(in oklab, var(--tb-neutral-0) 22%, transparent);
+  border: 1px solid color-mix(in oklab, var(--tb-text-primary) 16%, transparent);
   pointer-events: none;
 }
 

@@ -527,23 +527,24 @@ function enterPreview() {
 
 /* —— 右栏：展台 —— */
 .stage {
-  /* 展台底色由页面按「全局」明暗决定：亮色主题走港湾夜蓝（brand-800 → brand-950），
-     避免一块纯黑压在暖纸面上像贴上去的；暗色主题收到近黑，与页面底色连成一片。
+  /* 展台底色由页面按「全局」明暗决定：亮色主题走暖纸面 + 极淡墨蓝光晕，
+     不再压一块夜蓝（Ink 主题下夜蓝与暖纸并列会显得突兀）；
+     暗色主题收到深墨蓝，与页面底色连成一片。
      底色必须画在 .stage 上而不是 .showcase 上——后者起了 color-scheme: dark，
      light-dark() 在使用处解析，传进去的表达式会恒取暗支（实测踩到）。 */
-  background-color: light-dark(var(--tb-brand-950), var(--tb-neutral-950));
+  background-color: light-dark(var(--tb-paper-bg), #12141a);
   background-image:
     radial-gradient(
       120% 85% at 80% -15%,
-      light-dark(var(--tb-brand-800), var(--tb-neutral-900)),
+      light-dark(color-mix(in oklab, var(--tb-primary) 9%, var(--tb-paper-bg)), #1f232d),
       transparent 62%
     ),
     linear-gradient(
       180deg,
       transparent 52%,
       light-dark(
-        color-mix(in oklab, var(--tb-brand-950) 55%, var(--tb-neutral-950)),
-        color-mix(in oklab, var(--tb-neutral-950) 70%, transparent)
+        color-mix(in oklab, var(--tb-primary) 6%, #eae4d8),
+        color-mix(in oklab, #12141a 70%, transparent)
       )
     );
 
