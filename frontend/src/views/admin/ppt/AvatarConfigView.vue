@@ -27,6 +27,9 @@ const voiceLabel = computed(
 const sceneLabel = computed(
   () => AVATAR_SCENE_OPTIONS.find((item) => item.value === form.scene)?.label || form.scene,
 )
+const modelLabel = computed(
+  () => AVATAR_MODEL_OPTIONS.find((item) => item.value === form.model)?.label || form.model,
+)
 
 async function load() {
   loading.value = true
@@ -144,7 +147,7 @@ onMounted(load)
             <span class="avatar-preview__halo" aria-hidden="true" />
             <span class="avatar-preview__face">{{ String(form.model).slice(0, 1) }}</span>
           </div>
-          <p class="avatar-preview__model">{{ form.model }}</p>
+          <p class="avatar-preview__model">{{ modelLabel }}</p>
           <p class="avatar-preview__meta">{{ voiceLabel }} · {{ sceneLabel }}</p>
           <p class="avatar-preview__speed">语速 {{ Number(form.speed).toFixed(1) }}×</p>
         </div>
@@ -152,6 +155,11 @@ onMounted(load)
         <p class="admin-muted avatar-note">
           这里是配置结果的静态预览。放映页会在真正开讲时按该配置加载 Live2D 模型与音色；
           「语速」换算成每段播报的目标时长，具体换算只发生在后端一处。
+        </p>
+
+        <p v-if="form.model === 'DeepSeekWhale'" class="admin-muted avatar-note">
+          鲸鱼娘为社区二创形象，并非 DeepSeek 官方模型。素材许可 CC BY-NC-SA 4.0，
+          仅限非商业用途，须署名 上善无形 / ZipZipPipe / 氵六青。
         </p>
 
         <p class="avatar-updated">最后更新：{{ formatDateTime(updatedAt) }}</p>
