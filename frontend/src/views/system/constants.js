@@ -4,15 +4,7 @@
  * 颜色与图标在此集中声明，组件内不再重复硬编码（docs/09-样式规范.md §3.2 第 1 条）。
  * `pattern` 是封面版式的类名后缀，取值须与 `ShowcaseCard.vue` 里的 `.art--*` 一一对应。
  */
-import {
-  ChatDotRound,
-  Connection,
-  Document,
-  EditPen,
-  Notebook,
-  Reading,
-  VideoCamera,
-} from '@element-plus/icons-vue'
+import { ChatDotRound, Connection, Document, EditPen, Reading } from '@element-plus/icons-vue'
 
 /** Zone A1 主推卡 */
 export const PROMO_MAIN = {
@@ -44,7 +36,11 @@ export const PROMO_ENTRIES = [
   },
 ]
 
-/** Zone A3 运营轮播 */
+/**
+ * Zone A3 运营轮播。
+ * `image` 是 1400×622 的横幅位图（public/hero/），构图统一「左侧留白 + 右侧主体」，
+ * 供文字压左侧；三张同源自同一套渲染风格，换图时请保持同一湿度与光源方向。
+ */
 export const CAROUSEL_SLIDES = [
   {
     id: 'roadmap',
@@ -53,7 +49,7 @@ export const CAROUSEL_SLIDES = [
     description: 'Live2D 形象 + 讲稿驱动，把幻灯片变成一次出镜演讲',
     cta: '查看方案',
     to: '/docs',
-    pattern: 'glow',
+    image: '/hero/hero-speaker.webp',
   },
   {
     id: 'meeting',
@@ -62,8 +58,7 @@ export const CAROUSEL_SLIDES = [
     description: '实时音视频 + 屏幕共享 + 会议内问答',
     cta: '进入控制台',
     to: '/index/meeting',
-    icon: VideoCamera,
-    pattern: 'beam',
+    image: '/hero/hero-meeting.webp',
   },
   {
     id: 'guide',
@@ -72,8 +67,7 @@ export const CAROUSEL_SLIDES = [
     description: '七个模块的完整操作流程',
     cta: '阅读文档',
     to: '/guides',
-    icon: Notebook,
-    pattern: 'lines',
+    image: '/hero/hero-guide.webp',
   },
 ]
 

@@ -22,23 +22,6 @@ spring:
     username: postgres
     password:
     driver-class-name: org.postgresql.Driver
-  # 注册 / 找回密码 / 验证码登录的邮件发送（QQ 邮箱 SSL）
-  mail:
-    host: smtp.qq.com
-    port: 465
-    username: 780692702@qq.com
-    password: mazjccdzrtrxbbij
-    default-encoding: UTF-8
-    properties:
-      mail:
-        smtp:
-          auth: true
-          ssl:
-            enable: true
-            trust: smtp.qq.com
-          connectiontimeout: 5000
-          timeout: 5000
-          writetimeout: 5000
   ai:
     openai:
       api-key: sk-ca3e404a98e44cdaad87429d4e4b7879
@@ -121,11 +104,6 @@ tb:
       - /system/auth/login
       # 刷新令牌时 accessToken 往往已过期，必须免登录
       - /system/auth/refresh
-      # 注册、邮箱验证码发送与找回密码
-      - /system/auth/send-code
-      - /system/auth/register
-      - /system/auth/login/code
-      - /system/auth/reset-password
       - /test2/read-pptx
       # 作业文件文本读取（测试接口，免登录便于联调）
       - /test2/file-text
