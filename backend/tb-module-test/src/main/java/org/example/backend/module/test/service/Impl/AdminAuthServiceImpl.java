@@ -204,7 +204,6 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         return buildLoginResp(accessTokenDO);
     }
 
-    /** 登录与刷新共用：把 Token 转成登录响应，并回填最新角色与权限 */
     private AuthLoginRespVO buildLoginResp(OAuth2AccessTokenDO accessTokenDO) {
         AuthLoginRespVO respVO = BeanUtils.toBean(accessTokenDO, AuthLoginRespVO.class);
         List<String> roles = permissionService.getRoleCodes(accessTokenDO.getUserId());
