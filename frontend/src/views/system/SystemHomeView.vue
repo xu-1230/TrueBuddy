@@ -127,6 +127,7 @@ const moduleCards = computed(() =>
       description: card.description,
       icon: card.icon,
       pattern: card.pattern,
+      image: card.image,
       kindLabel: '',
       badge: moduleBadge(stat, card.hotAt),
       metric: stat ? formatCount(stat.count) : '',
