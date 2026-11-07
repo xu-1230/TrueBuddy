@@ -2,8 +2,9 @@
  * 「点击运行 → 运行前校验 → 拦截 or 建会话并提交执行」**全链路**用例（Node 内置 node:test，零新依赖）。
  *
  * 为什么是「抽取真实函数体 + 替身环境」：本项目测试零依赖（没有 jsdom / @vue/test-utils），
- * 无法在 node:test 里挂载 SFC。所以这里直接读 `WorkflowView.vue` 的源码，把 `handleRun` 与
- * `showRunValidationErrors` 的**真实实现**取出来执行，只把「环境」换成替身：
+ * 无法在 node:test 里挂载 SFC。所以这里直接读 `WorkflowView.vue` 的源码，把 `handleRun`、
+ * `startRun` / `handleStartInputsSubmit` 与 `showRunValidationErrors` 的**真实实现**取出来执行，
+ * 只把「环境」换成替身：
  *
  * - **真实**：`buildRunDefinition`（运行前校验读的那份定义，内含 `collapseIterations` 折叠）、
  *   `buildChatBody`（提交给 `/chat` 的请求体）、`runValidationErrors`（校验）、Vue 的 `h` /
@@ -117,13 +118,23 @@ const evaluateFunction = (source, declaration, deps) => {
  * @param {string} [options.workflowId] 当前工作流 id；传 `''` 模拟「未保存的画布」
  */
 const loadHandleRun = (store, options = {}) => {
-  const calls = { execute: [], popup: [], info: [], warning: [], error: [], debug: [], conversation: [], cleanOrphan: 0 }
+  const calls = {
+    execute: [], popup: [], info: [], warning: [], error: [], debug: [],
+    conversation: [], cleanOrphan: 0, startRun: [],
+  }
   // 浏览器里的 console 方法齐全，替身必须同款：源码里任何一处 console.log / warn / error 都不该把
   // 链路用例打成 `console.log is not a function`（`debug` 单独收进 calls.debug，供断言取用）
   const consoleCalls = { log: [], info: [], warn: [], error: [] }
+  // 「输入数据」弹窗的替身 ref：handleRun 会就地改 .value，断言据此判断弹窗是否被打开
+  const startInputsVisible = { value: false }
+  const startInputsOutputs = { value: [] }
   const handleRun = evaluateFunction(readFileSync(VIEW_PATH, 'utf8'), 'const handleRun = async () => {', {
     runState: { value: { streaming: Boolean(options.streaming) } },
     currentWorkflowId: { value: options.workflowId === undefined ? WORKFLOW_ID : options.workflowId },
+    START_NODE_TYPE: '1',
+    startInputsVisible,
+    startInputsOutputs,
+    startRun: async (workflowId, inputs) => { calls.startRun.push([workflowId, inputs]) },
     ElMessage: {
       info: (message) => calls.info.push(message),
       warning: (message) => calls.warning.push(message),
@@ -151,25 +162,62 @@ const loadHandleRun = (store, options = {}) => {
   })
   // 挂回同一个对象（不能浅拷贝：`cleanOrphan` 这类计数器是靠闭包原地自增的）
   calls.console = consoleCalls
-  return { handleRun, calls }
+  return { handleRun, calls, startInputsVisible, startInputsOutputs }
+}
+
+/** 抽取 `handleStartInputsSubmit`（「输入数据」弹窗提交 → 进入执行）的真实实现 */
+const loadHandleStartInputsSubmit = () => {
+  const calls = { startRun: [] }
+  const handleStartInputsSubmit = evaluateFunction(
+    readFileSync(VIEW_PATH, 'utf8'),
+    'const handleStartInputsSubmit = async (inputs) => {',
+    {
+      currentWorkflowId: { value: WORKFLOW_ID },
+      startRun: async (workflowId, inputs) => { calls.startRun.push([workflowId, inputs]) },
+    },
+  )
+  return { handleStartInputsSubmit, calls }
+}
+
+/** 抽取 `startRun`（建会话并提交执行）的真实实现，建会话可注入失败 */
+const loadStartRun = ({ conversationError } = {}) => {
+  const calls = { conversation: [], execute: [], error: [] }
+  const startRun = evaluateFunction(readFileSync(VIEW_PATH, 'utf8'), 'const startRun = async (workflowId, inputs) => {', {
+    runState: { value: {} },
+    ElMessage: { info: () => {}, warning: () => {}, error: (message) => calls.error.push(message) },
+    createConversation: async (workflowId) => {
+      if (conversationError) throw conversationError
+      calls.conversation.push(workflowId)
+      return { conversationId: 'conversation-1' }
+    },
+    buildChatBody,
+    execute: (payload) => calls.execute.push(payload),
+  })
+  return { startRun, calls }
 }
 
 /* ===== 链路：默认（合法）画布 ===== */
 
-test('链路：合法画布点运行 → 校验通过（不弹窗）→ 建会话并提交执行', async () => {
+test('链路：合法画布点运行 → 校验通过 → 弹「输入数据」弹窗（开始节点有声明输出，不直接执行）', async () => {
   const store = canvasOfDefaultFlow()
-  const { handleRun, calls } = loadHandleRun(store)
+  const { handleRun, calls, startInputsVisible, startInputsOutputs } = loadHandleRun(store)
 
   await handleRun()
 
-  assert.deepEqual(calls.popup, [], '校验通过时不该弹窗')
+  assert.deepEqual(calls.popup, [], '校验通过时不该弹校验窗')
   assert.equal(calls.cleanOrphan, 1, '提交前会先做一次悬空子块清理')
-  assert.deepEqual(calls.conversation, [WORKFLOW_ID], '执行前先按 workflow_id 建会话')
-  assert.equal(calls.execute.length, 1, '校验通过后要提交执行')
-  assert.equal(calls.execute[0].body.conversationId, 'conversation-1', '提交的是刚建出来的会话')
-  assert.equal(calls.execute[0].body.workflowId, WORKFLOW_ID)
-  assert.equal(calls.execute[0].body.message, undefined, '首轮不带 message（业务输入由开始节点提供模拟数据）')
   assert.deepEqual(calls.debug, [['[workflow] 运行前校验', '通过']], '开发期能看到校验跑过且通过')
+  assert.equal(startInputsVisible.value, true, '开始节点有声明输出 → 弹「输入数据」弹窗')
+  assert.deepEqual(
+    startInputsOutputs.value.map((field) => field.name),
+    ['file_tree', 'description', 'know'],
+    '弹窗按开始节点的声明收集输入（内置定义即这三个变量）',
+  )
+  assert.equal(
+    calls.conversation.length + calls.execute.length + calls.startRun.length,
+    0,
+    '弹窗阶段不建会话、不执行——用户取消时不留下孤儿会话',
+  )
 
   // 折叠口径仍然成立（保存与运行前校验都走 buildRunDefinition）：顶层节点（开始 / 规划 / 人工确认 /
   // 容器 / 汇总 / 结束）+ 容器内折叠的子块。`/chat` 只提交 workflow_id，故这里直接验证折叠产物本身。
@@ -181,6 +229,49 @@ test('链路：合法画布点运行 → 校验通过（不弹窗）→ 建会�
   const container = definition.nodes.find((node) => node.id === seedContainer.id)
   assert.equal(container.blocks.length, seedContainer.blocks.length, '迭代体子块被折叠进容器的 blocks')
   assert.equal(container.edges.length, seedContainer.edges.length, '迭代体内部连线被折叠进容器的 edges')
+})
+
+test('链路：开始节点没有声明输出 → 跳过输入弹窗直接进入执行', async () => {
+  // 最小合法画布（开始无声明输出 + 结束 + 一条连线）：既过运行前校验，又不触发输入弹窗。
+  // 注意不能摘默认画布开始节点的 outputs——下游引用会断、运行前校验先失败，走不到本分支。
+  const store = {
+    nodes: [
+      { id: '100001', type: '1', data: { label: '开始', outputs: [] } },
+      { id: '900001', type: '2', data: { label: '结束', inputs: [] } },
+    ],
+    edges: [{ id: 'e-start-end', source: '100001', target: '900001' }],
+  }
+  const { handleRun, calls, startInputsVisible } = loadHandleRun(store)
+
+  await handleRun()
+
+  assert.deepEqual(calls.popup, [], '最小合法画布应通过运行前校验')
+  assert.equal(startInputsVisible.value, false, '无声明输出时不弹输入弹窗')
+  assert.deepEqual(calls.startRun, [[WORKFLOW_ID, undefined]], '直接进入建会话与执行（inputs 缺省）')
+  assert.equal(calls.conversation.length + calls.execute.length, 0, '建会话与执行交给 startRun 承载')
+})
+
+test('链路：输入数据弹窗提交 → 带着业务输入进入 startRun', async () => {
+  const { handleStartInputsSubmit, calls } = loadHandleStartInputsSubmit()
+  const inputs = { file_tree: [{ fileId: 122 }], description: '满分 100', know: [] }
+
+  await handleStartInputsSubmit(inputs)
+
+  assert.deepEqual(calls.startRun, [[WORKFLOW_ID, inputs]], '弹窗取值原样交给 startRun')
+})
+
+test('链路：带 inputs 运行 → 建会话后把业务输入放进首轮请求体', async () => {
+  const { startRun, calls } = loadStartRun()
+  const inputs = { file_tree: [{ fileId: 122 }], description: '满分 100' }
+
+  await startRun(WORKFLOW_ID, inputs)
+
+  assert.deepEqual(calls.conversation, [WORKFLOW_ID], '执行前先按 workflow_id 建会话')
+  assert.equal(calls.execute.length, 1, '建会话成功后提交执行')
+  assert.equal(calls.execute[0].body.conversationId, 'conversation-1', '提交的是刚建出来的会话')
+  assert.equal(calls.execute[0].body.workflowId, WORKFLOW_ID)
+  assert.equal(calls.execute[0].body.inputs, inputs, 'inputs 原样进入首轮请求体')
+  assert.equal(calls.execute[0].body.message, undefined, '首轮不带 message')
 })
 
 /* ===== 链路：未保存的画布（执行按 workflow_id 读库，没有 id 就不能跑） ===== */
@@ -308,25 +399,9 @@ test('链路：正在执行中点运行 → 只提示，不清理、不校验、
 })
 
 test('链路：建会话失败 → 提示原因，不提交执行', async () => {
-  const store = canvasOfDefaultFlow()
-  const calls = { execute: [], error: [] }
-  const handleRun = evaluateFunction(readFileSync(VIEW_PATH, 'utf8'), 'const handleRun = async () => {', {
-    runState: { value: { streaming: false } },
-    currentWorkflowId: { value: WORKFLOW_ID },
-    ElMessage: { info: () => {}, warning: () => {}, error: (message) => calls.error.push(message) },
-    cleanOrphanChildren: () => {},
-    buildRunDefinition,
-    getNodes: { value: store.nodes },
-    getEdges: { value: store.edges },
-    runValidationErrors,
-    showRunValidationErrors: () => {},
-    createConversation: async () => { throw new Error('工作流不存在: 1') },
-    buildChatBody,
-    execute: (payload) => calls.execute.push(payload),
-    console,
-  })
+  const { startRun, calls } = loadStartRun({ conversationError: new Error('工作流不存在: 1') })
 
-  await handleRun()
+  await startRun(WORKFLOW_ID, { description: 'x' })
 
   assert.deepEqual(calls.error, ['工作流不存在: 1'], '建会话失败要把后端原因展示出来')
   assert.equal(calls.execute.length, 0, '没有会话就不该提交执行')

@@ -14,6 +14,7 @@ import HumanNode from './node/HumanNode.vue'
 import OutputNode from './node/OutputNode.vue'
 import ConnectionLine from './ConnectionLine.vue'
 import HumanCardDialog from './components/HumanCardDialog.vue'
+import StartInputsDialog from './components/StartInputsDialog.vue'
 import NodeDataDrawer from './components/NodeDataDrawer.vue'
 import NodePanel from './components/NodePanel.vue'
 import ToolsWrap from './components/ToolsWrap.vue'
@@ -589,6 +590,13 @@ const abortRun = () => {
 const cardVisible = ref(false)
 const cardData = ref(null)
 
+/** 开始节点类型编码（与 NODE_META / 后端 NodeActionFactory 一致） */
+const START_NODE_TYPE = '1'
+
+/** 试运行的「输入数据」弹窗：开始节点有声明输出时，运行前必须显式提供业务输入 */
+const startInputsVisible = ref(false)
+const startInputsOutputs = ref([])
+
 /** 打开当前待确认的表单卡片（中断时自动打开；节点卡片上的「填写」按钮也能再打开） */
 const openCard = () => {
   const card = pendingCardOf(runState.value)
@@ -693,15 +701,38 @@ const handleRun = async () => {
     showRunValidationErrors(errors)
     return
   }
+  // 开始节点按 data.outputs 声明业务输入（docs/12 §4.4）：有声明就必须显式提供——
+  // 后端开始节点没有演示兜底，required 变量缺失会让整轮执行失败。
+  // 弹窗放在建会话之前：用户取消时不留下孤儿会话。
+  const startNode = getNodes.value.find((node) => String(node.type) === START_NODE_TYPE)
+  const declaredOutputs = (startNode?.data?.outputs ?? []).filter((field) => field?.name)
+  if (declaredOutputs.length) {
+    startInputsOutputs.value = declaredOutputs
+    startInputsVisible.value = true
+    return
+  }
+  await startRun(workflowId)
+}
+
+/** 「输入数据」弹窗提交：带着收集到的业务输入进入执行 */
+const handleStartInputsSubmit = async (inputs) => {
+  await startRun(currentWorkflowId.value, inputs)
+}
+
+/**
+ * 建会话并启动执行；`inputs` 缺省/为空时首轮不带该字段（开始节点声明即空产出）。
+ *
+ * 会话在建的那一刻绑定工作流；执行入口按会话查最新一条执行实例来决定「新建 / 续跑」。
+ */
+const startRun = async (workflowId, inputs) => {
   try {
-    // 会话在建的那一刻绑定工作流；执行入口按会话查最新一条执行实例来决定「新建 / 续跑」
     const conversation = await createConversation(workflowId)
     runState.value = { ...runState.value, conversationId: conversation.conversationId }
   } catch (error) {
     ElMessage.error(error?.message || '会话创建失败')
     return
   }
-  execute({ body: buildChatBody(runState.value.conversationId, workflowId) })
+  execute({ body: buildChatBody(runState.value.conversationId, workflowId, inputs) })
 }
 
 /**
@@ -1005,6 +1036,14 @@ async function submitSave() {
 
     <!-- 人工确认弹窗：执行到人工确认节点中断时自动弹出，填写值经 /chat 续跑回传 -->
     <HumanCardDialog v-model="cardVisible" :card="cardData" @submit="submitCard" />
+
+    <!-- 试运行输入弹窗：开始节点有声明输出时，运行前收集业务输入（required 校验 + 记忆上次填写） -->
+    <StartInputsDialog
+      v-model="startInputsVisible"
+      :outputs="startInputsOutputs"
+      :workflow-id="currentWorkflowId"
+      @submit="handleStartInputsSubmit"
+    />
   </div>
 </template>
 
