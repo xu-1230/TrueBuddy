@@ -8,7 +8,8 @@ import java.util.List;
  * 批改请求 VO（第二步）
  *
  * <p>第一步上传完成后由前端串行提交，携带本次批改所需的全部配置。
- * 当前后端仅接收并记录，真实批改能力待后续接入。
+ * 当前后端仅**落库存档**；批改执行所需的数据由前端随 {@code POST /chat} 的 inputs 直传
+ * （file_tree / description / know），执行以 inputs 为准。
  */
 @Data
 public class HomeworkGradeReqVO {

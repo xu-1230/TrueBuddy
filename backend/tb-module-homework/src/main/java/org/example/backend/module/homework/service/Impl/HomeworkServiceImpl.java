@@ -147,8 +147,8 @@ public class HomeworkServiceImpl implements HomeworkService {
     /**
      * 接收批改请求（第二步）。
      *
-     * <p>把批改要求与知识库写进该任务，工作流的开始节点随后按 taskId 回查（文件清单读 homework_file），
-     * 因此**必须在跑工作流之前调用**。
+     * <p>把批改要求与知识库写进该任务**落库存档**（历史 / 管理端可查）。批改执行所需的数据
+     * 不由后端回查，而是前端随 {@code POST /chat} 的 inputs 直传，执行以 inputs 为准。
      */
     @Override
     public void receiveGradeRequest(HomeworkGradeReqVO reqVO) {
@@ -166,30 +166,6 @@ public class HomeworkServiceImpl implements HomeworkService {
                     fileItems.stream().map(HomeworkFileItemVO::getPath).toList(),
                     fileItems.stream().map(HomeworkFileItemVO::getFileId).toList());
         }
-    }
-
-    @Override
-    public HomeworkTaskDO getTask(Long taskId) {
-        return taskMapper.selectById(taskId);
-    }
-
-    @Override
-    public List<HomeworkFileItemVO> listFileItems(Long taskId) {
-        List<HomeworkFileDO> files = fileMapper.selectListByTaskId(taskId);
-        List<HomeworkFileItemVO> items = new ArrayList<>(files.size());
-        for (HomeworkFileDO file : files) {
-            InfraFileDO infraFile = file.getFileId() == null ? null : infraFileMapper.selectById(file.getFileId());
-            HomeworkFileItemVO item = new HomeworkFileItemVO();
-            item.setId(file.getId());
-            item.setFileId(file.getFileId());
-            item.setName(file.getName());
-            item.setPath(file.getRelativePath());
-            item.setSize(file.getSize());
-            item.setType(infraFile == null ? null : infraFile.getType());
-            item.setUrl(infraFile == null ? null : infraFile.getUrl());
-            items.add(item);
-        }
-        return items;
     }
 
     /**

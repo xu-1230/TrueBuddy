@@ -25,7 +25,8 @@ import static org.example.backend.framework.common.pojo.CommonResult.success;
  *     <li>POST /upload —— 批量上传作业文件（multipart：files + paths + folderName），
  *     逐份存储并落库相对路径，返回以相对路径表示的文件清单</li>
  *     <li>POST /grade —— 提交批改请求（JSON：taskId + spaceIds + files + description
- *     + exportFormat + workflowId）；当前后端只接收并记录，真实批改待接入</li>
+ *     + exportFormat + workflowId）；仅落库存档，批改**执行**所需的数据由前端随
+ *     {@code POST /chat} 的 inputs 直传，执行以 inputs 为准</li>
  * </ol>
  */
 @RestController

@@ -58,6 +58,7 @@ __pycache__/
 # Local scratch / residual design refs & test docs (not part of the project)
 /image/
 /testfile/
+/test/
 $null
 
 # OS
