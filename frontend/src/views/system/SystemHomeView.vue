@@ -127,6 +127,7 @@ const moduleCards = computed(() =>
       description: card.description,
       icon: card.icon,
       pattern: card.pattern,
+      image: card.image,
       kindLabel: '',
       badge: moduleBadge(stat, card.hotAt),
       metric: stat ? formatCount(stat.count) : '',
@@ -203,11 +204,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 宽度完全由主区决定：侧栏折叠后主区多出的 184px 必须真的落到内容上。
+   原先写死 max-width: 1680px，1920 屏上折叠前后只差 52px（1680 - 1628）、
+   网格列数也不变，看起来就像折叠没生效；其余业务页同样是流式铺满，这里跟随。 */
 .home {
   display: flex;
   flex-direction: column;
   gap: var(--tb-size-6);
-  max-width: 1680px;
+  min-width: 0;
 }
 
 .band {

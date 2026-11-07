@@ -1,12 +1,20 @@
 <template>
   <button
     class="showcase-card"
-    :class="[`showcase-card--${variant}`, `is-${pattern}`]"
+    :class="[`showcase-card--${variant}`, `is-${pattern}`, { 'has-media': image }]"
     type="button"
     @click="$emit('open')"
   >
     <!-- entry 版式：与 HomeHero 的 A2 双入口卡同一外观（标题 + 描述药丸 + 右侧图标块） -->
     <template v-if="variant === 'entry'">
+      <!-- 位图打底：与 HomeHero 的 A2/A3 同一套「图—染—压」三层处理，文字压左侧留白区 -->
+      <span v-if="image" class="showcase-card__media" aria-hidden="true">
+        <img class="showcase-card__img" :src="image" alt="" decoding="async" />
+        <span class="showcase-card__tint"></span>
+        <span class="showcase-card__scrim"></span>
+        <span class="showcase-card__grain"></span>
+      </span>
+
       <span class="showcase-card__text">
         <span class="showcase-card__row">
           <span class="showcase-card__title" :title="title">{{ title }}</span>
@@ -85,6 +93,8 @@ const props = defineProps({
   icon: { type: [Object, Function], required: true },
   /** 封面版式名，取值见 `../constants.js` 的 pattern 字段 */
   pattern: { type: String, default: 'page' },
+  /** entry 版式的背景位图（public/hero/），为空时保持纯色渐变底 */
+  image: { type: String, default: '' },
   /** 'new' | 'hot' | null */
   badge: { type: String, default: null },
   metric: { type: [Number, String], default: null },
@@ -483,6 +493,68 @@ const badgeIcon = computed(() => BADGE_ICON[props.badge] || MagicStick)
     var(--tb-bg-surface);
 }
 
+/* —— 有背景位图时：与 HomeHero 的 A2/A3 同一套「深色画报」处理 ——
+   位图恒暗、文字恒白，墨色与白字就地定义、不随明暗反相，其余中性色仍走 Token */
+.showcase-card--entry.has-media {
+  --entry-shade: 26 44 78;
+  --entry-on-media: #ffffff;
+
+  position: relative; /* 基类无定位，媒体层与角标都要锚在这里 */
+  color: var(--entry-on-media);
+  /* 兜底底色与主推卡同一支主色，图片未解码时不会闪白 */
+  background: linear-gradient(150deg, var(--tb-primary) 0%, rgb(var(--entry-shade)) 100%);
+  isolation: isolate;
+}
+
+.showcase-card__media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.showcase-card__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* 位图主体在右半，左侧留白供文字落位 */
+  object-position: 72% 50%;
+  filter: light-dark(brightness(1.12) saturate(1.02), brightness(1.05));
+}
+
+/* 品牌染色：把整帧色相拉到主色上、只留明暗，与首页其它媒体位归到同一色系 */
+.showcase-card__tint {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(140deg, var(--tb-primary-active) 0%, var(--tb-primary) 100%);
+  mix-blend-mode: color;
+  opacity: 0.66;
+}
+
+/* 压暗层：左侧保文字对比度，顶部与右上角收一次高光纸面 */
+.showcase-card__scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      96deg,
+      rgb(var(--entry-shade) / 0.92) 0%,
+      rgb(var(--entry-shade) / 0.72) 34%,
+      rgb(var(--entry-shade) / 0.24) 68%,
+      rgb(var(--entry-shade) / 0.12) 100%
+    ),
+    linear-gradient(180deg, rgb(var(--entry-shade) / 0.42) 0%, transparent 42%),
+    radial-gradient(90% 120% at 100% 0%, rgb(var(--entry-shade) / 0.5) 0%, transparent 58%);
+}
+
+.showcase-card__grain {
+  position: absolute;
+  inset: 0;
+  background-image: var(--tb-noise);
+  opacity: calc(var(--tb-grain) * 0.6);
+  mix-blend-mode: overlay;
+}
+
 .showcase-card--entry .showcase-card__text {
   gap: var(--tb-size-2);
 }
@@ -536,5 +608,37 @@ const badgeIcon = computed(() => BADGE_ICON[props.badge] || MagicStick)
 .showcase-card--entry:hover .showcase-card__thumb,
 .showcase-card--entry:focus-visible .showcase-card__thumb {
   transform: scale(1.06);
+}
+
+/* —— has-media 的文字反白 —— */
+.showcase-card--entry.has-media .showcase-card__text {
+  position: relative;
+  z-index: 1;
+}
+
+.showcase-card--entry.has-media .showcase-card__title {
+  color: var(--entry-on-media);
+  text-shadow: 0 1px 10px rgb(var(--entry-shade) / 0.45);
+}
+
+.showcase-card--entry.has-media .showcase-card__pill {
+  color: rgb(255 255 255 / 0.82);
+  background: color-mix(in oklab, var(--entry-on-media) 12%, transparent);
+  border-color: color-mix(in oklab, var(--entry-on-media) 26%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.showcase-card--entry.has-media .showcase-card__metric {
+  color: rgb(255 255 255 / 0.9);
+  background: color-mix(in oklab, var(--entry-on-media) 12%, transparent);
+  border-color: color-mix(in oklab, var(--entry-on-media) 26%, transparent);
+}
+
+.showcase-card--entry.has-media .showcase-card__thumb {
+  position: relative;
+  z-index: 1;
+  color: var(--entry-on-media);
+  background: color-mix(in oklab, var(--entry-on-media) 14%, transparent);
+  border-color: color-mix(in oklab, var(--entry-on-media) 32%, transparent);
 }
 </style>

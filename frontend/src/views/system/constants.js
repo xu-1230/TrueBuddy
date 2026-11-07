@@ -16,7 +16,11 @@ export const PROMO_MAIN = {
   pattern: 'slide',
 }
 
-/** Zone A2 双入口卡（pill 是单行省略号，文案要短到能在窄栏里读全） */
+/**
+ * Zone A2 双入口卡（pill 是单行省略号，文案要短到能在窄栏里读全）。
+ * `image` 是与 Zone A3 同一套渲染风格的横幅位图（public/hero/），
+ * 供卡片做「位图打底 + 品牌染色」的背景，构图统一「左侧留白 + 右侧主体」。
+ */
 export const PROMO_ENTRIES = [
   {
     id: 'doc-template',
@@ -25,6 +29,7 @@ export const PROMO_ENTRIES = [
     to: '/index/doc-template',
     icon: Document,
     pattern: 'page',
+    image: '/hero/hero-docgen.webp',
   },
   {
     id: 'homework',
@@ -33,6 +38,7 @@ export const PROMO_ENTRIES = [
     to: '/index/homework-grading',
     icon: EditPen,
     pattern: 'grid',
+    image: '/hero/hero-homework.webp',
   },
 ]
 
@@ -92,6 +98,7 @@ export const MODULE_CARDS = [
     source: 'knowledge',
     unit: '空间',
     hotAt: 3,
+    image: '/hero/hero-knowledge.webp',
   },
   {
     id: 'workflow',
@@ -103,6 +110,7 @@ export const MODULE_CARDS = [
     source: 'workflow',
     unit: '条',
     hotAt: 4,
+    image: '/hero/hero-workflow.webp',
   },
 ]
 

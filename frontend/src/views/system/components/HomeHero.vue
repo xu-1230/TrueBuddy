@@ -30,6 +30,14 @@
         type="button"
         @click="go(entry.to)"
       >
+        <!-- 位图打底：与 A3 轮播同一套「图—染—压」三层处理，文字压左侧留白区 -->
+        <span class="hero__entry-media" aria-hidden="true">
+          <img class="hero__entry-img" :src="entry.image" alt="" decoding="async" />
+          <span class="hero__entry-tint"></span>
+          <span class="hero__entry-scrim"></span>
+          <span class="hero__entry-grain"></span>
+        </span>
+
         <span class="hero__entry-text">
           <span class="hero__entry-title">{{ entry.title }}</span>
           <span class="hero__pill">
@@ -415,20 +423,79 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+/**
+ * 双入口卡与 A3 同一套「深色画报」处理：位图恒暗、文字恒白，
+ * 墨色与白字就地定义、不随明暗反相（反相后白字压浅色照片会失效），其余中性色仍走 Token。
+ */
 .hero__entry {
+  --entry-shade: 26 44 78;
+  --entry-on-media: #ffffff;
+
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
   gap: var(--tb-size-3);
   min-height: 0;
   padding: var(--tb-size-4);
-  color: var(--tb-text-primary);
+  color: var(--entry-on-media);
+  /* 兜底底色与 A1 同一支主色，图片未解码时不会闪白 */
+  background: linear-gradient(150deg, var(--tb-primary) 0%, rgb(var(--entry-shade)) 100%);
+  isolation: isolate;
+}
+
+/* —— 图 —— */
+.hero__entry-media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.hero__entry-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* 两张图的主体都在右半，左侧留白供文字落位 */
+  object-position: 72% 50%;
+  filter: light-dark(brightness(1.12) saturate(1.02), brightness(1.05));
+}
+
+/* 品牌染色：把整帧色相拉到主色上、只留明暗，与 A1/A3 归到同一色系 */
+.hero__entry-tint {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(140deg, var(--tb-primary-active) 0%, var(--tb-primary) 100%);
+  mix-blend-mode: color;
+  opacity: 0.66;
+}
+
+/* 压暗层：左侧保文字对比度，顶部与右上角收一次高光纸面 */
+.hero__entry-scrim {
+  position: absolute;
+  inset: 0;
   background:
-    radial-gradient(circle at 50% 118%, var(--tb-primary-soft), transparent 62%),
-    var(--tb-bg-surface);
+    linear-gradient(
+      96deg,
+      rgb(var(--entry-shade) / 0.92) 0%,
+      rgb(var(--entry-shade) / 0.72) 34%,
+      rgb(var(--entry-shade) / 0.24) 68%,
+      rgb(var(--entry-shade) / 0.12) 100%
+    ),
+    linear-gradient(180deg, rgb(var(--entry-shade) / 0.42) 0%, transparent 42%),
+    radial-gradient(90% 120% at 100% 0%, rgb(var(--entry-shade) / 0.5) 0%, transparent 58%);
+}
+
+.hero__entry-grain {
+  position: absolute;
+  inset: 0;
+  background-image: var(--tb-noise);
+  opacity: calc(var(--tb-grain) * 0.6);
+  mix-blend-mode: overlay;
 }
 
 .hero__entry-text {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: var(--tb-size-2);
@@ -439,6 +506,8 @@ onBeforeUnmount(() => {
   font-size: var(--tb-text-lg);
   font-weight: 600;
   line-height: var(--tb-leading-snug);
+  color: var(--entry-on-media);
+  text-shadow: 0 1px 10px rgb(var(--entry-shade) / 0.45);
 }
 
 .hero__pill {
@@ -450,10 +519,11 @@ onBeforeUnmount(() => {
   height: var(--tb-control-sm);
   padding: 0 var(--tb-size-3);
   font-size: var(--tb-text-xs);
-  color: var(--tb-text-secondary);
-  background: var(--tb-bg-raised);
-  border: var(--tb-border-width) solid var(--tb-border);
+  color: rgb(255 255 255 / 0.82);
+  background: color-mix(in oklab, var(--entry-on-media) 12%, transparent);
+  border: var(--tb-border-width) solid color-mix(in oklab, var(--entry-on-media) 26%, transparent);
   border-radius: var(--tb-radius-full);
+  backdrop-filter: blur(6px);
 }
 
 .hero__pill span {
@@ -463,15 +533,17 @@ onBeforeUnmount(() => {
 }
 
 .hero__thumb {
+  position: relative;
+  z-index: 1;
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 56px;
   height: 56px;
-  color: var(--tb-primary-text);
-  background: linear-gradient(150deg, var(--tb-bg-sunken), var(--tb-primary-soft));
-  border: var(--tb-border-width) solid var(--tb-primary-border);
+  color: var(--entry-on-media);
+  background: color-mix(in oklab, var(--entry-on-media) 14%, transparent);
+  border: var(--tb-border-width) solid color-mix(in oklab, var(--entry-on-media) 32%, transparent);
   border-radius: var(--tb-radius-lg);
   transition: transform var(--tb-dur-3) var(--tb-ease-spring);
 }
