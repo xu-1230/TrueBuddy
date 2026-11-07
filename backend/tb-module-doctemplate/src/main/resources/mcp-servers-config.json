@@ -1,18 +1,11 @@
 {
   "mcpServers": {
     "docx-mcp": {
-      "command": "uv",
+      "command": "D:\\c桌面\\毕业设计\\docx-mcp\\.venv\\Scripts\\python.exe",
       "args": [
-        "run",
-        "--directory",
-        "D:\\c桌面\\毕业设计\\docx-mcp",
-        "mcp",
-        "run",
         "D:\\c桌面\\毕业设计\\docx-mcp\\main.py"
       ],
-      "env": {
-        "UV_CACHE_DIR": "D:\\c桌面\\毕业设计\\docx-mcp\\.uv_cache"
-      }
+      "env": {}
     }
   }
 }

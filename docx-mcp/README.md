@@ -102,6 +102,21 @@ uv sync
 uv run python main.py
 ```
 
+### 后端拉起方式（mcp-servers-config.json）
+
+Spring AI 后端（`tb-module-doctemplate/src/main/resources/mcp-servers-config.json`）
+**直接用 `.venv\Scripts\python.exe` 绝对路径启动 `main.py`**，不再经由 `uv run`：
+
+- 不依赖 `uv` 在启动方 PATH 中（IDEA/服务/计划任务等环境常缺 `D:\Python\Scripts`，
+  这是「终端能起、IDE 里 MCP 启动失败」的典型根因）；
+- 每次启动不再触发 uv 的隐式依赖同步，启动更快且无网络依赖。
+
+**前置条件**：`.venv` 必须已就绪——克隆或改动 `pyproject.toml` / `uv.lock` 后先在
+`docx-mcp/` 下执行一次 `uv sync`。若 `.venv` 缺失或损坏，删除后重新 `uv sync` 即可。
+
+> 备选方案：改回 `"command": "uv", "args": ["run", "--no-sync", "--directory", ...]`
+> 也可以，但仍要求 `uv.exe`（`D:\Python\Scripts`）对后端进程可见，稳定性不如直连 venv 解释器。
+
 ### MinIO 配置（凭据一律环境变量注入）
 
 `docx_to_html` 的 `image_mode="url"` 需要 MinIO；配置读取顺序为
