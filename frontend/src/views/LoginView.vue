@@ -7,14 +7,11 @@ import RegisterForm from '@/components/RegisterForm.vue'
 import ForgetPasswordForm from '@/components/ForgetPasswordForm.vue'
 import LoginShowcase from '@/components/LoginShowcase.vue'
 import { useAppearance } from '@/composables/useAppearance'
-import { isSafeRedirect, resolveLoginDestination } from '@/utils/access'
-import { enableAdminPreview, resetAdminSession } from '@/views/admin/hooks/useAdminSession'
+import { resolveLoginDestination } from '@/utils/access'
+import { resetAdminSession } from '@/views/admin/hooks/useAdminSession'
 
 const route = useRoute()
 const router = useRouter()
-
-/** 开发环境才显示「演示数据预览」入口 */
-const isDev = import.meta.env.DEV
 
 /** 明暗态：本页不使用内页外壳，故独立提供切换入口 */
 const { isDark, toggle } = useAppearance()
@@ -54,8 +51,8 @@ const prefillUsername = ref('')
 
 const currentComponent = computed(() => FORM_MAP[formType.value])
 const copy = computed(() => COPY[formType.value])
-/** 忘记密码态由表单自带的「返回登录」收尾；登录/注册共用底部切换 */
-const showSwitch = computed(() => formType.value !== 'forgot')
+/** 找回/注册态各自由表单内的切换收尾，底部按钮只保留登录态的「去注册」 */
+const showSwitch = computed(() => formType.value === 'login')
 
 function switchForm(key) {
   if (FORM_KEYS.includes(key)) formType.value = key
@@ -84,21 +81,12 @@ function onLoginSuccess(data) {
   })
   router.replace(target)
 }
-
-/** 开发预览：不请求后端，以演示数据进入管理端 */
-function enterPreview() {
-  if (!isDev || !enableAdminPreview()) return
-  const redirect = isSafeRedirect(route.query.redirect) && route.query.redirect.startsWith('/admin')
-    ? route.query.redirect
-    : '/admin/dashboard'
-  router.replace(redirect)
-}
 </script>
 
 <template>
   <div class="login">
     <main class="login__frame">
-      <section class="side">
+      <section class="side" :class="{ 'side--compact': formType !== 'login' }">
         <header class="side__bar">
           <p class="brand">
             <span class="brand__mark" aria-hidden="true" />
@@ -131,37 +119,31 @@ function enterPreview() {
         </div>
 
         <!-- 表单落在 1fr 行里：卡片总高由展台锚定，切换三态不再顶开版面 -->
-        <div class="side__form" :class="{ 'side__form--register': formType === 'register' }">
+        <div class="side__form">
           <div class="side__form__scroll">
-            <Transition name="form-swap" mode="out-in">
-              <component
-                :is="currentComponent"
-                :key="formType"
-                v-bind="formType === 'login' ? { initialUsername: prefillUsername } : {}"
-                @go-forgot="goForgot"
-                @go-login="onGoLogin"
-                @login-success="onLoginSuccess"
-              />
-            </Transition>
+            <!-- 三态切换直接换 DOM：与登录方式切换保持同一种瞬切反馈，不做过渡动画 -->
+            <component
+              :is="currentComponent"
+              :key="formType"
+              v-bind="formType === 'login' ? { initialUsername: prefillUsername } : {}"
+              @go-forgot="goForgot"
+              @go-login="onGoLogin"
+              @login-success="onLoginSuccess"
+            />
           </div>
 
           <button
             v-if="showSwitch"
             type="button"
             class="mode-switch"
-            @click="switchForm(formType === 'register' ? 'login' : 'register')"
+            @click="switchForm('register')"
           >
-            <span>{{ formType === 'register' ? '已经开过账号？直接登录' : '还没有账号？注册一个' }}</span>
+            <span>还没有账号？注册一个</span>
             <el-icon><Right /></el-icon>
           </button>
         </div>
 
         <footer class="side__foot">
-          <p v-if="isDev" class="preview-entry">
-            <a role="button" tabindex="0" @click="enterPreview" @keyup.enter="enterPreview">
-              以演示数据预览管理端
-            </a>
-          </p>
           <p class="side__meta">© 2026 TrueBuddy · 师范生教学练一体化平台</p>
         </footer>
       </section>
@@ -219,6 +201,18 @@ function enterPreview() {
   min-height: 0;
   padding: clamp(var(--tb-size-5), 3.4vw, var(--tb-size-7)) clamp(var(--tb-size-5), 3vw, var(--tb-size-7));
   background-color: var(--tb-bg-surface);
+}
+
+/* 注册/找回字段更多：桌面固定卡片高下沿用矮视口的同一套收敛语言
+   （收起副文 + 行距收紧到 tb-size-4），否则「或 / 切换」会被推出可视区 */
+@media (min-width: 1025px) {
+  .side--compact {
+    gap: var(--tb-size-4);
+  }
+
+  .side--compact .intro__lede {
+    display: none;
+  }
 }
 
 .side__bar {
@@ -355,11 +349,6 @@ function enterPreview() {
   scrollbar-width: thin;
 }
 
-/* 注册表单字段更多，双列布局需要更宽的容器；登录/找回保持原宽度 */
-.side__form--register {
-  max-width: 560px;
-}
-
 /* 三态表单共用一套字段语言：标签在上、行距收紧、控件对齐刻度。
    子组件只保留各自的结构件，避免同一份排版在三个文件里各写一遍。 */
 .side__form :deep(.el-form-item) {
@@ -431,7 +420,9 @@ function enterPreview() {
     box-shadow var(--tb-motion-dur) var(--tb-motion-ease);
 }
 
-.side__form :deep(.el-button--large) {
+/* 「获取验证码」与输入框同行，保持输入框自身的标准高度（EP large = 40px）；
+   若同样抬到 46px，flex stretch 会把同行输入框撑高，与表单其他输入框不一致 */
+.side__form :deep(.el-button--large:not(.code-btn)) {
   min-height: var(--tb-control-lg);
 }
 
@@ -442,19 +433,6 @@ function enterPreview() {
 
 .side__form :deep(.el-button--primary:not(.is-link):hover) {
   box-shadow: 0 12px 28px color-mix(in oklab, var(--tb-brand-600) 34%, transparent);
-}
-
-.form-swap-enter-active,
-.form-swap-leave-active {
-  transition:
-    opacity var(--tb-dur-2) var(--tb-motion-ease),
-    transform var(--tb-dur-3) var(--tb-ease-out);
-}
-
-.form-swap-enter-from,
-.form-swap-leave-to {
-  opacity: 0;
-  transform: translate3d(0, 8px, 0);
 }
 
 /* —— 页脚 —— */
@@ -489,32 +467,6 @@ function enterPreview() {
 .mode-switch:focus-visible {
   outline: 2px solid var(--tb-primary);
   outline-offset: 3px;
-  border-radius: var(--tb-radius-xs);
-}
-
-.preview-entry {
-  margin: 0;
-  font-size: var(--tb-text-2xs);
-}
-
-.preview-entry a {
-  color: var(--tb-text-tertiary);
-  cursor: pointer;
-  text-decoration: none;
-  border-bottom: 1px dashed var(--tb-border-strong);
-  transition:
-    color var(--tb-motion-dur) var(--tb-motion-ease),
-    border-color var(--tb-motion-dur) var(--tb-motion-ease);
-}
-
-.preview-entry a:hover {
-  color: var(--tb-primary-text);
-  border-bottom-color: var(--tb-primary-border);
-}
-
-.preview-entry a:focus-visible {
-  outline: 2px solid var(--tb-primary);
-  outline-offset: 2px;
   border-radius: var(--tb-radius-xs);
 }
 
@@ -649,16 +601,6 @@ function enterPreview() {
   .page-appearance,
   .mode-switch {
     transition: none;
-  }
-
-  .form-swap-enter-active,
-  .form-swap-leave-active {
-    transition: opacity var(--tb-dur-1) linear;
-  }
-
-  .form-swap-enter-from,
-  .form-swap-leave-to {
-    transform: none;
   }
 }
 </style>

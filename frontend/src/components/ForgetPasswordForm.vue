@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Key, Lock, Message } from '@element-plus/icons-vue'
+import { Key, Lock, Message, Right } from '@element-plus/icons-vue'
 import { resetPassword, sendCode as sendEmailCode } from '@/api/auth'
 import { useCodeCooldown } from '@/composables/useCodeCooldown'
 
@@ -131,16 +131,12 @@ async function submit() {
       @click="submit"
       >重置密码</el-button
     >
-    <p class="form-row">
-      <a
-        class="form-link"
-        role="button"
-        tabindex="0"
-        @click="emit('go-login', '')"
-        @keyup.enter="emit('go-login', '')"
-        >返回登录</a
-      >
-    </p>
+    <!-- 与登录/注册同一套「提交按钮 → 或 → 切换」结构，三页底部节奏一致 -->
+    <div class="or" aria-hidden="true"><span>或</span></div>
+    <button type="button" class="mode-switch" @click="emit('go-login')">
+      <span>返回登录</span>
+      <el-icon><Right /></el-icon>
+    </button>
   </el-form>
 </template>
 
@@ -167,30 +163,45 @@ async function submit() {
   margin-top: var(--tb-size-2);
 }
 
-.form-row {
-  margin: var(--tb-size-3) 0 0;
-  text-align: center;
+/* 「或」分隔与切换按钮沿用 LoginForm 的结构件，三页底部观感一致 */
+.or {
+  display: flex;
+  align-items: center;
+  gap: var(--tb-size-3);
+  margin: var(--tb-size-4) 0 var(--tb-size-2);
+  color: var(--tb-text-tertiary);
+  font-size: var(--tb-text-2xs);
 }
 
-.form-link {
-  color: var(--tb-primary-text);
+.or::before,
+.or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background-color: var(--tb-border);
+}
+
+.mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-size-1);
+  padding: var(--tb-size-1) 0;
+  border: 0;
+  background: none;
+  color: var(--tb-text-secondary);
+  font-family: inherit;
   font-size: var(--tb-text-sm);
   cursor: pointer;
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition:
-    color var(--tb-motion-dur) var(--tb-motion-ease),
-    border-color var(--tb-motion-dur) var(--tb-motion-ease);
+  transition: color var(--tb-motion-dur) var(--tb-motion-ease);
 }
 
-.form-link:hover {
-  color: var(--tb-primary);
-  border-bottom-color: var(--tb-primary-border);
+.mode-switch:hover {
+  color: var(--tb-primary-text);
 }
 
-.form-link:focus-visible {
+.mode-switch:focus-visible {
   outline: 2px solid var(--tb-primary);
-  outline-offset: 2px;
+  outline-offset: 3px;
   border-radius: var(--tb-radius-xs);
 }
 
@@ -206,7 +217,7 @@ async function submit() {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .form-link {
+  .mode-switch {
     transition: none;
   }
 }

@@ -1,12 +1,12 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CircleCheck, Key, Lock, Message, Right } from '@element-plus/icons-vue'
+import { Key, Lock, Message, Right } from '@element-plus/icons-vue'
 import { register, sendCode as sendEmailCode } from '@/api/auth'
 import { setRefreshToken, setToken } from '@/utils/auth'
 import { useCodeCooldown } from '@/composables/useCodeCooldown'
 
-const emit = defineEmits(['login-success'])
+const emit = defineEmits(['login-success', 'go-login'])
 
 const formRef = ref()
 const submitting = ref(false)
@@ -98,65 +98,60 @@ async function submit() {
       @submit.prevent
       @keyup.enter="submit"
     >
-      <div class="register-form__grid">
-        <el-form-item class="register-form__item register-form__full" label="邮箱" prop="email">
-          <el-input
-            v-model="form.email"
-            placeholder="name@example.com"
-            maxlength="50"
-            autocomplete="email"
-            :prefix-icon="Message"
-          />
-        </el-form-item>
+      <!-- 单列布局与登录表单同宽同距：字段间距、input 尺寸全部沿用 LoginView 的统一规则 -->
+      <el-form-item label="邮箱" prop="email">
+        <el-input
+          v-model="form.email"
+          placeholder="name@example.com"
+          maxlength="50"
+          autocomplete="email"
+          :prefix-icon="Message"
+        />
+      </el-form-item>
 
-        <el-form-item
-          class="register-form__item register-form__full"
-          label="邮箱验证码"
-          prop="code"
-        >
-          <div class="code-row">
-            <el-input
-              v-model="form.code"
-              placeholder="6 位数字"
-              maxlength="6"
-              inputmode="numeric"
-              autocomplete="one-time-code"
-              :prefix-icon="Key"
-              @input="normalizeCode"
-            />
-            <el-button
-              class="code-btn"
-              :disabled="running"
-              :loading="sendingCode"
-              @click="handleSendCode"
-            >
-              {{ running ? `${left}s 后重发` : '获取验证码' }}
-            </el-button>
-          </div>
-        </el-form-item>
-
-        <el-form-item class="register-form__item" label="密码" prop="password">
+      <el-form-item label="邮箱验证码" prop="code">
+        <div class="code-row">
           <el-input
-            v-model="form.password"
-            type="password"
-            placeholder="设置登录密码"
-            autocomplete="new-password"
-            show-password
-            :prefix-icon="Lock"
+            v-model="form.code"
+            placeholder="6 位数字"
+            maxlength="6"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            :prefix-icon="Key"
+            @input="normalizeCode"
           />
-        </el-form-item>
+          <el-button
+            class="code-btn"
+            :disabled="running"
+            :loading="sendingCode"
+            @click="handleSendCode"
+          >
+            {{ running ? `${left}s 后重发` : '获取验证码' }}
+          </el-button>
+        </div>
+      </el-form-item>
 
-        <el-form-item class="register-form__item" label="确认密码" prop="confirm">
-          <el-input
-            v-model="form.confirm"
-            type="password"
-            placeholder="再输入一次"
-            autocomplete="new-password"
-            show-password
-            :prefix-icon="Lock"
-          />
-        </el-form-item>
-      </div>
+      <el-form-item label="密码" prop="password">
+        <el-input
+          v-model="form.password"
+          type="password"
+          placeholder="设置登录密码"
+          autocomplete="new-password"
+          show-password
+          :prefix-icon="Lock"
+        />
+      </el-form-item>
+
+      <el-form-item label="确认密码" prop="confirm">
+        <el-input
+          v-model="form.confirm"
+          type="password"
+          placeholder="再输入一次"
+          autocomplete="new-password"
+          show-password
+          :prefix-icon="Lock"
+        />
+      </el-form-item>
 
       <el-button
         type="primary"
@@ -170,10 +165,12 @@ async function submit() {
         <el-icon class="submit-btn__icon"><Right /></el-icon>
       </el-button>
 
-      <p class="register-form__note">
-        <el-icon><CircleCheck /></el-icon>
-        注册成功后直接进入工作台，无需再次登录
-      </p>
+      <!-- 与登录表单同一套「提交按钮 → 或 → 切换」结构，两页底部节奏保持一致 -->
+      <div class="or" aria-hidden="true"><span>或</span></div>
+      <button type="button" class="mode-switch" @click="emit('go-login')">
+        <span>已经开过账号？直接登录</span>
+        <el-icon><Right /></el-icon>
+      </button>
     </el-form>
   </div>
 </template>
@@ -181,22 +178,6 @@ async function submit() {
 <style scoped>
 .register-form {
   width: 100%;
-}
-
-.register-form__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: var(--tb-size-4);
-}
-
-.register-form__full {
-  grid-column: 1 / -1;
-}
-
-/* 两列布局压缩纵向空间，同时给校验提示留出足够高度；
-   选择器需压过 LoginView 中 .side__form .el-form-item 的同权重规则 */
-.register-form__grid .register-form__item.el-form-item {
-  margin-bottom: 20px;
 }
 
 .code-row {
@@ -226,30 +207,49 @@ async function submit() {
   font-size: 14px;
 }
 
-.register-form__note {
+/* 「或」分隔与切换按钮沿用 LoginForm 的结构件，保证两页底部观感一致 */
+.or {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--tb-size-1);
-  margin: var(--tb-size-1) 0 0;
-  color: var(--tb-text-secondary);
+  gap: var(--tb-size-3);
+  margin: var(--tb-size-4) 0 var(--tb-size-2);
+  color: var(--tb-text-tertiary);
   font-size: var(--tb-text-2xs);
 }
 
-.register-form__note .el-icon {
+.or::before,
+.or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background-color: var(--tb-border);
+}
+
+.mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-size-1);
+  padding: var(--tb-size-1) 0;
+  border: 0;
+  background: none;
+  color: var(--tb-text-secondary);
+  font-family: inherit;
+  font-size: var(--tb-text-sm);
+  cursor: pointer;
+  transition: color var(--tb-motion-dur) var(--tb-motion-ease);
+}
+
+.mode-switch:hover {
   color: var(--tb-primary-text);
-  font-size: 12px;
+}
+
+.mode-switch:focus-visible {
+  outline: 2px solid var(--tb-primary);
+  outline-offset: 3px;
+  border-radius: var(--tb-radius-xs);
 }
 
 @media (max-width: 768px) {
-  .register-form__grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .register-form__grid .register-form__item.el-form-item {
-    margin-bottom: var(--tb-size-5);
-  }
-
   /* 移动端保持验证码输入与按钮同一行，按钮固定宽度；仅极窄屏才换行 */
   .register-form .code-row {
     flex-wrap: nowrap;
@@ -268,6 +268,12 @@ async function submit() {
 
   .register-form .code-btn {
     flex: 1 1 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mode-switch {
+    transition: none;
   }
 }
 </style>
