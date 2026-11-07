@@ -55,6 +55,11 @@ __pycache__/
 .uv_cache/
 *.egg-info/
 
+# Local scratch / residual design refs & test docs (not part of the project)
+/image/
+/testfile/
+$null
+
 # OS
 .DS_Store
 Thumbs.db
