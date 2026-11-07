@@ -4,7 +4,6 @@ import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeActionWithConfig;
 import com.alibaba.cloud.ai.graph.action.InterruptableAction;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
-import org.example.backend.module.homework.service.HomeworkService;
 import org.example.textflow.entity.WorkflowNode;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
@@ -23,29 +22,21 @@ public final class NodeActionFactory {
      * 创建可加入 {@code StateGraph} 的节点动作（不转发内部事件、不配置对话模型客户端与工具）。
      */
     public static AsyncNodeActionWithConfig of(WorkflowNode node) {
-        return of(node, NodeEventListener.NO_OP, null, List.of(), null);
+        return of(node, NodeEventListener.NO_OP, null, List.of());
     }
 
     /**
      * 创建可加入 {@code StateGraph} 的节点动作（不配置对话模型客户端与工具）。
      */
     public static AsyncNodeActionWithConfig of(WorkflowNode node, NodeEventListener listener) {
-        return of(node, listener, null, List.of(), null);
+        return of(node, listener, null, List.of());
     }
 
     /**
      * 创建可加入 {@code StateGraph} 的节点动作（不向大模型节点提供工具）。
      */
     public static AsyncNodeActionWithConfig of(WorkflowNode node, NodeEventListener listener, ChatClient chatClient) {
-        return of(node, listener, chatClient, List.of(), null);
-    }
-
-    /**
-     * 创建可加入 {@code StateGraph} 的节点动作（不接作业模块，开始节点只用状态里的显式变量）。
-     */
-    public static AsyncNodeActionWithConfig of(WorkflowNode node, NodeEventListener listener, ChatClient chatClient,
-                                              List<ToolCallback> toolCallbacks) {
-        return of(node, listener, chatClient, toolCallbacks, null);
+        return of(node, listener, chatClient, List.of());
     }
 
     /**
@@ -55,12 +46,11 @@ public final class NodeActionFactory {
      * <p>{@code chatClient} 会传给大模型节点；为 {@code null} 时大模型节点不调用模型，
      * 只按 outputs 声明产出模拟结果（无 Spring 容器的单测场景）。
      * <p>{@code toolCallbacks} 会传给大模型节点（含迭代体里的大模型节点），供模型自主调用。
-     * <p>{@code homeworkService} 会传给开始节点，供其按 taskId 取本次批改的真实输入。
      * <p>实现了 {@link InterruptableAction} 的节点（如人工确认）会额外包一层中断检测。
      */
     public static AsyncNodeActionWithConfig of(WorkflowNode node, NodeEventListener listener, ChatClient chatClient,
-                                              List<ToolCallback> toolCallbacks, HomeworkService homeworkService) {
-        NodeAction nodeAction = create(node, listener, chatClient, toolCallbacks, homeworkService);
+                                              List<ToolCallback> toolCallbacks) {
+        NodeAction nodeAction = create(node, listener, chatClient, toolCallbacks);
         AsyncNodeAction asyncNodeAction = AsyncNodeAction.node_async(nodeAction);
         if (nodeAction instanceof InterruptableAction interruptable) {
             return new AsyncNodeActionWithConfig.InterruptableAsyncNodeActionWrapper(asyncNodeAction, interruptable);
@@ -72,12 +62,14 @@ public final class NodeActionFactory {
      * 节点类型 → 动作实现。
      * <p>画布导出的 type 是数字编码：1=开始、2=结束、3=大模型、4=迭代、5=人工确认、6=输出；
      * 旧的语义化字符串写法（input / llm / human / output / iterate）已不再兼容。
+     * <p>开始节点不依赖作业模块：业务输入由调用方经 {@code POST /chat} 的 {@code inputs}
+     * 直传进状态，开始节点按声明直读（见 {@link StartNode}）。
      */
     private static NodeAction create(WorkflowNode node, NodeEventListener listener, ChatClient chatClient,
-                                     List<ToolCallback> toolCallbacks, HomeworkService homeworkService) {
+                                     List<ToolCallback> toolCallbacks) {
         String type = node.getType() == null ? "" : node.getType().trim();
         return switch (type) {
-            case "1" -> new StartNode(node, homeworkService);
+            case "1" -> new StartNode(node);
             case "2" -> new EndNode(node);
             case "3" -> new LlmNode(node, chatClient, toolCallbacks);
             case "4" -> new IterateNode(node, listener, chatClient, toolCallbacks);
