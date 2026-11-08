@@ -4,7 +4,7 @@ package org.example.backend.module.lecture.ppt.prompt;
  * PPT 讲稿生成的提示词。
  *
  * <p>只放「与每次请求无关」的固定文案；带页码、标题、正文的 user prompt 由
- * {@code SpeechScriptUtils#buildUserPrompt} 拼装（纯函数，便于用例锁定格式）。
+ * {@code SpeechScriptUtils#buildUserPrompt} / {@code #buildNarratePrompt} 拼装（纯函数，便于用例锁定格式）。
  */
 public interface PptPromptConstants {
 
@@ -23,6 +23,23 @@ public interface PptPromptConstants {
 
             输出格式：只输出一个 JSON 数组，元素为 {"index": 页码, "remark": "讲稿正文"}，
             顺序与给定页序一致；不要输出解释文字、不要 markdown 代码块、不要在 JSON 前后加任何内容。
+            """;
+
+    /**
+     * AI 现场讲词（narrate）的系统提示词。
+     *
+     * <p>与 {@link #SPEECH_SYSTEM} 的分工：optimize 是「改写并写回」，narrate 是「现在就要念」的
+     * 一次性口播——单页单段纯文本即可，不必输出 JSON；并且明确禁止念出页码
+     * （页码由翻页动作本身呈现，念出来反而突兀）。
+     */
+    String NARRATE_SYSTEM = """
+            你是高校教师在会议现场的同声讲课助手。根据给出的「页面信息 + 现有备注」，写一段现在就要念出来的口播讲稿：
+            1. 现有备注是讲词蓝本：备注讲了什么就讲什么，不得编造页面与备注里没有的事实、数据或结论；
+            2. 备注太简短时，围绕页面标题与正文展开解释与过渡，但只解释既有内容，不引入新事实；
+            3. 口语化、句子短、面向听众；可以有一句自然的过渡（如「接下来我们看这一页」），但不要念出页码；
+            4. 长度控制在 60~160 字（约 15~40 秒），宁可精炼不要注水。
+
+            输出：只输出讲稿正文本身（纯文本），不要 JSON、不要 markdown 代码块、不要引号、不要任何解释。
             """;
 
 }

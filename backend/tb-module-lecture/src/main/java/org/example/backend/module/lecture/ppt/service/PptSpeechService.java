@@ -1,5 +1,7 @@
 package org.example.backend.module.lecture.ppt.service;
 
+import org.example.backend.module.lecture.ppt.model.vo.PptSpeechNarrateReqVO;
+import org.example.backend.module.lecture.ppt.model.vo.PptSpeechNarrateRespVO;
 import org.example.backend.module.lecture.ppt.model.vo.PptSpeechOptimizeReqVO;
 import org.example.backend.module.lecture.ppt.model.vo.PptSpeechOptimizeRespVO;
 
@@ -18,5 +20,18 @@ public interface PptSpeechService {
      * @return 每页讲稿（含字数与预计秒数）+ 失败页码
      */
     PptSpeechOptimizeRespVO optimize(PptSpeechOptimizeReqVO reqVO);
+
+    /**
+     * AI 现场讲词（narrate）：根据单页的「备注（蓝本）+ 标题/正文（事实边界）+ 现场进度」，
+     * 生成一段现在就要念出来的口播文本。
+     *
+     * <p>与 optimize 的分工：optimize 是「改写并写回」（结果成为 remark），
+     * narrate 是「念一次就丢」的一次性派生物——口播只进会议台账，不写回 remark。
+     * 无状态：一次请求 = 一页讲词；失败的恢复（重试/跳过）由前端工作项编排。
+     *
+     * @param reqVO 单页信息与现场上下文
+     * @return 口播文本（含字数与预计秒数）
+     */
+    PptSpeechNarrateRespVO narrate(PptSpeechNarrateReqVO reqVO);
 
 }
