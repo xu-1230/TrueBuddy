@@ -518,12 +518,15 @@ function watchConsole() {
     if (message.action === 'stop') stopSpeaking()
     // 讲课工作项（P0）：启动 = 跟随老师翻页照读当前页 remark；停止 = 作废一切并立刻安静。
     // 既有 speak/stop 原样保留（协议向后兼容：手输播报与试听路径不变）
-    if (message.action === 'lesson-start') lessonRunner.start(slideIndex.value)
+    // mode 是关键：ai = 自动讲词 + 播完自动翻页（ADR-0004 的推进授权）；缺省 verbatim 照读
+    if (message.action === 'lesson-start') lessonRunner.start(slideIndex.value, { mode: message.mode === 'ai' ? 'ai' : 'verbatim' })
     if (message.action === 'lesson-stop') {
       // 工作项与「念一段」一起停：手输播报的「停止演讲」也走 lesson-stop，runner 未运行时 stop 是空操作
       lessonRunner.stop()
       stopSpeaking()
     }
+    // Attention 裁决回传：老师点控制台卡片上的重试/跳过，工作项据此继续
+    if (message.action === 'lesson-resolve') lessonRunner.resolve(message.resolution === 'skip' ? 'skip' : 'retry')
   }
 }
 
