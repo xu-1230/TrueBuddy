@@ -137,13 +137,6 @@ const moduleCards = computed(() =>
   }),
 )
 
-const railSummary = computed(() => {
-  const total = feedItems.value.length
-  if (!total) return '暂无可统计的资产，卡片上的数字会在创建后自动出现'
-  if (failedCount.value) return `已汇总 ${total} 项资产 · ${failedCount.value} 个来源未加载完成`
-  return `已汇总 ${total} 项资产 · 数字来自各模块的真实列表`
-})
-
 const activeSortLabel = computed(
   () => HOME_SORTS.find((option) => option.key === sortKey.value)?.label || '推荐',
 )
