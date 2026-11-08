@@ -40,4 +40,12 @@ public class PptProperties {
      */
     private Integer maxPageInputChars = 1200;
 
+    /**
+     * narrate（AI 现场讲词）单页输出的字数硬上限。
+     *
+     * <p>口播讲词比 remark 短得多（一次只念一页，目标 15~40 秒），默认 500 字兜底
+     * 模型偶尔写飞的情况；超出即硬截断（不加省略号，省略号会被念出来）。
+     */
+    private Integer narrateMaxChars = 500;
+
 }

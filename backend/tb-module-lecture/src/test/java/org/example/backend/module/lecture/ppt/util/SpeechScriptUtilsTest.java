@@ -162,6 +162,54 @@ class SpeechScriptUtilsTest {
         assertEquals("一二三", SpeechScriptUtils.clamp("一二三", 0));
     }
 
+    // ========== narrate：AI 现场讲词 ==========
+
+    @Test
+    @DisplayName("narrate prompt：含现场进度与页面三要素，且输入按上限截断")
+    void buildNarratePrompt_structure() {
+        String prompt = SpeechScriptUtils.buildNarratePrompt("微服务拆分", "服务按业务边界拆分。\n第二行",
+                "先讲拆分原则", 12, 5, 1200);
+
+        assertTrue(prompt.contains("现场进度：共 12 页"), prompt);
+        assertTrue(prompt.contains("已讲约 5 分钟"), prompt);
+        assertTrue(prompt.contains("标题：微服务拆分"), prompt);
+        assertTrue(prompt.contains("正文：服务按业务边界拆分。 第二行"), prompt);
+        assertTrue(prompt.contains("现有备注：先讲拆分原则"), prompt);
+        assertTrue(prompt.contains("请输出这一页的口播讲稿正文"), prompt);
+        assertFalse(prompt.contains("\n第二行"), "正文换行必须压平，保持 prompt 结构稳定");
+    }
+
+    @Test
+    @DisplayName("narrate prompt：无进度上下文时不出现进度行；空字段退化为「（无）」")
+    void buildNarratePrompt_minimal() {
+        String prompt = SpeechScriptUtils.buildNarratePrompt(null, null, null, null, null, 1200);
+
+        assertFalse(prompt.contains("现场进度"), prompt);
+        assertFalse(prompt.contains("已讲约"), prompt);
+        assertTrue(prompt.contains("标题：（无）"), prompt);
+        assertTrue(prompt.contains("正文：（无）"), prompt);
+        assertTrue(prompt.contains("现有备注：（无）"), prompt);
+    }
+
+    @Test
+    @DisplayName("提取口播正文：剥离 ``` 围栏与成对包裹引号")
+    void extractPlainText_stripsWrappers() {
+        assertEquals("同学们好，我们开始上课。",
+                SpeechScriptUtils.extractPlainText("```\n同学们好，我们开始上课。\n```"));
+        assertEquals("同学们好。", SpeechScriptUtils.extractPlainText("\"同学们好。\""));
+        assertEquals("同学们好。", SpeechScriptUtils.extractPlainText("“同学们好。”"));
+        assertEquals("各位好。", SpeechScriptUtils.extractPlainText("  各位好。  "));
+    }
+
+    @Test
+    @DisplayName("提取口播正文：返回为空或剥完为空时抛错（由 Service 转成 narrate 失败）")
+    void extractPlainText_invalid() {
+        assertThrows(IllegalArgumentException.class, () -> SpeechScriptUtils.extractPlainText(null));
+        assertThrows(IllegalArgumentException.class, () -> SpeechScriptUtils.extractPlainText("   "));
+        // 只有一对空围栏：剥完什么都没有
+        assertThrows(IllegalArgumentException.class, () -> SpeechScriptUtils.extractPlainText("```\n```"));
+    }
+
     private PptSpeechPageVO page(int index, String title, String text, String remark) {
         PptSpeechPageVO page = new PptSpeechPageVO();
         page.setIndex(index);
