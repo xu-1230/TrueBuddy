@@ -13,13 +13,18 @@
       <template #actions>
         <template v-if="session">
           <!-- 讲课工作项运行中：页码来自放映页上行的 page 事件（页面真相在放映页） -->
-          <el-tag v-if="lessonActive" type="success" effect="plain" class="lesson-tag">
-            讲课中{{ presenterPage != null ? ' · 第 ' + (presenterPage + 1) + ' / ' + (presenterPageCount ?? '?') + ' 页' : '' }}
+          <el-tag v-if="lessonDone" type="info" effect="plain">讲课已完成</el-tag>
+          <el-tag v-else-if="lessonActive" type="success" effect="plain" class="lesson-tag">
+            {{ lessonMode === "ai" ? "AI 演讲中" : "照读跟讲中" }}{{ presenterPage != null ? ' · 第 ' + (presenterPage + 1) + ' / ' + (presenterPageCount ?? '?') + ' 页' : '' }}
           </el-tag>
-          <!-- 开始演讲 = 工作项启动信号：放映页跟随老师翻页照读当前页讲稿（见 startLecture） -->
-          <el-button type="primary" :disabled="store.ended" @click="startLecture">
+          <!-- 两种演讲方式：照读 = 跟随翻页念 remark；ai = 自动讲词 + 自动翻页（老师只点一次） -->
+          <el-button type="primary" :disabled="store.ended" @click="startLecture('verbatim')">
             <el-icon class="btn-icon"><VideoPlay /></el-icon>
-            开始演讲
+            照读演讲
+          </el-button>
+          <el-button type="success" :disabled="store.ended" @click="startLecture('ai')">
+            <el-icon class="btn-icon"><VideoPlay /></el-icon>
+            AI 演讲
           </el-button>
           <!-- 停止真的停得下来：掐断请求即取消后端合成（旧口径要等它念完） -->
           <el-button :disabled="store.ended" @click="stopDigital">停止演讲</el-button>
@@ -32,6 +37,18 @@
         </template>
       </template>
     </MeetingTopBar>
+
+    <!-- 讲课工作项 Attention：narrate 失败等需要老师裁决的事顶在最前（dsh 面板原则） -->
+    <el-alert v-if="lessonAttention" type="error" :closable="false" show-icon>
+      <template #title>
+        第 {{ lessonAttention.page + 1 }} 页讲词生成失败
+      </template>
+      <div class="attention-actions">
+        <span>{{ lessonAttention.message }}。学生端在等待，请裁决：</span>
+        <el-button size="small" @click="resolveAttention('retry')">重试</el-button>
+        <el-button size="small" type="primary" @click="resolveAttention('skip')">跳过本页</el-button>
+      </div>
+    </el-alert>
 
     <el-alert
       v-if="store.ended"
@@ -270,12 +287,27 @@ function speakDigital(text) {
 function stopDigital() {
   if (!postToPresenter({ action: 'lesson-stop' })) return
   lessonActive.value = false
+  lessonMode.value = null
+  lessonDone.value = false
+  lessonAttention.value = null
   ElMessage.info('已停止讲课工作项与播报')
+}
+
+/** Attention 裁决：把老师的决定回传给放映页的工作项（retry 重做本页 / skip 跳过推进） */
+function resolveAttention(resolution) {
+  if (!postToPresenter({ action: 'lesson-resolve', resolution })) return
+  lessonAttention.value = null
 }
 
 // ===== 讲课工作项（P0：manual 跟随照读）=====
 /** 工作项是否运行中（本端标记：lesson-start 发出即认为在讲，lesson-stop 复位） */
 const lessonActive = ref(false)
+/** 当前演讲方式：verbatim 照读 / ai 自主（lesson-start 时记录） */
+const lessonMode = ref(null)
+/** 讲课工作项 Attention：narrate 失败等需要老师裁决的事（放映页经总线上行） */
+const lessonAttention = ref(null)
+/** 工作项是否已自然讲完（尾页播完） */
+const lessonDone = ref(false)
 /** 放映页上行的当前页（0 基）与总页数——页面真相在放映页，本页只显示 */
 const presenterPage = ref(null)
 const presenterPageCount = ref(null)
@@ -297,6 +329,16 @@ function watchPresenter() {
       presenterPage.value = message.page
       presenterPageCount.value = message.pageCount
     }
+    // 工作项上行事件：narrate 失败 → Attention 卡；讲完 → 完成态
+    if (message.action === 'lesson-event') {
+      const event = message.event ?? {}
+      if (event.type === 'page-failed') lessonAttention.value = { page: event.page, message: event.message }
+      if (event.type === 'lesson-done') {
+        lessonActive.value = false
+        lessonDone.value = true
+        lessonAttention.value = null
+      }
+    }
   }
 }
 watch(() => session.value?.meetingNo, watchPresenter, { immediate: true })
@@ -307,10 +349,13 @@ watch(() => session.value?.meetingNo, watchPresenter, { immediate: true })
  * <p>入口与信号语义都不变（还是这个按钮、还是「开始」），变的是总线上发的是结构化的
  * `lesson-start`：放映页收到后按当前页 remark 照读，并跟随老师的翻页自动换页。
  */
-function startLecture() {
-  if (!postToPresenter({ action: 'lesson-start' })) return
+function startLecture(mode) {
+  if (!postToPresenter({ action: 'lesson-start', mode })) return
   lessonActive.value = true
-  ElMessage.success('讲课工作项已启动：放映页跟随翻页照读当前页讲稿')
+  lessonMode.value = mode
+  lessonDone.value = false
+  lessonAttention.value = null
+  ElMessage.success(mode === 'ai' ? 'AI 演讲已开始：自动讲词 + 自动翻页，老师只需随时接管' : '照读演讲已开始：跟随老师翻页念备注')
 }
 
 /** 【数字人播报】手输框：多源 / 长文本的调试入口，与「开始演讲」信号并存 */
@@ -731,4 +776,12 @@ onBeforeUnmount(() => {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.attention-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 </style>
