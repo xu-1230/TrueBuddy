@@ -5,6 +5,8 @@
  * ① 分片可能切在采样中间：留一个字节进位，否则每片都会丢掉/错位半个采样；
  * ② 口型用**逐帧瞬时响度**（累计平均在流停后仍会动），底噪与异常值必须归零；
  * ③ `stop()` 必须让声音立刻消失：已排期的音源全部掐掉、口型归零 —— 这是「停止演讲」的全部含义。
+ * ④ `onDrained` 是「播完了」的双条件确认：流正常结束（`markStreamDone`）**且**已排期音频播完
+ *    才触发一次——网络抖动掐断不是播完，`stop` 取消也不是播完（P1 自动推进的第一前置）。
  *
  * 运行：cd frontend && node --test tests/speech-player.test.js
  */
@@ -72,6 +74,8 @@ function setup() {
   const pending = []
   let context = null
   const levels = []
+  /** onDrained 触发记录：双条件回调的用例断言用 */
+  const drained = []
   const player = createSpeechPlayer({
     createContext: () => {
       state.contexts += 1
@@ -79,6 +83,7 @@ function setup() {
       return context
     },
     onLevel: (level) => levels.push(level),
+    onDrained: () => drained.push(1),
     requestFrame: (cb) => {
       pending.push(cb)
       return pending.length
@@ -89,6 +94,7 @@ function setup() {
     levels,
     state,
     pending,
+    drained,
     /** 跑下一帧，并指定这一帧测到的瞬时响度 */
     frame: (amplitude) => {
       state.amplitude = amplitude
@@ -194,4 +200,61 @@ test('destroy：先静音再关掉 AudioContext', async () => {
 
   assert.equal(state.sources[0].stopped, true)
   assert.equal(state.closed, 1, 'destroy 才真正释放 AudioContext')
+})
+
+// ===== onDrained：播完确认（双条件）=====
+
+test('onDrained：流正常结束且音频播完才触发，且恰好一次', () => {
+  const { player, state, drained } = setup()
+
+  player.feed(chunkOf(16384))
+  player.markStreamDone()
+  assert.equal(drained.length, 0, '音频还在播：只满足「流结束」不算播完')
+
+  state.sources[0].onended()
+  assert.equal(drained.length, 1, '双条件同时满足：播完了')
+
+  // 触发后 streamDone 已复位：重复的 onended 回调不许再触发
+  state.sources[0].onended()
+  assert.equal(drained.length, 1)
+})
+
+test('onDrained：只有音频播完、流没正常结束（网络抖动掐断）不触发', () => {
+  const { player, state, drained } = setup()
+
+  player.feed(chunkOf(16384))
+  state.sources[0].onended()
+  assert.equal(drained.length, 0, '缺「流正常结束」这一半：静音不等于播完')
+})
+
+test('onDrained：段间无缝排期下不误报——上一段播完时下一段已在路上', () => {
+  const { player, state, drained } = setup()
+
+  // 段1：流结束（音频仍在播）→ 段2 的 chunk 已开始 feed → 段1 播完
+  player.feed(chunkOf(16384))
+  player.markStreamDone()
+  player.feed(chunkOf(16384))
+  state.sources[0].onended()
+  assert.equal(drained.length, 0, '段2 还在路：段1 播完不是整页播完')
+
+  // 段2 流结束 + 播完：才轮到 drained
+  player.markStreamDone()
+  state.sources[1].onended()
+  assert.equal(drained.length, 1)
+})
+
+test('onDrained：stop 之后不算播完（取消是取消，不是播完）', () => {
+  const { player, state, drained } = setup()
+
+  player.feed(chunkOf(16384))
+  player.stop()
+  assert.equal(state.sources[0].stopped, true)
+  assert.equal(drained.length, 0, '被掐断的播报不许报「播完」')
+})
+
+test('onDrained：零音频的空流直接结束视为播完（空段兜底）', () => {
+  const { player, drained } = setup()
+
+  player.markStreamDone()
+  assert.equal(drained.length, 1, '没有音频要播 + 流已结束 = 播完了（虽然什么都没播）')
 })

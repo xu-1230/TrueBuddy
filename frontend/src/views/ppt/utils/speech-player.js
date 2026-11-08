@@ -65,11 +65,16 @@ export function int16ToFloat32(bytes) {
  * @param {object} [options]
  * @param {number} [options.sampleRate] 采样率，默认与后端一致
  * @param {(level: number) => void} [options.onLevel] 每次算出新开合度时回调（驱动口型）
+ * @param {() => void} [options.onDrained] 「播完了」回调：**双条件**同时满足才触发——
+ *   ① 当前流的合成已正常结束（调用方在 SSE 流读完时调 `markStreamDone()`）；
+ *   ② 已排期的音频全部播完（`scheduled` 清空）。
+ *   只满足②不算：网络抖动把流掐断时，播放器静下来了，但那不是「播完」（docs「解决方案-05」风险 3）。
+ *   这是 P1 自动推进（on-end 翻页）的第一前置。
  * @param {() => AudioContext} [options.createContext] AudioContext 工厂（注入以便离线测试）
  * @param {(cb: FrameRequestCallback) => number} [options.requestFrame] RAF 注入点
- * @returns {{ feed: (payload: string|Uint8Array) => void, stop: () => void, destroy: () => Promise<void>, readonly level: number }}
+ * @returns {{ feed: (payload: string|Uint8Array) => void, stop: () => void, markStreamDone: () => void, destroy: () => Promise<void>, readonly level: number }}
  */
-export function createSpeechPlayer({ sampleRate = PCM_SAMPLE_RATE, onLevel, createContext, requestFrame } = {}) {
+export function createSpeechPlayer({ sampleRate = PCM_SAMPLE_RATE, onLevel, onDrained, createContext, requestFrame } = {}) {
   let context = null
   let gain = null
   let analyser = null
@@ -84,6 +89,15 @@ export function createSpeechPlayer({ sampleRate = PCM_SAMPLE_RATE, onLevel, crea
   /** 取帧循环是否在跑：`stop()` 后即使还有一个在途回调，也不能再改口型 */
   let running = false
   let level = 0
+  /** 当前流的合成是否已正常结束（markStreamDone 置位；stop/新 feed 都会复位） */
+  let streamDone = false
+
+  /** 双条件检查：流已正常结束且没有任何在播/待播音频，才算一次「播完」 */
+  function checkDrain() {
+    if (!streamDone || scheduled.length) return
+    streamDone = false
+    onDrained?.()
+  }
 
   function ensureGraph() {
     if (context) return context
@@ -124,6 +138,8 @@ export function createSpeechPlayer({ sampleRate = PCM_SAMPLE_RATE, onLevel, crea
   function feed(payload) {
     const raw = typeof payload === 'string' ? decodeBase64(payload) : payload
     if (!raw?.length) return
+    // 新 chunk 到来：本流回到「未结束」状态——上一流的 drained 不能算到它头上
+    streamDone = false
     const bytes = withCarry(raw)
     if (!bytes.length) return
 
@@ -145,6 +161,7 @@ export function createSpeechPlayer({ sampleRate = PCM_SAMPLE_RATE, onLevel, crea
     scheduled.push(source)
     source.onended = () => {
       scheduled = scheduled.filter((item) => item !== source)
+      checkDrain()
     }
 
     if (!running) {
@@ -168,6 +185,7 @@ export function createSpeechPlayer({ sampleRate = PCM_SAMPLE_RATE, onLevel, crea
     carry = 0
     level = 0
     running = false
+    streamDone = false
     onLevel?.(0)
     if (frameId != null) {
       globalThis.cancelAnimationFrame?.(frameId)
@@ -186,9 +204,16 @@ export function createSpeechPlayer({ sampleRate = PCM_SAMPLE_RATE, onLevel, crea
     await closing?.close?.()
   }
 
+  /** 流正常结束（SSE 读完）时调用：双条件的另一半就位，立即检查一次 */
+  const markStreamDone = () => {
+    streamDone = true
+    checkDrain()
+  }
+
   return {
     feed,
     stop,
+    markStreamDone,
     destroy,
     get level() {
       return level
