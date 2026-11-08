@@ -530,9 +530,9 @@ async function handleGrade() {
     gradingPhase.value = 'grading'
     ElMessage.success(`上传完成：共 ${data.fileCount} 份作业`)
 
-    // 第二步：先把本次批改的配置交给后端落库（批改要求与知识库写进该任务）。
-    // 第三步：跑批改工作流。业务输入只带 taskId —— 文件清单 / 批改要求 / 知识库都由开始节点
-    // 按 taskId 从作业模块取，避免「请求里传一份、库里存一份」两处都能送值。
+    // 第二步：先把本次批改的配置交给后端落库存档（批改要求与知识库写进该任务）。
+    // 第三步：跑批改工作流。业务输入**直传**（docs/12 §4.4）：文件清单用上传返回的 files、
+    // 批改要求与知识库用左侧面板的配置 —— /homework/grade 仅作存档，执行以 inputs 为准。
     //
     // 两处交互约定：
     // - `onConfirm`：跑到人工确认节点时弹「确认批改列表」，用户点确定才继续、关掉即取消；
@@ -551,7 +551,12 @@ async function handleGrade() {
 
       const result = await runGradingWorkflow({
         workflowId: config.workflow,
-        inputs: { taskId: data.taskId },
+        // 与 submitGrading 同源的配置直传给工作流；「默认知识库」占位项同样过滤
+        inputs: {
+          file_tree: data.files ?? [],
+          description: config.description.trim(),
+          know: config.spaceIds.filter((id) => id !== DEFAULT_KB.id),
+        },
         title: `作业批改 #${data.taskId}`,
         onConfirm: askConfirm,
         onRecord: (record) => {

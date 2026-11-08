@@ -32,8 +32,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       {@code state[迭代节点id].index} 正确——前端「第 n/N 轮」进度就靠它（见 {@code frontend/src/views/workflow2/utils/run-state.js}）。</li>
  * </ul>
  *
- * <p>夹具约定：迭代体子块统一用**开始节点**（type = 1）——它的 {@code apply} 不读 {@code data}、必定成功，
- * 并在 {@code state[子块 id]} 下产出 {@code {file_tree, description, know}}；迭代源取
+ * <p>夹具约定：迭代体子块统一用**开始节点**（type = 1）——开始节点按 {@code data.outputs} 声明直读
+ * 状态、非 required 变量缺省给空值，因此声明一个非 required 的 {@code description} 即可保证
+ * {@code apply} 必定成功，并在 {@code state[子块 id]} 下产出 {@code {description: ""}}；迭代源取
  * {@code state[100001].description}（声明为 list）；迭代节点声明的输出变量名与子块产出同名（{@code description}）。
  */
 class IterateNodeTest {
@@ -89,13 +90,14 @@ class IterateNodeTest {
     // ==================== 单轮失败不再静默 ====================
 
     /**
-     * 迭代体子块必定失败（人工确认节点不带 `data`，`interrupt` / `apply` 都会空指针）时：
+     * 迭代体子块必定失败（开始节点声明了 required 输出、但子图状态里没有值——
+     * {@code apply} 每轮抛 {@link IllegalStateException}）时：
      * 每一轮都失败 ⇒ 整节点抛异常，由上层把流程标记为失败，而不是「流程成功、结果为空」。
      */
     @Test
     void fixed_allRoundsFail_throwsInsteadOfSilentEmpty() {
         WorkflowNode definition = iterateDefinition(
-                List.of(brokenBlock(BLOCK_A)),
+                List.of(requiredMissingBlock(BLOCK_A)),
                 List.of(edge(ITERATE_ID, BLOCK_A), edge(BLOCK_A, ITERATE_ID)));
 
         assertThatThrownBy(() -> apply(definition, List.of("甲", "乙", "丙"), new RecordingListener()))
@@ -239,10 +241,17 @@ class IterateNodeTest {
         return node;
     }
 
-    /** 子块：开始节点（type = 1），apply 必定成功 */
+    /**
+     * 子块：开始节点（type = 1），声明一个非 required 的输出变量 {@code description}——
+     * 开始节点按声明直读状态、缺省给空串，因此 apply 必定成功且每轮产出 {@code {description: ""}}。
+     */
     private static Map<String, Object> block(String id) {
+        Map<String, Object> output = new HashMap<>();
+        output.put("name", "description");
+        output.put("type", "string");
         Map<String, Object> data = new HashMap<>();
         data.put("label", "子块 " + id);
+        data.put("outputs", List.of(output));
         Map<String, Object> map = new HashMap<>();
         map.put("id", id);
         map.put("type", "1");
@@ -250,11 +259,22 @@ class IterateNodeTest {
         return map;
     }
 
-    /** 必定失败的子块：人工确认节点（type = 5）但不带 data，interrupt / apply 都会空指针 */
-    private static Map<String, Object> brokenBlock(String id) {
+    /**
+     * 必定失败的子块：开始节点声明了 required 输出变量，但子图状态里没有同名键——
+     * {@code apply} 每轮都抛 {@link IllegalStateException}（不再依赖人工确认节点的空指针）。
+     */
+    private static Map<String, Object> requiredMissingBlock(String id) {
+        Map<String, Object> output = new HashMap<>();
+        output.put("name", "plan");
+        output.put("type", "string");
+        output.put("required", true);
+        Map<String, Object> data = new HashMap<>();
+        data.put("label", "子块 " + id);
+        data.put("outputs", List.of(output));
         Map<String, Object> map = new HashMap<>();
         map.put("id", id);
-        map.put("type", "5");
+        map.put("type", "1");
+        map.put("data", data);
         return map;
     }
 

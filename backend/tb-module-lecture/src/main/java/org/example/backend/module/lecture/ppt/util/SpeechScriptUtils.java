@@ -9,11 +9,13 @@ import java.util.regex.Pattern;
 /**
  * 讲稿生成的纯函数集合（不依赖 Spring，便于用例锁定）。
  *
- * <p>这里放三件容易写错、又完全不依赖外部状态的事：
+ * <p>这里放几件容易写错、又完全不依赖外部状态的事：
  * <ol>
  *     <li><b>时长 ↔ 字数换算</b>：语速常数只此一处，避免前后端各存一份导致漂移；</li>
- *     <li><b>prompt 拼装</b>：把「大纲 + 本批页面」拼成固定格式，格式被用例锁住；</li>
- *     <li><b>模型返回的 JSON 提取</b>：模型常把 JSON 包在 ```json 代码块或解释文字里。</li>
+ *     <li><b>prompt 拼装</b>：optimize 的「大纲 + 本批页面」与 narrate 的「单页 + 现场进度」，
+ *         格式都被用例锁住；</li>
+ *     <li><b>模型返回的提取</b>：optimize 提 JSON 数组、narrate 提纯文本——模型常把返回值
+ *         包在 ```json 代码块或解释文字里。</li>
  * </ol>
  */
 public final class SpeechScriptUtils {
@@ -57,7 +59,7 @@ public final class SpeechScriptUtils {
         return (int) Math.round(chars / charsPerSecond(charsPerSecond));
     }
 
-    // ========== prompt 拼装 ==========
+    // ========== prompt 拼装（optimize：改写并写回） ==========
 
     /**
      * 拼一个批次的 user prompt。
@@ -96,6 +98,41 @@ public final class SpeechScriptUtils {
 
         prompt.append("\n请只针对以上 ").append(batchPages.size())
                 .append(" 页输出 JSON 数组（元素形如 {\"index\": 3, \"remark\": \"…\"}），不要输出任何解释文字。");
+        return prompt.toString();
+    }
+
+    // ========== prompt 拼装（narrate：AI 现场讲词，念一次就丢） ==========
+
+    /**
+     * 拼 narrate 的 user prompt：单页 + 现场进度，纯函数便于用例锁定。
+     *
+     * <p>与 {@link #buildUserPrompt} 的区别：narrate 只讲一页、不要大纲、不要 JSON；
+     * 「现场进度」让模型对节奏有感知（快讲完了就收束，别铺开新话题）。
+     *
+     * @param title            页标题（可空）
+     * @param text             页正文（可空）
+     * @param remark           现有备注（可空；讲词蓝本）
+     * @param pageCount        全篇总页数（可空）
+     * @param elapsedMin       已讲分钟数（可空）
+     * @param maxPageInputChars 正文/备注送进 prompt 的字符上限
+     */
+    public static String buildNarratePrompt(String title, String text, String remark,
+                                            Integer pageCount, Integer elapsedMin, int maxPageInputChars) {
+        StringBuilder prompt = new StringBuilder();
+        if (pageCount != null && pageCount > 0) {
+            prompt.append("现场进度：共 ").append(pageCount).append(" 页。");
+        }
+        if (elapsedMin != null && elapsedMin > 0) {
+            prompt.append("已讲约 ").append(elapsedMin).append(" 分钟。");
+        }
+        if (!prompt.isEmpty()) {
+            prompt.append('\n');
+        }
+        prompt.append("=== 页面信息 ===\n");
+        prompt.append("标题：").append(blankToNone(sanitize(title))).append('\n');
+        prompt.append("正文：").append(blankToNone(truncate(sanitize(text), maxPageInputChars))).append('\n');
+        prompt.append("现有备注：").append(blankToNone(truncate(sanitize(remark), maxPageInputChars))).append('\n');
+        prompt.append("\n请输出这一页的口播讲稿正文（纯文本，不要任何解释）。");
         return prompt.toString();
     }
 
@@ -160,6 +197,41 @@ public final class SpeechScriptUtils {
             throw new IllegalArgumentException("模型返回里没有 JSON 数组");
         }
         return trimmed.substring(start, end + 1);
+    }
+
+    /**
+     * 从模型返回中提取口播正文：剥离 markdown 代码围栏与包裹引号。
+     *
+     * <p>narrate 的输出契约是「纯文本」，但模型偶尔仍会套上代码块或引号——
+     * 念稿前剥掉，否则学生会把「反引号」听进去。
+     *
+     * @throws IllegalArgumentException 模型返回为空或剥完为空
+     */
+    public static String extractPlainText(String text) {
+        if (text == null || text.isBlank()) {
+            throw new IllegalArgumentException("模型返回为空");
+        }
+        String cleaned = text.trim();
+        // 剥 ``` 围栏（只剥首尾成对的，正文里的反引号不动）
+        if (cleaned.startsWith("```")) {
+            int firstBreak = cleaned.indexOf('\n');
+            cleaned = firstBreak > 0 ? cleaned.substring(firstBreak + 1) : "";
+            int lastFence = cleaned.lastIndexOf("```");
+            if (lastFence >= 0) {
+                cleaned = cleaned.substring(0, lastFence);
+            }
+            cleaned = cleaned.trim();
+        }
+        // 剥成对包裹引号（模型爱给口播稿加引号）
+        if (cleaned.length() >= 2
+                && ((cleaned.startsWith("\"") && cleaned.endsWith("\""))
+                || (cleaned.startsWith("“") && cleaned.endsWith("”")))) {
+            cleaned = cleaned.substring(1, cleaned.length() - 1).trim();
+        }
+        if (cleaned.isBlank()) {
+            throw new IllegalArgumentException("模型返回里没有讲稿正文");
+        }
+        return cleaned;
     }
 
     private static double charsPerSecond(Double configured) {

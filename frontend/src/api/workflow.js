@@ -98,17 +98,21 @@ const toBackendNode = (node) => {
 }
 
 /**
- * 首轮执行的请求体：会话编号 + 该会话绑定的工作流 id。
+ * 首轮执行的请求体：会话编号 + 该会话绑定的工作流 id（+ 可选的业务输入）。
  *
- * 首轮**不带 `message`**：业务输入由后端开始节点提供模拟数据（`file_tree` / `description` / `know`），
- * 画布页当前不采集用户输入。
+ * 首轮**不带 `message`**：业务输入经 `inputs` 直传给开始节点——按 `data.outputs` 声明
+ * 同名直读（docs/12 §4.4），required 变量缺失后端直接报错；画布页在运行前经
+ * 「输入数据」弹窗收集，批改页自动携带上传与配置结果。
  *
  * @param {string} conversationId 会话编号（由 {@link createConversation} 下发）
  * @param {string} workflowId 工作流 id（后端会与会话绑定比对，防止前端串会话）
- * @returns {{ conversationId: string, workflowId: string }} 可直接作为 `POST /api/chat` 的请求体
+ * @param {object} [inputs] 首轮业务输入（变量名 → 取值）；空对象 / 缺省时不带该字段
+ * @returns {{ conversationId: string, workflowId: string, inputs?: object }} 可直接作为 `POST /api/chat` 的请求体
  */
-export function buildChatBody(conversationId, workflowId) {
-  return { conversationId, workflowId }
+export function buildChatBody(conversationId, workflowId, inputs) {
+  const body = { conversationId, workflowId }
+  if (inputs && Object.keys(inputs).length) body.inputs = inputs
+  return body
 }
 
 /**

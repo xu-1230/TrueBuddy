@@ -33,8 +33,6 @@ import {
 /** 默认定义里的迭代节点 */
 const ITERATE_NODE = DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node.type) === '4')
 const CONTAINER_ID = ITERATE_NODE.id
-/** 迭代体首个子块（id 从定义派生：写死会在替换默认流程时染红） */
-const CHILD_ID = ITERATE_NODE.blocks[0].id
 /** 迭代体子块个数：节点初始尺寸与子块坐标都按它算 */
 const CHILD_COUNT = ITERATE_NODE.blocks.length
 /** 顶部卡片的变量个数（用于估算行数上界） */

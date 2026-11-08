@@ -3,6 +3,8 @@ package org.example.backend.module.lecture.ppt.service.Impl;
 import cn.hutool.json.JSONUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.example.backend.module.lecture.ppt.config.PptProperties;
+import org.example.backend.module.lecture.ppt.model.vo.PptSpeechNarrateReqVO;
+import org.example.backend.module.lecture.ppt.model.vo.PptSpeechNarrateRespVO;
 import org.example.backend.module.lecture.ppt.model.vo.PptSpeechOptimizeReqVO;
 import org.example.backend.module.lecture.ppt.model.vo.PptSpeechOptimizeRespVO;
 import org.example.backend.module.lecture.ppt.model.vo.PptSpeechPageVO;
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
 
 import static org.example.backend.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static org.example.backend.module.lecture.ppt.enums.PptErrorCodeConstants.PPT_SPEECH_GENERATE_FAILED;
+import static org.example.backend.module.lecture.ppt.enums.PptErrorCodeConstants.PPT_SPEECH_NARRATE_FAILED;
+import static org.example.backend.module.lecture.ppt.enums.PptErrorCodeConstants.PPT_SPEECH_NARRATE_INPUT_EMPTY;
 import static org.example.backend.module.lecture.ppt.enums.PptErrorCodeConstants.PPT_SPEECH_PAGES_EMPTY;
 import static org.example.backend.module.lecture.ppt.enums.PptErrorCodeConstants.PPT_SPEECH_PAGES_TOO_MANY;
 
@@ -32,6 +36,10 @@ import static org.example.backend.module.lecture.ppt.enums.PptErrorCodeConstants
  * <p>无状态：文档在前端（本地导入的 PPT），这里只做「收页 → 分批问模型 → 按页回填」。
  * 分批与补跑是本类的核心，理由见 {@link PptProperties#getBatchSize()}：
  * 模型输出有 token 上限，整篇一次问会被截断，而截断后 JSON 不完整、整批作废。
+ *
+ * <p>{@code narrate}（AI 现场讲词）与 optimize 并列：单页、单次调用、输出纯文本口播——
+ * 无状态语义与 optimize 一致（一次请求 = 一页讲词），失败的恢复（重试/跳过）由前端工作项编排，
+ * 后端不做任何会话状态。
  */
 @Slf4j
 @Service
@@ -42,6 +50,8 @@ public class PptSpeechServiceImpl implements PptSpeechService {
     private static final int DEFAULT_MAX_PAGES = 200;
     private static final int DEFAULT_MAX_REMARK_CHARS = 1500;
     private static final int DEFAULT_MAX_PAGE_INPUT_CHARS = 1200;
+    /** narrate 单页输出的字数上限兜底（与 PptProperties.narrateMaxChars 的默认值一致） */
+    private static final int DEFAULT_NARRATE_MAX_CHARS = 500;
     /** 补跑轮数：首轮 + 一轮补跑（Q11：缺失的页自动补跑一次） */
     private static final int MAX_ROUNDS = 2;
 
@@ -81,6 +91,55 @@ public class PptSpeechServiceImpl implements PptSpeechService {
             throw exception(PPT_SPEECH_GENERATE_FAILED);
         }
         return buildResponse(pages, generated);
+    }
+
+    @Override
+    public PptSpeechNarrateRespVO narrate(PptSpeechNarrateReqVO reqVO) {
+        String remark = SpeechScriptUtils.sanitize(reqVO == null ? null : reqVO.getRemark());
+        String text = SpeechScriptUtils.sanitize(reqVO == null ? null : reqVO.getText());
+        // 备注与正文全空 = 没有可讲的内容：前端工作项对这种页应当走「跳过」，这里是接口侧兜底
+        if (remark.isBlank() && text.isBlank()) {
+            throw exception(PPT_SPEECH_NARRATE_INPUT_EMPTY);
+        }
+
+        String title = reqVO.getTitle();
+        PptSpeechNarrateReqVO.Context context = reqVO.getContext();
+        int maxPageInputChars = positive(properties.getMaxPageInputChars(), DEFAULT_MAX_PAGE_INPUT_CHARS);
+        String userPrompt = SpeechScriptUtils.buildNarratePrompt(title, text, remark,
+                context == null ? null : context.getPageCount(),
+                context == null ? null : context.getElapsedMin(),
+                maxPageInputChars);
+
+        String response;
+        try {
+            response = pptChatClient.prompt()
+                    .system(PptPromptConstants.NARRATE_SYSTEM)
+                    .user(userPrompt)
+                    .call()
+                    .content();
+        } catch (Exception e) {
+            log.warn("[narrate][模型调用失败 index={}] {}", reqVO.getIndex(), e.getMessage());
+            throw exception(PPT_SPEECH_NARRATE_FAILED);
+        }
+
+        String speech;
+        try {
+            speech = SpeechScriptUtils.extractPlainText(response);
+        } catch (Exception e) {
+            log.warn("[narrate][返回解析失败 index={}] {}", reqVO.getIndex(), e.getMessage());
+            throw exception(PPT_SPEECH_NARRATE_FAILED);
+        }
+        int maxNarrateChars = positive(properties.getNarrateMaxChars(), DEFAULT_NARRATE_MAX_CHARS);
+        speech = SpeechScriptUtils.clamp(speech, maxNarrateChars);
+
+        PptSpeechNarrateRespVO respVO = new PptSpeechNarrateRespVO();
+        respVO.setSpeechText(speech);
+        int chars = SpeechScriptUtils.countChars(speech);
+        respVO.setChars(chars);
+        respVO.setSeconds(SpeechScriptUtils.secondsOf(chars, properties.getCharsPerSecond()));
+        log.info("[narrate][现场讲词生成成功 index={} chars={} seconds={}]",
+                reqVO.getIndex(), chars, respVO.getSeconds());
+        return respVO;
     }
 
     // ========== 内部方法 ==========

@@ -109,7 +109,9 @@ async function runOnce({ baseState, body, signal, onEvent, onNode }) {
  *
  * @param {object} options 选项
  * @param {string} options.workflowId 批改工作流 id（必须已落库，`/chat` 不接受内联定义）
- * @param {object} options.inputs 首轮业务输入：`{ taskId }`，开始节点按它取本次批改的真实数据
+ * @param {object} options.inputs 首轮业务输入：`{ file_tree, description, know }`，
+ *   开始节点按 `data.outputs` 声明直读同名键（file_tree 为上传返回的 files、
+ *   description 为教师填写的批改要求、know 为选中的知识库 id 列表）；required 变量缺失后端会直接报错
  * @param {string} [options.title] 会话标题
  * @param {AbortSignal} [options.signal] 取消信号
  * @param {(stage: string) => void} [options.onStage] 阶段回调：`conversation` / `grade` / `confirm`
@@ -129,6 +131,15 @@ export async function runGradingWorkflow({
 }) {
   if (!workflowId) {
     throw new Error('请先选择批改工作流')
+  }
+
+  // 前置校验：把「开始节点 required 变量缺失」的失败拦在 HTTP 之前（口径与后端 StartNode 一致）
+  const fileTree = Array.isArray(inputs?.file_tree) ? inputs.file_tree : []
+  if (!fileTree.length) {
+    throw new Error('缺少作业文件清单（inputs.file_tree 为空）：请先选择并上传作业文件夹')
+  }
+  if (!String(inputs?.description ?? '').trim()) {
+    throw new Error('缺少批改要求（inputs.description 为空）：请填写左侧面板的「AI 描述说明」')
   }
 
   // 先读定义：拿不到结果契约就没有必要起执行（跑完才发现没处展示是最坏的情况）

@@ -13,6 +13,7 @@ import service from './index'
 export const PPT_REST_API = {
   /** 讲稿生成：{ targetSeconds, pages: [{ index, title, text, remark }] } */
   optimizeSpeech: '/ppt/speech/optimize',
+  narrateSpeech: '/ppt/speech/narrate',
 }
 
 /**
@@ -24,4 +25,8 @@ export const PPT_REST_API = {
  */
 export function optimizeSpeech(payload, signal) {
   return service.post(PPT_REST_API.optimizeSpeech, payload, { signal })
+}
+/* AI 现场讲词：一次请求 = 一页口播文本（ai 模式逐页调用，失败走重试/跳过）。 */
+export function narrateSpeech(payload, signal) {
+  return service.post(PPT_REST_API.narrateSpeech, payload, { signal })
 }
