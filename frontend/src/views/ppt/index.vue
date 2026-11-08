@@ -298,6 +298,7 @@ import { optimizeSpeech } from '@/api/ppt'
 import { createMeeting } from '@/api/meeting'
 import { readHostSession, writeHostSession } from '@/utils/hostSession'
 import { readEventStream } from '@/utils/event-stream'
+import { createLessonRunner } from './utils/lesson-runner'
 import { createSpeechPlayer } from './utils/speech-player'
 import { buildSpeechPages, extractSlideTitle, htmlToPlainText } from './utils/slide-text'
 import ThumbnailSlide from './components/thumbnail/ThumbnailSlide.vue'
@@ -358,6 +359,7 @@ const speechPlayer = createSpeechPlayer({
   onLevel: (level) => {
     mouthLevel.value = level
   },
+  onDrained: () => lessonRunner.notifyDrained(),
 })
 
 /** 当前播报的中断句柄：停止演讲 / 念下一段 / 离开页面都靠它取消合成 */
@@ -377,20 +379,23 @@ function stopSpeaking() {
 }
 
 /**
- * 念一段讲稿。
+ * 核心流式播报：发 `POST /ppt/speech/speak`，把 SSE 的 PCM 喂给播放器。
  *
- * <p>顺序不能变：先停掉上一段（否则两段声音会叠在一起），再建新的中断句柄。
+ * <p>`keepAudio=false`（替换模式，试听 / 控制台念一段用）：先停掉上一段——两段声音不叠；
+ * `keepAudio=true`（接续模式，播报队列用）：不停上一段直接排期，speechPlayer 的排期时钟
+ * 把新段无缝接在上一段之后（前提：上一段的流已正常结束——队列的串行保证）。
+ *
+ * <p>resolve = 流正常结束（合成完成、音频已排期）；reject = 失败或被取消。
  * 会议号与主持人凭据都给齐时才落库成「数字人发言」——彩排试听不该出现在会议记录里。
  *
  * @param {string} text 要念的文本
+ * @param {{ keepAudio?: boolean }} [options]
  */
-async function speak(text) {
+async function speakStream(text, { keepAudio = false } = {}) {
   const content = (text ?? '').trim()
-  if (!content) {
-    ElMessage.warning('这一页还没有讲稿：先写备注，或用备注区右上角的 AI 生成')
-    return
-  }
-  stopSpeaking()
+  if (!content) return
+  // 替换模式才掐上一段；接续模式由排期时钟无缝续上（队列保证上一段流已结束）
+  if (!keepAudio) stopSpeaking()
   const controller = new AbortController()
   speakAbort = controller
   speaking.value = true
@@ -407,13 +412,17 @@ async function speak(text) {
           return
         }
         if (event === 'error') {
-          ElMessage.error(payload?.message || '语音合成失败')
+          // 后端明确的失败：统一走 catch（提示 + 上抛给调用方）
+          throw new Error(payload?.message || '语音合成失败')
         }
       },
     })
+    // 流正常读完 = 这一段的合成全部结束：onDrained 双条件的另一半就位
+    speechPlayer.markStreamDone()
   } catch (error) {
     // 自己取消的（停止演讲 / 换一段 / 关页面）不是错误，别报给老师
     if (!controller.signal.aborted) ElMessage.error(error?.message || '播报失败')
+    throw error
   } finally {
     if (speakAbort === controller) {
       speakAbort = null
@@ -421,6 +430,38 @@ async function speak(text) {
     }
   }
 }
+
+/**
+ * 念一段讲稿（试听 / 控制台「念一段」用，替换模式）。
+ * 空文本的提示拦在这里——speakStream 面向队列，空段在队列侧已过滤。
+ */
+async function speak(text) {
+  const content = (text ?? '').trim()
+  if (!content) {
+    ElMessage.warning('这一页还没有讲稿：先写备注，或用备注区右上角的 AI 生成')
+    return
+  }
+  try {
+    await speakStream(content)
+  } catch {
+    // 失败已在 speakStream 里提示过；被取消的静默
+  }
+}
+
+// ===== 讲课工作项（P0：manual 跟随照读 + 能停）=====
+const lessonRunner = createLessonRunner({
+  // 段播报走接续模式：runner 保证串行（上一段流结束才发下一段），speechPlayer 无缝排期
+  speakSegment: (segment) => speakStream(segment.text, { keepAudio: true }),
+  stopSpeaking,
+  // 照读的文本与备注区同一口径：pptx 解析出的 HTML 统一转纯文本
+  getPageText: (page) => htmlToPlainText(slides.value[page]?.remark ?? '').trim(),
+  onEvent: (event) => {
+    if (event.type === 'page-start') console.info('[lesson] 开始讲第 ' + (event.page + 1) + ' 页（共 ' + event.segments + ' 段）')
+    if (event.type === 'page-done') console.info('[lesson] 第 ' + (event.page + 1) + ' 页讲完')
+    if (event.type === 'page-failed') console.warn('[lesson] 第 ' + (event.page + 1) + ' 页播报受阻：' + event.segmentId + '（' + event.message + '）')
+    if (event.type === 'page-skipped') console.info('[lesson] 第 ' + (event.page + 1) + ' 页没有讲稿，跳过')
+  },
+})
 
 /** 试听本页（彩排用，不需要会议）：读的是备注区草稿，未保存的改动也能先听一遍 */
 function speakCurrentPage() {
@@ -431,7 +472,7 @@ function speakCurrentPage() {
  * 接住控制台的播报指令。
  *
  * <p>为什么用总线而不是接口：声音只能在**这一页**播（只有它被共享），而按钮在控制台那个标签页。
- * 只做单向（控制台 → 本页）：翻页与「现在第几页」仍由本页自己说了算（页面真相只有一个）。
+ * 指令只做单向（控制台 → 本页）；页码反向由本页广播（postPageToConsole：页面真相在本页，说给控制台听）。
  * 换会议号就换频道，上一场会的指令打不进来。
  */
 function watchConsole() {
@@ -444,8 +485,35 @@ function watchConsole() {
     const message = event?.data ?? {}
     if (message.action === 'speak') speak(message.text)
     if (message.action === 'stop') stopSpeaking()
+    // 讲课工作项（P0）：启动 = 跟随老师翻页照读当前页 remark；停止 = 作废一切并立刻安静。
+    // 既有 speak/stop 原样保留（协议向后兼容：手输播报与试听路径不变）
+    if (message.action === 'lesson-start') lessonRunner.start(slideIndex.value)
+    if (message.action === 'lesson-stop') {
+      // 工作项与「念一段」一起停：手输播报的「停止演讲」也走 lesson-stop，runner 未运行时 stop 是空操作
+      lessonRunner.stop()
+      stopSpeaking()
+    }
   }
 }
+
+/**
+ * 页码上行（页面真相）：翻页即向总线广播，控制台才知道「现在讲第几页」（补 G2）。
+ * 广播沿用「每条消息一个短命频道」的惯例；放映页自己的 bus 也会收到这条消息，
+ * onmessage 没有 page 分支，天然忽略。
+ */
+function postPageToConsole(page) {
+  const meetingNo = presentingMeetingNo.value
+  if (!meetingNo || typeof BroadcastChannel === 'undefined') return
+  const channel = new BroadcastChannel(CHANNEL_PREFIX + meetingNo)
+  channel.postMessage({ action: 'page', page, pageCount: slides.value.length })
+  channel.close()
+}
+
+// 翻页的两件事：页码上行 + 工作项跟随换页（未启动时 runner 自己忽略）
+watch(slideIndex, (page) => {
+  postPageToConsole(page)
+  lessonRunner.onPageChanged(page)
+})
 
 // `immediate` 让「带着 ?meetid= 刷新」也能挂上这一场的总线
 watch(presentingMeetingNo, watchConsole, { immediate: true })
@@ -582,6 +650,7 @@ onBeforeUnmount(() => {
   destroyLive2D()
   // 离开 PPT 页就别再念了：掐断请求即取消后端合成，随后收掉播放器与总线
   stopSpeaking()
+  lessonRunner.stop()
   bus?.close()
   speechPlayer.destroy()
   // 离开 PPT 页就别再等讲稿了（后端仍会把当前批次跑完，这是无状态接口的固有代价）
