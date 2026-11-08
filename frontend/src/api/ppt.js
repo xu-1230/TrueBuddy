@@ -13,6 +13,7 @@ import service from './index'
 export const PPT_REST_API = {
   /** 讲稿生成：{ targetSeconds, pages: [{ index, title, text, remark }] } */
   optimizeSpeech: '/ppt/speech/optimize',
+  narrateSpeech: '/ppt/speech/narrate',
 }
 
 /**
