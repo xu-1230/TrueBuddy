@@ -94,6 +94,9 @@ const keydownListener = (e) => {
 }
 onMounted(() => document.addEventListener('keydown', keydownListener))
 onUnmounted(() => document.removeEventListener('keydown', keydownListener))
+
+// ai 模式 advance 指令由此驱动翻页（先动画后翻页的语义只在 useExecPlay 里，不能绕过）
+defineExpose({ execNext })
 </script>
 
 <style lang="css" scoped>

@@ -225,7 +225,7 @@
     </div>
 
     <!-- 放映模式 -->
-    <ScreenView v-if="screening" />
+    <ScreenView ref="screenViewRef" v-if="screening" />
 
     <!-- AI 讲稿对比弹窗：单页（备注区星形按钮）/ 整篇（工具栏按钮） -->
     <AiRemarkDialog
@@ -299,6 +299,7 @@ import { createMeeting } from '@/api/meeting'
 import { readHostSession, writeHostSession } from '@/utils/hostSession'
 import { readEventStream } from '@/utils/event-stream'
 import { createLessonRunner } from './utils/lesson-runner'
+import { narrateSpeech } from '@/api/ppt'
 import { createSpeechPlayer } from './utils/speech-player'
 import { buildSpeechPages, extractSlideTitle, htmlToPlainText } from './utils/slide-text'
 import ThumbnailSlide from './components/thumbnail/ThumbnailSlide.vue'
@@ -449,15 +450,45 @@ async function speak(text) {
 }
 
 // ===== 讲课工作项（P0：manual 跟随照读 + 能停）=====
+/** ai 模式 advance：循环 execNext 直到真正翻页（先元素动画后翻页，一次调用可能只推进一个动画） */
+function advanceToNextSlide() {
+  const before = slideIndex.value
+  let guard = 0
+  while (slideIndex.value === before && guard < 60) {
+    screenViewRef.value?.execNext()
+    guard += 1
+  }
+}
+
+/** 把需要老师裁决的事件上行到控制台（Attention 面板：只顶需要决定的事） */
+function emitToConsole(event) {
+  const meetingNo = presentingMeetingNo.value
+  if (!meetingNo || typeof BroadcastChannel === 'undefined') return
+  const channel = new BroadcastChannel(CHANNEL_PREFIX + meetingNo)
+  channel.postMessage({ action: 'lesson-event', event })
+  channel.close()
+}
+
 const lessonRunner = createLessonRunner({
   // 段播报走接续模式：runner 保证串行（上一段流结束才发下一段），speechPlayer 无缝排期
   speakSegment: (segment) => speakStream(segment.text, { keepAudio: true }),
   stopSpeaking,
   // 照读的文本与备注区同一口径：pptx 解析出的 HTML 统一转纯文本
   getPageText: (page) => htmlToPlainText(slides.value[page]?.remark ?? '').trim(),
+  // ai 模式：页面信息（narrate 蓝本）+ 讲词生成 + 自动翻页 + 总页数
+  getPageInfo: (page) => {
+    const slide = slides.value[page]
+    return slide ? buildSpeechPages([{ index: page + 1, slide }])[0] : null
+  },
+  generateSpeech: (payload) => narrateSpeech(payload),
+  advance: advanceToNextSlide,
+  getPageCount: () => slides.value.length,
   onEvent: (event) => {
     if (event.type === 'page-start') console.info('[lesson] 开始讲第 ' + (event.page + 1) + ' 页（共 ' + event.segments + ' 段）')
     if (event.type === 'page-done') console.info('[lesson] 第 ' + (event.page + 1) + ' 页讲完')
+    // narrate 失败（可恢复）与讲完上浮控制台——Attention 面板只顶需要老师决定的事
+    if (event.type === 'page-failed' && event.recoverable) emitToConsole({ type: 'page-failed', page: event.page, message: event.message })
+    if (event.type === 'lesson-done') emitToConsole({ type: 'lesson-done' })
     if (event.type === 'page-failed') console.warn('[lesson] 第 ' + (event.page + 1) + ' 页播报受阻：' + event.segmentId + '（' + event.message + '）')
     if (event.type === 'page-skipped') console.info('[lesson] 第 ' + (event.page + 1) + ' 页没有讲稿，跳过')
   },
@@ -523,6 +554,7 @@ watch(presentingMeetingNo, watchConsole, { immediate: true })
 // `z-index:9999` 的全屏覆盖层，侧栏放在这里一定会被学生看到，所以控制台只能另开一个标签页。
 
 /** 控制台路由：相对路径，自动跟随当前 origin（localhost 或热点下的局域网 IP 都能打开） */
+const screenViewRef = ref(null)
 const CONSOLE_PATH = '/index/meeting'
 
 const meeting = reactive({ visible: false, title: '', creating: false })

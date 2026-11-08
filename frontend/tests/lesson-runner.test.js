@@ -12,7 +12,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createLessonRunner } from '../src/views/ppt/utils/lesson-runner.js'
+import { createLessonRunner, decideAfterPage } from '../src/views/ppt/utils/lesson-runner.js'
 import { splitIntoSegments } from '../src/views/ppt/utils/lesson-segments.js'
 
 /**
@@ -204,4 +204,111 @@ test('notifyDrained：active 时上报 page-drained（P1 自动推进的前置�
   runner.stop()
   runner.notifyDrained()
   assert.equal(events.length, 3, '停止后 drained 不再上报')
+})
+
+
+// ===== ai 模式（自主推进）=====
+/** ai 假件：narrate 按页返回文本；前 failures 次调用失败；advance 计数；bufferMs=1。 */
+function setupAi({ pageCount = 3, failures = 0, infos } = {}) {
+  const events = []
+  let pending = []
+  const narrateCalls = []
+  const advanceCalls = []
+  let calls = 0
+  const runner = createLessonRunner({
+    speakSegment: (seg) => new Promise((resolve, reject) => { pending.push({ seg, resolve, reject }) }),
+    stopSpeaking: () => { const h = pending; pending = []; h.forEach(({ reject }) => reject(new Error('aborted'))) },
+    getPageText: () => '',
+    getPageInfo: (page) => (infos ? infos[page] : { index: page + 1, title: '标题' + page, text: '', remark: '第' + page + '页备注' }),
+    getPageCount: () => pageCount,
+    generateSpeech: (payload) => {
+      calls += 1
+      narrateCalls.push(payload.index)
+      if (calls <= failures) return Promise.reject(new Error('narrate down'))
+      return Promise.resolve({ speechText: '第' + payload.index + '页讲词。' })
+    },
+    advance: () => { advanceCalls.push(1) },
+    onEvent: (event) => events.push(event),
+    bufferMs: 1,
+  })
+  return { runner, events, narrateCalls: () => narrateCalls, advanceCalls: () => advanceCalls, resolveCurrent: () => { pending.shift()?.resolve() } }
+}
+
+test( 'decideAfterPage：非尾页 advance、尾页 end', () => {
+  assert.equal(decideAfterPage(0, 3), 'advance')
+  assert.equal(decideAfterPage(2, 3), 'end')
+})
+
+test('ai 全流程：narrate → 播 → drained → advance → 下一页 → 尾页 lesson-done', async () => {
+  const { runner, events, narrateCalls, advanceCalls, resolveCurrent } = setupAi({ pageCount: 3 })
+  runner.start(0, { mode: 'ai' })
+  await settle()
+  assert.deepEqual(narrateCalls(), [1, 2])
+  assert.equal(events.find((e) => e.type === 'page-start')?.page, 0)
+  resolveCurrent()
+  runner.notifyDrained()
+  await settle()
+  assert.equal(events.at(-1).type, 'advance-request')
+  assert.equal(advanceCalls().length, 1)
+  runner.onPageChanged(1)
+  await settle()
+  assert.deepEqual(narrateCalls(), [1, 2, 3])
+  resolveCurrent()
+  runner.notifyDrained()
+  await settle()
+  assert.equal(advanceCalls().length, 2)
+  runner.onPageChanged(2)
+  await settle()
+  resolveCurrent()
+  runner.notifyDrained()
+  await settle()
+  assert.equal(events.at(-1).type, 'lesson-done')
+  assert.equal(runner.active, false)
+})
+
+test('narrate 失败：重试 1 次 → 上浮挂起；retry 重做；skip 跳过推进', async () => {
+  const { runner, events, narrateCalls, advanceCalls } = setupAi({ pageCount: 2, failures: 100 })
+  runner.start(0, { mode: 'ai' })
+  await settle()
+  assert.equal(events.find((e) => e.type === 'page-failed')?.recoverable, true)
+  assert.equal(runner.awaitingResolve, true)
+  assert.equal(narrateCalls().length, 2)
+  runner.resolve('retry')
+  await settle()
+  assert.equal(runner.awaitingResolve, true)
+  assert.equal(narrateCalls().length, 4)
+  runner.resolve('skip')
+  await new Promise((r) => setTimeout(r, 5))
+  assert.equal(advanceCalls().length, 1)
+  assert.equal(runner.awaitingResolve, false)
+})
+
+test('预取：讲第 N 页时预生成第 N+1，翻页后命中（narrate 不再调用）', async () => {
+  const { runner, narrateCalls, resolveCurrent } = setupAi({ pageCount: 2 })
+  runner.start(0, { mode: 'ai' })
+  await settle()
+  await settle()
+  assert.deepEqual(narrateCalls(), [1, 2])
+  resolveCurrent()
+  runner.notifyDrained()
+  await settle()
+  runner.onPageChanged(1)
+  await settle()
+  assert.deepEqual(narrateCalls(), [1, 2])
+  resolveCurrent()
+  runner.notifyDrained()
+  await settle()
+  assert.equal(runner.active, false)
+})
+
+test('ai 模式空页跳过后继续推进（空页不是终点）', async () => {
+  const { runner, events, advanceCalls } = setupAi({ pageCount: 2, infos: { 0: { index: 1, title: '', text: '', remark: '' } } })
+  runner.start(0, { mode: 'ai' })
+  await settle()
+  assert.equal(events.find((e) => e.type === 'page-skipped')?.page, 0)
+  await settle()
+  assert.equal(advanceCalls().length, 1)
+  runner.onPageChanged(1)
+  await settle()
+  assert.equal(events.at(-1).type, 'lesson-done')
 })
