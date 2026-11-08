@@ -12,7 +12,11 @@
     >
       <template #actions>
         <template v-if="session">
-          <!-- 开始演讲 = 开始信号：让「PPT 放映页」念一段（声音只能在被共享的那一屏出声，见 speakDigital） -->
+          <!-- 讲课工作项运行中：页码来自放映页上行的 page 事件（页面真相在放映页） -->
+          <el-tag v-if="lessonActive" type="success" effect="plain" class="lesson-tag">
+            讲课中{{ presenterPage != null ? ' · 第 ' + (presenterPage + 1) + ' / ' + (presenterPageCount ?? '?') + ' 页' : '' }}
+          </el-tag>
+          <!-- 开始演讲 = 工作项启动信号：放映页跟随老师翻页照读当前页讲稿（见 startLecture） -->
           <el-button type="primary" :disabled="store.ended" @click="startLecture">
             <el-icon class="btn-icon"><VideoPlay /></el-icon>
             开始演讲
@@ -220,7 +224,11 @@ const CHANNEL_PREFIX = 'tb-meeting:'
  * （控制台 → 放映页）：翻页与「现在第几页」仍由放映页自己说了算。
  * 每条指令开一个短命频道：控制台不需要长期订阅，也就没有要清理的连接。
  *
- * @param {{ action: 'speak'|'stop', text?: string }} message 指令
+ * <p>协议（P0 扩展，向后兼容）：`speak`/`stop` 是「念一段 / 立刻安静」的原始指令；
+ * `lesson-start`/`lesson-stop` 启停讲课工作项（跟页照读）；`page` 是放映页反向广播的页码，
+ * **不会**从这里发出（页面真相在放映页，本页只听不说）。
+ *
+ * @param {{ action: 'speak'|'stop'|'lesson-start'|'lesson-stop', text?: string }} message 指令
  * @returns {boolean} 是否已发出（没有会议号或浏览器不支持时为 false）
  */
 function postToPresenter(message) {
@@ -258,23 +266,51 @@ function speakDigital(text) {
   return true
 }
 
-/** 停止播报：掐断放映页那条请求，后端合成随即取消（旧口径只能等它念完） */
+/** 停止演讲：工作项作废 + 掐断放映页播报请求，后端合成随即取消（旧口径只能等它念完） */
 function stopDigital() {
-  if (!postToPresenter({ action: 'stop' })) return
-  ElMessage.info('已让「PPT 放映页」停止播报')
+  if (!postToPresenter({ action: 'lesson-stop' })) return
+  lessonActive.value = false
+  ElMessage.info('已停止讲课工作项与播报')
 }
 
-/** 本轮「开始演讲」的固定内容：真正的「讲什么」要等当前页讲稿 / AI 现场讲词落地（docs/18 A/B 段） */
-const MOCK_LECTURE_TEXT = '你好'
+// ===== 讲课工作项（P0：manual 跟随照读）=====
+/** 工作项是否运行中（本端标记：lesson-start 发出即认为在讲，lesson-stop 复位） */
+const lessonActive = ref(false)
+/** 放映页上行的当前页（0 基）与总页数——页面真相在放映页，本页只显示 */
+const presenterPage = ref(null)
+const presenterPageCount = ref(null)
+/** 常驻监听放映页上行的频道：page 事件是持续到来的状态，不能用每条一个的短命频道收 */
+let presenterBus = null
+
+/** 按当前会议号挂/换上行的监听频道（与 postToPresenter 的发送频道同一条总线） */
+function watchPresenter() {
+  presenterBus?.close()
+  presenterBus = null
+  presenterPage.value = null
+  presenterPageCount.value = null
+  const meetingNo = session.value?.meetingNo
+  if (!meetingNo || typeof BroadcastChannel === 'undefined') return
+  presenterBus = new BroadcastChannel(CHANNEL_PREFIX + meetingNo)
+  presenterBus.onmessage = (event) => {
+    const message = event?.data ?? {}
+    if (message.action === 'page') {
+      presenterPage.value = message.page
+      presenterPageCount.value = message.pageCount
+    }
+  }
+}
+watch(() => session.value?.meetingNo, watchPresenter, { immediate: true })
 
 /**
- * 「开始演讲」：一个**开始信号** —— 表示数字人可以从这里开始讲了。
+ * 「开始演讲」：启动讲课工作项 —— 就是注释里预告过的那个升级（docs/18 §5.2）。
  *
- * <p>它不是"把文本框里的字发出去"：本轮还没有按页取讲稿，所以内容固定为 {@link MOCK_LECTURE_TEXT}。
- * 下一轮把取文本那一步换成「放映页念当前页 `remark` / AI 现场讲词」时，**信号本身不变**（docs/18 §5.2）。
+ * <p>入口与信号语义都不变（还是这个按钮、还是「开始」），变的是总线上发的是结构化的
+ * `lesson-start`：放映页收到后按当前页 remark 照读，并跟随老师的翻页自动换页。
  */
 function startLecture() {
-  speakDigital(MOCK_LECTURE_TEXT)
+  if (!postToPresenter({ action: 'lesson-start' })) return
+  lessonActive.value = true
+  ElMessage.success('讲课工作项已启动：放映页跟随翻页照读当前页讲稿')
 }
 
 /** 【数字人播报】手输框：多源 / 长文本的调试入口，与「开始演讲」信号并存 */
@@ -514,6 +550,7 @@ async function goCreateInPpt() {
 }
 
 onBeforeUnmount(() => {
+  presenterBus?.close()
   room.disconnect()
   store.reset()
 })
