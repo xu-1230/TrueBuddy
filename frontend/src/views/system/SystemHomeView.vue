@@ -2,14 +2,13 @@
   <div class="home">
     <HomeHero />
 
-    <!-- Zone B 可用工具：与 Zone D 共用列宽，每张卡占 2 格 -->
+    <!-- Zone B 可用工具：等宽两栏（每张卡占 2 格的节奏） -->
     <section class="band" aria-labelledby="band-modules">
       <div class="rail">
         <ShowcaseCard
           v-for="card in moduleCards"
           :key="card.id"
           v-bind="card"
-          variant="entry"
           @open="go(card.to)"
         />
       </div>
@@ -44,11 +43,22 @@
 
       <div v-loading="loading" class="assets">
         <div v-if="assetCards.length" class="assets__grid">
-          <ShowcaseCard
+          <AssetCard
             v-for="card in assetCards"
             :key="card.key"
-            v-bind="card"
-            variant="asset"
+            :uid="card.key"
+            :title="card.title"
+            :description="card.description"
+            :kind="card.kind"
+            :kind-label="card.kindLabel"
+            :metric="card.metric"
+            :metric-label="card.metricLabel"
+            :state="card.state"
+            :state-tone="card.stateTone"
+            :time-label="card.timeLabel"
+            :created-at="card.createdAt"
+            :updated-at="card.updatedAt"
+            :index="card.index"
             @open="go(card.to)"
           />
         </div>
@@ -68,6 +78,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { getGenerationHistory } from '@/api/doctemplate'
 import { getSpaceList } from '@/api/knowledgebase'
 import { listConversations, listWorkflows } from '@/api/workflow'
+import AssetCard from './components/AssetCard.vue'
 import HomeHero from './components/HomeHero.vue'
 import ShowcaseCard from './components/ShowcaseCard.vue'
 import { HOME_SORTS, HOME_TABS, KIND_META, MODULE_CARDS } from './constants'
@@ -77,7 +88,6 @@ import {
   filterFeed,
   formatCount,
   formatRelative,
-  moduleBadge,
   sortFeed,
 } from './utils/feed'
 
@@ -97,25 +107,24 @@ const loadedAt = ref(Date.now())
 const feedItems = computed(() => buildFeed(sources.value, { now: loadedAt.value }))
 const moduleStats = computed(() => buildModuleStats(feedItems.value))
 
+/** Zone D 卡片字段：数字与时间交由 AssetCard 呈现，这里只做归一化透传 */
 const assetCards = computed(() =>
-  sortFeed(filterFeed(feedItems.value, activeTab.value), sortKey.value).map((item) => {
-    const meta = KIND_META[item.kind] || {}
-    return {
-      key: item.key,
-      title: item.name,
-      description: item.description,
-      icon: meta.icon,
-      pattern: meta.pattern,
-      kindLabel: meta.label,
-      badge: item.badge,
-      metric: item.metric === null ? '' : formatCount(item.metric),
-      metricLabel: item.metricLabel,
-      state: item.state,
-      stateTone: item.stateTone,
-      timeLabel: formatRelative(item.updatedAt, loadedAt.value),
-      to: item.to,
-    }
-  }),
+  sortFeed(filterFeed(feedItems.value, activeTab.value), sortKey.value).map((item, index) => ({
+    key: item.key,
+    index,
+    title: item.name,
+    description: item.description,
+    kind: item.kind,
+    kindLabel: KIND_META[item.kind]?.label || '',
+    metric: item.metric,
+    metricLabel: item.metricLabel,
+    state: item.state,
+    stateTone: item.stateTone,
+    timeLabel: formatRelative(item.updatedAt, loadedAt.value),
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    to: item.to,
+  })),
 )
 
 const moduleCards = computed(() =>
@@ -126,10 +135,7 @@ const moduleCards = computed(() =>
       title: card.title,
       description: card.description,
       icon: card.icon,
-      pattern: card.pattern,
       image: card.image,
-      kindLabel: '',
-      badge: moduleBadge(stat, card.hotAt),
       metric: stat ? formatCount(stat.count) : '',
       metricLabel: stat ? card.unit : '',
       to: card.to,
@@ -318,25 +324,49 @@ onMounted(() => {
 }
 
 /* ========== Zone D 网格 ========== */
+/* 容器查询基准：列数随主区实际宽度（含侧栏折叠）自动降档，不随视口误判 */
 .assets {
   display: flex;
   flex-direction: column;
   min-height: 240px;
+  container-type: inline-size;
 }
 
+/* 标准 5 列（参考件间距 22px），随宽度逐级 4/3/2/1 */
 .assets__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
-  gap: var(--tb-size-3);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 22px;
+}
+
+@container (max-width: 1519px) {
+  .assets__grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 1239px) {
+  .assets__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 979px) {
+  .assets__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 679px) {
+  .assets__grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
 }
 
 @media (max-width: 1024px) {
   .home {
     gap: var(--tb-size-5);
-  }
-
-  .assets__grid {
-    grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
   }
 }
 
@@ -349,10 +379,6 @@ onMounted(() => {
   .band__head--tabs {
     flex-direction: row;
     align-items: center;
-  }
-
-  .assets__grid {
-    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
   }
 
   /* 与 HomeHero 同一档位收成一栏 */
