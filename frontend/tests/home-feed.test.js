@@ -3,8 +3,7 @@
  *
  * 锁三条不能靠肉眼看出来的：
  * ①**卡片上的数字只能是真实字段的推导**——后端没有播放量、没有热度接口，
- *   所以「上新」只能来自 createTime 窗口、「热门」只能来自规模阈值，
- *   没有列表来源的模块必须**不显示**筹码而不是显示 0；
+ *   规模计数缺失就传 null，不补 0、不编造数字；
  * ②**任一接口挂掉不能拖垮整页**——buildFeed 对 null 来源要照常出结果；
  * ③时间格式要能吃下 yudao 的 `yyyy-MM-dd HH:mm:ss`，`new Date()` 直接解它会返回 Invalid Date。
  *
@@ -18,8 +17,6 @@ import {
   filterFeed,
   formatCount,
   formatRelative,
-  isRecent,
-  moduleBadge,
   parseTime,
   sortFeed,
 } from '../src/views/system/utils/feed.js'
@@ -43,13 +40,6 @@ test('parseTime 吃下 yudao 的空格分隔格式，ISO 与非法值都不炸',
   assert.equal(parseTime('不是时间'), null)
 })
 
-test('上新窗口：7 天内算、超窗不算、未来时间不算', () => {
-  assert.equal(isRecent(parseTime(daysAgo(3)), NOW), true)
-  assert.equal(isRecent(parseTime(daysAgo(30)), NOW), false)
-  assert.equal(isRecent(NOW + DAY, NOW), false, '时钟漂移出来的未来时间不该被标成上新')
-  assert.equal(isRecent(null, NOW), false)
-})
-
 test('四个来源合成一条流，按更新时间倒序', () => {
   const items = buildFeed(
     {
@@ -69,24 +59,6 @@ test('四个来源合成一条流，按更新时间倒序', () => {
     items.map((item) => item.kind),
     ['workflow', 'doc', 'chat', 'knowledge'],
   )
-})
-
-test('筹码互斥：上新优先于热门，一卡只有一个', () => {
-  const items = buildFeed(
-    {
-      workflows: [
-        { id: 1, name: '新建的长流程', stepCount: 9, updateTime: daysAgo(1) },
-        { id: 2, name: '很久以前的长流程', stepCount: 9, updateTime: daysAgo(40) },
-        { id: 3, name: '很短的老流程', stepCount: 1, updateTime: daysAgo(40) },
-      ],
-    },
-    { now: NOW },
-  )
-
-  const badgeOf = (id) => items.find((item) => item.id === id).badge
-  assert.equal(badgeOf(1), 'new', 'stepCount 已过热门阈值，但它在上新窗口内')
-  assert.equal(badgeOf(2), 'hot')
-  assert.equal(badgeOf(3), null, '既新也不多，就不该有筹码')
 })
 
 test('来源缺失时不编造数字：null 与 undefined 都出空流', () => {
@@ -114,7 +86,7 @@ test('生成历史把状态文案带成语义色档位', () => {
   )
 })
 
-test('过滤与推荐排序：有筹码的排前面，其余按更新时间', () => {
+test('过滤与推荐排序：规模优先，同规模按更新时间倒序', () => {
   const items = buildFeed(
     { workflows: [
       { id: 1, name: '老流程', updateTime: daysAgo(30) },
@@ -125,11 +97,15 @@ test('过滤与推荐排序：有筹码的排前面，其余按更新时间', ()
 
   assert.deepEqual(filterFeed(items, 'workflow').map((item) => item.id), [2, 1])
   assert.equal(filterFeed(items, 'all').length, 3)
-  assert.deepEqual(sortFeed(items, 'recommended').map((item) => item.id), [2, 3, 1])
+  assert.deepEqual(
+    sortFeed(items, 'recommended').map((item) => item.id),
+    [3, 2, 1],
+    '空间有 9 份文档排最前；无计数的工作流按更新时间先后',
+  )
   assert.deepEqual(sortFeed(items, 'created').map((item) => item.id), [2, 3, 1], '1 与 3 同为 30 天前，稳定排序保留入流顺序')
 })
 
-test('能力目录卡：没有来源的模块不给筹码', () => {
+test('能力目录卡：没有来源的模块不给统计', () => {
   const items = buildFeed(
     { workflows: [
       { id: 1, name: 'A', updateTime: daysAgo(1) },
@@ -141,11 +117,8 @@ test('能力目录卡：没有来源的模块不给筹码', () => {
   )
   const stats = buildModuleStats(items)
 
-  assert.deepEqual(stats.workflow, { count: 4, recent: true })
-  assert.equal(moduleBadge(stats.workflow, 4), 'new', '有 ≤7 天新建的资产，先亮上新')
-  assert.equal(moduleBadge(stats.knowledge, 3), null, '知识库一条都没有，不该出现卡片统计')
-  assert.equal(moduleBadge({ count: 4, recent: false }, 4), 'hot')
-  assert.equal(moduleBadge({ count: 3, recent: false }, 4), null)
+  assert.deepEqual(stats.workflow, { count: 4 })
+  assert.equal(stats.knowledge, undefined, '知识库一条都没有，不该出现卡片统计')
 })
 
 test('计数缩写与相对时间', () => {

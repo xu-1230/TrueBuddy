@@ -84,8 +84,7 @@ export const CAROUSEL_INTERVAL = 6000
  * Zone B 可用工具。
  * 只收「有真实列表接口可统计」的两个模块：文档模板 / PPT / 会议 / 批改已由 Zone A 的
  * 主推卡、双入口卡与运营轮播承载，在这里再列一遍只是重复占位。
- * `source` 声明该卡统计哪一类真实资产，null 表示后端暂无列表接口（不编造数字）；
- * `hotAt` 是「热门」的条数阈值，与 `feed.js` 里按资产规模判定的阈值是两回事。
+ * `source` 声明该卡统计哪一类真实资产，null 表示后端暂无列表接口（不编造数字）。
  */
 export const MODULE_CARDS = [
   {
@@ -97,7 +96,6 @@ export const MODULE_CARDS = [
     pattern: 'stack',
     source: 'knowledge',
     unit: '空间',
-    hotAt: 3,
     image: '/hero/hero-knowledge.webp',
   },
   {
@@ -109,7 +107,6 @@ export const MODULE_CARDS = [
     pattern: 'node',
     source: 'workflow',
     unit: '条',
-    hotAt: 4,
     image: '/hero/hero-workflow.webp',
   },
 ]
