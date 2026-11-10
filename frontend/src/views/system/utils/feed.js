@@ -1,11 +1,9 @@
 /**
  * 首页信息流的归一化与派生逻辑（纯函数，无副作用、无请求，便于单测）。
  *
- * 后端没有任何统计 / 推荐 / 热度接口，因此卡片上的「上新」「热门」与计数
- * 全部由**客户端从真实资产字段推导**：
- *   - 上新：`createTime` 距今 ≤ NEW_BADGE_DAYS 天
- *   - 热门：该类资产的规模字段（文档数 / 节点数 / 产出数）达到 HOT_THRESHOLDS
- * 推导不出来的（作业批改、PPT、模拟会议没有列表接口）就**不显示**，不编造数字。
+ * 后端没有任何统计 / 推荐 / 热度接口，卡片上的计数全部由**客户端从真实资产
+ * 字段推导**：规模字段（文档数 / 节点数 / 产出数）缺失就传 null，不补 0、
+ * 不编造数字；「推荐」排序由真实规模字段驱动（见 `sortFeed`）。
  *
  * 本文件刻意不 import `constants.js`（它拖着整个图标库），保持可被 Node 直接跑单测。
  */
@@ -13,17 +11,6 @@
 const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
-
-/** 「上新」的时间窗口 */
-export const NEW_BADGE_DAYS = 7
-
-/** 各类资产判定「热门」的规模阈值 */
-export const HOT_THRESHOLDS = {
-  knowledge: 5,
-  workflow: 4,
-  doc: 3,
-  chat: 3,
-}
 
 /** 生成历史的状态文案 → 语义色档位（后端 `HistoryVO.status` 给的就是中文文案） */
 export const DOC_STATE_TONE = {
@@ -65,17 +52,6 @@ export function parseTime(value) {
 }
 
 /**
- * 是否处于「上新」窗口内。时间为空或在未来时不算上新。
- * @param {number|null} timestamp
- * @param {number} now
- * @param {number} [days]
- */
-export function isRecent(timestamp, now, days = NEW_BADGE_DAYS) {
-  if (!timestamp || timestamp > now) return false
-  return now - timestamp <= days * DAY
-}
-
-/**
  * 1.2 万这类计数缩写，用于卡片右下角的规模筹码。
  * @param {number|null|undefined} value
  * @returns {string}
@@ -114,20 +90,12 @@ const text = (...values) => {
   return hit ? hit.trim() : ''
 }
 
-/** 组装成统一卡片模型；badge 优先级为「上新 > 热门」，与参考图一致（一卡一筹码） */
+/** 组装成统一卡片模型；`now` 仅为保留的归一化入参（时间字段原样透传） */
 function toItem(partial, now) {
-  const { kind, metric, createdAt, updatedAt } = partial
-  const threshold = HOT_THRESHOLDS[kind]
-  let badge = null
-  if (isRecent(createdAt ?? updatedAt, now)) badge = 'new'
-  else if (typeof threshold === 'number' && typeof metric === 'number' && metric >= threshold) badge = 'hot'
-
+  const { createdAt, updatedAt } = partial
   return {
-    badge,
     createdAt,
     updatedAt,
-    isNew: badge === 'new',
-    isHot: badge === 'hot',
     ...partial,
   }
 }
@@ -236,8 +204,8 @@ export function filterFeed(items, kind) {
 const timeDesc = (field) => (a, b) => (b[field] ?? 0) - (a[field] ?? 0)
 
 /**
- * 排序。「推荐」= 有筹码的（上新 / 热门）排前面，其余按更新时间倒序 ——
- * 这是把「平台想推的」和「最近动过的」合成一个顺序，而不是真的推荐算法。
+ * 排序。「推荐」= 规模优先：规模计数大的排前面（无计数视为 -1 沉底），
+ * 同规模按更新时间倒序 —— 全部由真实资产字段驱动，不是真的推荐算法。
  * @param {Array<object>} items
  * @param {string} sortKey
  */
@@ -246,9 +214,9 @@ export function sortFeed(items, sortKey) {
   if (sortKey === 'created') return list.sort(timeDesc('createdAt'))
   if (sortKey === 'updated') return list.sort(timeDesc('updatedAt'))
   return list.sort((a, b) => {
-    const weightA = a.badge ? 1 : 0
-    const weightB = b.badge ? 1 : 0
-    if (weightA !== weightB) return weightB - weightA
+    const sizeA = typeof a.metric === 'number' && Number.isFinite(a.metric) ? a.metric : -1
+    const sizeB = typeof b.metric === 'number' && Number.isFinite(b.metric) ? b.metric : -1
+    if (sizeA !== sizeB) return sizeB - sizeA
     return (b.updatedAt ?? 0) - (a.updatedAt ?? 0)
   })
 }
@@ -256,29 +224,15 @@ export function sortFeed(items, sortKey) {
 /**
  * 汇总 Zone B 能力目录卡的统计量。
  * @param {Array<object>} items `buildFeed` 的结果
- * @returns {Record<string, { count: number, recent: boolean }>} 以资源类型为键
+ * @returns {Record<string, { count: number }>} 以资源类型为键
  */
 export function buildModuleStats(items) {
   const stats = {}
   asArray(items).forEach((item) => {
     if (!item || !item.kind) return
-    const bucket = stats[item.kind] || { count: 0, recent: false }
+    const bucket = stats[item.kind] || { count: 0 }
     bucket.count += 1
-    if (item.isNew) bucket.recent = true
     stats[item.kind] = bucket
   })
   return stats
-}
-
-/**
- * 能力目录卡的筹码：该模块下有 ≤7 天新建的资产即「上新」，否则按规模判「热门」。
- * @param {{ count: number, recent: boolean }|undefined} stat
- * @param {number} threshold
- * @returns {'new'|'hot'|null}
- */
-export function moduleBadge(stat, threshold) {
-  if (!stat) return null
-  if (stat.recent) return 'new'
-  if (typeof threshold === 'number' && stat.count >= threshold) return 'hot'
-  return null
 }
