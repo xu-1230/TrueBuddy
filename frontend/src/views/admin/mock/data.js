@@ -6,22 +6,8 @@
  *
  * 数据形状刻意与将来接口返回保持一致（分页统一 { list, total }），
  * 接上后端时页面不需要改取值逻辑。
+ * 用户列表已接真实接口（/admin/user），不再需要 mockUsers / queryUsers。
  */
-
-export const mockUsers = [
-  { id: 1, username: 'admin', nickname: '系统管理员', email: 'admin@truebuddy.cn', roles: ['admin'], status: 0, createTime: '2026-03-02 09:00', lastLogin: '2026-10-18 08:42' },
-  { id: 2, username: 'normal', nickname: '林小满', email: 'linxiaoman@stu.cn', roles: ['normal'], status: 0, createTime: '2026-04-11 10:24', lastLogin: '2026-10-17 21:08' },
-  { id: 3, username: 'member', nickname: '陈可', email: 'chenke@stu.cn', roles: ['member'], status: 0, createTime: '2026-04-18 14:02', lastLogin: '2026-10-18 07:35' },
-  { id: 4, username: 'zhangwei', nickname: '张伟', email: 'zhangwei@stu.cn', roles: ['normal'], status: 0, createTime: '2026-05-06 09:12', lastLogin: '2026-10-16 19:40' },
-  { id: 5, username: 'liyan', nickname: '李妍', email: 'liyan@stu.cn', roles: ['member'], status: 0, createTime: '2026-05-20 16:48', lastLogin: '2026-10-18 09:02' },
-  { id: 6, username: 'wangqiang', nickname: '王强', email: 'wangqiang@stu.cn', roles: ['normal'], status: 0, createTime: '2026-06-01 11:36', lastLogin: '2026-10-15 13:22' },
-  { id: 7, username: 'zhaolin', nickname: '赵琳', email: 'zhaolin@truebuddy.cn', roles: ['auditor'], status: 0, createTime: '2026-06-14 08:55', lastLogin: '2026-10-17 10:11' },
-  { id: 8, username: 'sunyu', nickname: '孙宇', email: 'sunyu@stu.cn', roles: ['normal'], status: 0, createTime: '2026-07-08 15:20', lastLogin: '2026-10-12 20:45' },
-  { id: 9, username: 'zhoujie', nickname: '周洁', email: 'zhoujie@stu.cn', roles: ['member'], status: 0, createTime: '2026-08-19 10:05', lastLogin: '2026-10-18 08:16' },
-  { id: 10, username: 'wuhao', nickname: '吴昊', email: 'wuhao@stu.cn', roles: ['normal'], status: 0, createTime: '2026-09-02 13:41', lastLogin: '2026-10-11 09:33' },
-  { id: 11, username: 'xujing', nickname: '徐静', email: 'xujing@stu.cn', roles: ['member'], status: 1, createTime: '2026-09-15 17:09', lastLogin: '2026-09-28 22:10' },
-  { id: 12, username: 'hechen', nickname: '何晨', email: 'hechen@stu.cn', roles: ['normal'], status: 0, createTime: '2026-10-03 09:47', lastLogin: '2026-10-17 18:52' },
-]
 
 export const mockRoles = [
   { id: 1, name: '普通用户', code: 'normal', memberCount: 42, status: 0, remark: '注册后的默认角色，可使用基础教学工具' },
@@ -369,5 +355,4 @@ export function createMockQuery(source, { keywordFields = [] } = {}) {
   }
 }
 
-export const queryUsers = createMockQuery(mockUsers, { keywordFields: ['username', 'nickname', 'email'] })
 export const queryOperationLogs = createMockQuery(mockOperationLogs, { keywordFields: ['operator', 'action', 'target', 'ip'] })
