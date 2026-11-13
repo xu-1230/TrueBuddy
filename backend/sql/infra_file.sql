@@ -3,7 +3,7 @@
 -- 存储端：MinIO（endpoint/bucket 等见 tb-server application.yml）
 --   tb.file.minio.endpoint    : http://localhost:9000
 --   tb.file.minio.access-key  : admin
---   tb.file.minio.secret-key  : ${MINIO_SECRET_KEY:admin123456}
+--   tb.file.minio.secret-key  : ${MINIO_SECRET_KEY}（真实值在 backend/.env，gitignored）
 --   tb.file.minio.bucket      : test-bucket
 -- =============================================================
 

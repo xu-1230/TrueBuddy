@@ -9,8 +9,8 @@
  *   ⑤ 第三方  --el-* 映射      —— Element Plus 跟随本主题（含暗色态）
  *
  * 约定与边界：
- *   - 取值来源：docs/ui.html 的 `[data-theme="ink"]` 块，与本文件保持一致；改主题先改样张（09-样式规范.md §3.3）。
- *   - 明暗自适应统一走 light-dark()，组件内不写 light-dark()，也不写 html.dark 判断（09-样式规范.md §3.2）。
+ *   - 取值来源：docs/ui.html 的 `[data-theme="ink"]` 块，与本文件保持一致；改主题先改样张（doc-ui.md §3.3）。
+ *   - 明暗自适应统一走 light-dark()，组件内不写 light-dark()，也不写 html.dark 判断（doc-ui.md §3.2）。
  *   - --el-* 映射引用「语义变量」，因此 Element Plus 与页面同步明暗；
  *     暗色态由 element-plus/theme-chalk/dark/css-vars.css（选择器 html.dark）铺底，
  *     html.dark 类由 index.html 首帧脚本与 composables/useAppearance.js 共同维护。
@@ -23,7 +23,7 @@
    ① 刻度层：与主题无关
    ========================================================================== */
 :root {
-  /* 间距：4 的倍数（09-样式规范.md §4） */
+  /* 间距：4 的倍数（doc-ui.md §4） */
   --tb-size-1: 4px;
   --tb-size-2: 8px;
   --tb-size-3: 12px;
@@ -61,7 +61,7 @@
   --tb-control-md: 38px;
   --tb-control-lg: 46px;
 
-  /* 动效：只对 transform / opacity 使用（09-样式规范.md §6.3） */
+  /* 动效：只对 transform / opacity 使用（doc-ui.md §6.3） */
   --tb-dur-1: 120ms;
   --tb-dur-2: 180ms;
   --tb-dur-3: 280ms;
@@ -119,7 +119,7 @@ html[data-theme="ink"],
   --tb-neutral-900: #1d2129;
   --tb-neutral-950: #0e1116;
 
-  /* 状态色：仅用于状态与数据语义，不得用于装饰（09-样式规范.md §3.4）
+  /* 状态色：仅用于状态与数据语义，不得用于装饰（doc-ui.md §3.4）
      亮色压深保证白字/白底都够对比，暗色提亮保证深底上看得见；
      *-soft 由语义层 color-mix 派生，自动跟随 */
   --tb-success: light-dark(#2f7d4f, #34b877);

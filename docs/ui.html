@@ -28,7 +28,7 @@
          TrueBuddy · UI 主题参考（docs/ui.html）
          单文件设计样张：Token 层 → 排版 → 页面骨架 → 组件 → 动效
          约定：一切主题化取值走 --tb-* 变量；明暗自适应优先 light-dark()
-              与 frontend 的落地约定见 09-样式规范.md §3.2 / §3.3
+              与 frontend 的落地约定见 doc-ui.md §3.2 / §3.3
          ========================================================================== */
 
       /* ---------- 1. 全局刻度（与主题无关） ---------- */
@@ -41,7 +41,7 @@
           Georgia, "Times New Roman", serif;
         --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, Monaco, "Courier New", monospace;
 
-        /* 间距：4 的倍数，禁止魔法值（09-样式规范.md §4） */
+        /* 间距：4 的倍数，禁止魔法值（doc-ui.md §4） */
         --tb-size-1: 4px;
         --tb-size-2: 8px;
         --tb-size-3: 12px;
@@ -3484,7 +3484,7 @@
           </dl>
           <p>
             本文件是前端主题的<strong>样张</strong>，非运行时资源；新增或修改主题须同步
-            <a href="./09-样式规范.md">09-样式规范.md</a> §3.3。
+            <a href="./doc-ui.md">doc-ui.md</a> §3.3。
           </p>
         </div>
       </aside>
@@ -3693,7 +3693,7 @@
                 <h2 class="sec__title">色彩系统</h2>
                 <p class="sec__desc">
                   原始色板是「不可直接使用的原料」，语义变量才是组件的唯一入口。色块可点击复制 HEX；
-                  OKLCH 值由本页实时换算（sRGB → OKLab），与 <span class="code">09-样式规范.md</span> §3.2 推荐的
+                  OKLCH 值由本页实时换算（sRGB → OKLab），与 <span class="code">doc-ui.md</span> §3.2 推荐的
                   <span class="code">oklch()</span> 写法一致。
                 </p>
               </div>
@@ -5296,7 +5296,7 @@
             <div class="sub">
               <h3 class="sub__title">10.3 落地顺序（规划 / 待开发）</h3>
               <p class="sub__desc">
-                当前项目尚无统一主题变量层（详见 <span class="mono">09-样式规范.md</span> §3.1）。
+                当前项目尚无统一主题变量层（详见 <span class="mono">doc-ui.md</span> §3.1）。
                 建议按下表顺序推进，每一步都可独立发布、独立回滚。
               </p>
               <table class="spec">
@@ -5345,7 +5345,7 @@
               <div class="grid-3" style="margin-top: var(--tb-size-5)">
                 <div class="note"><span class="note__idx">1</span><p>新组件必须只引用本文件列出的语义变量；出现新语义（如「画布底」）时先在此登记再实现。</p></div>
                 <div class="note"><span class="note__idx">2</span><p>同一视觉规格重复出现第 3 次，必须抽为组件或共享变量，避免逐页复制。</p></div>
-                <div class="note"><span class="note__idx">3</span><p>主题变更须同时改本文件与 <span class="mono">09-样式规范.md</span> §3.3，二者保持一致。</p></div>
+                <div class="note"><span class="note__idx">3</span><p>主题变更须同时改本文件与 <span class="mono">doc-ui.md</span> §3.3，二者保持一致。</p></div>
               </div>
             </div>
           </section>
@@ -5357,10 +5357,10 @@
                 <p class="rail__label">关联文档</p>
                 <ul class="foot__links">
                   <li><a href="./README.md">README.md · 规范入口</a></li>
-                  <li><a href="./01-项目概述.md">01 · 项目概述（技术栈与架构）</a></li>
-                  <li><a href="./04-组件规范.md">04 · 组件规范（分层与写法）</a></li>
-                  <li><a href="./09-样式规范.md">09 · 样式规范（主题与动效）</a></li>
-                  <li><a href="./10-文档规范.md">10 · 文档规范（现状与规划分离）</a></li>
+                  <li><a href="./doc.md">01 · 项目概述（技术栈与架构）</a></li>
+                  <li><a href="./doc-conventions.md">04 · 组件规范（分层与写法）</a></li>
+                  <li><a href="./doc-ui.md">09 · 样式规范（主题与动效）</a></li>
+                  <li><a href="./doc-conventions.md">10 · 文档规范（现状与规划分离）</a></li>
                 </ul>
               </div>
               <div>
@@ -5713,7 +5713,7 @@
           return (hi + 0.05) / (lo + 0.05);
         }
 
-        /** hex / rgb 字符串 → oklch() 文本（与 09-样式规范.md §3.2 的写法一致） */
+        /** hex / rgb 字符串 → oklch() 文本（与 doc-ui.md §3.2 的写法一致） */
         function toOklch(rgb) {
           const p = parseRgb(rgb);
           if (!p) return "—";
