@@ -1,10 +1,9 @@
-# 16 - PPT 演讲与模拟会议方案
+# doc-lecture · 智能课堂业务逻辑
 
-> 项目：TrueBuddy
-> 生效日期：2026-10-08 ｜ 规范入口：[README.md](./README.md)
-> 适用范围：**模拟会议（§3–§11，已落地）+ PPT 讲稿优化（§12，已落地）**；AI 数字人配音/口型仍为后续阶段（见 §1.3、§9）
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-13
+> 适用范围：**模拟会议（§3–§11，已落地）+ PPT 讲稿优化（§12，已落地）+ 数字人语音播报（§5.7，已落地：放映页本页播放并驱动口型）**；放映/会议 × 照读/AI 现场讲词的演讲体系为**规划**（§13，未落地）
 > 实时通道实现：**自托管 LiveKit**（部署在仓库外的 `D:\ctf\livekit`），媒体与聊天都不经过本服务
-> 相关：[03-项目结构.md](./03-项目结构.md)、[05-API规范.md](./05-API规范.md)、[06-路由规范.md](./06-路由规范.md)、[08-通用约束.md](./08-通用约束.md)、[../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md)、[../frontend/AGENT - 前端技术规约.md](../frontend/AGENT%20-%20前端技术规约.md)
+> 相关：[doc-api.md](./doc-api.md)（会议/讲稿接口）、[doc-conventions.md](./doc-conventions.md)、[doc-integration.md](./doc-integration.md)（LiveKit / TTS 集成）、[doc-devops.md](./doc-devops.md)（LiveKit 部署）、[adr/](./adr/)（0001–0004）
 
 ---
 
@@ -33,13 +32,13 @@
 | 阶段 | 能力 | 与本期关系 |
 | --- | --- | --- |
 | 后续一 | PPT 演讲稿优化 —— **已落地，见 §12**（口径有调整：不做 pptx 上传与 `ppt_page` 落库，讲稿**就是页面的 `remark`**，接口无状态） | 已实现 |
-| 后续二 | AI 数字人：TTS 配音 + Live2D 口型 + 会议内播报 + 数字人挂 `@Tool` 工具（翻页 / 播报 / 开关语音答疑 / 读学生反馈） | **依赖本期**的 LiveKit 房间；数字人语音可直接发布为 LiveKit 音频轨（不必再走 PCM over WS）。**2026-10-09 修正**：「直接」二字不成立 —— LiveKit 无 JVM 服务端媒体 SDK，发布方必须是一个具备实时媒体客户端的 Node worker，方案见 [17-AI数字人语音链路方案.md](./17-AI数字人语音链路方案.md) |
+| 后续二 | AI 数字人：TTS 配音 + Live2D 口型 + 会议内播报 + 数字人挂 `@Tool` 工具（翻页 / 播报 / 开关语音答疑 / 读学生反馈） | **依赖本期**的 LiveKit 房间；数字人语音可直接发布为 LiveKit 音频轨（不必再走 PCM over WS）。（**历史注记**：曾据此引入 Node worker 发布音频轨的方案，该方案已于 2026-10-10 整体废弃并删除——现行链路是放映页本页播报、声音随屏幕共享轨到学生端，见 §5.7） |
 
 ### 1.4 范围外（本期明确不做）
 
 | 能力 | 不做的理由 |
 | --- | --- |
-| 共享音频（老师麦克风 / 系统声音） | 本期只做屏幕共享。**数字人音频轨已于 2026-10-09 落地**（见 `docs/17`），但老师麦克风与系统声音仍不做：它与数字人轨会在同一条 `AudioSource` 上混播，且要改浏览器手势与权限动线 |
+| 共享音频（老师麦克风 / 系统声音） | 本期只做屏幕共享。数字人语音已落地（见 §5.7），但老师麦克风与系统声音仍不做：它与数字人轨会在同一条 `AudioSource` 上混播，且要改浏览器手势与权限动线 |
 | 学生自主翻页 / 老师屏幕标注 | 学生看的是老师共享的画面，翻页天然跟随；标注按需再加 |
 | 会中语音提问（ASR） | 学生端默认无语音能力；随数字人阶段一起做 |
 | 会议录制回放 / 字幕导出 | 属会议产品完整形态；LiveKit 的 egress 本期不启用 |
@@ -170,7 +169,7 @@ graph TB
 | 表 | 关键字段 | 说明 |
 | --- | --- | --- |
 | `lecture_meeting` | `id` / `meeting_no`(6 位，唯一) / `title` / `host_token` / `status`(1 进行中 / 2 已结束) / `start_time` / `end_time` / `planned_minutes`(空列) / `document_id`(空列) / 公共列 | 后两列为后续演讲稿阶段预留 |
-| `lecture_meeting_attendee` | `id` / `meeting_id` / `nickname` / `attendee_token` / `role` / `join_time` / `leave_time` / 公共列 | **累计入会台账**，`online` 列已删；`leave_time IS NULL` 只表示「尚未显式离开」，不得当作在线（ADR-0002、CONTEXT.md） |
+| `lecture_meeting_attendee` | `id` / `meeting_id` / `nickname` / `attendee_token` / `role` / `join_time` / `leave_time` / 公共列 | **累计入会台账**，`online` 列已删；`leave_time IS NULL` 只表示「尚未显式离开」，不得当作在线（ADR-0002） |
 | `lecture_meeting_message` | `id` / `meeting_id` / `attendee_id` / `nickname` / `role` / `content` / `kind`(1 文字) / 公共列 | `kind` 为后续语音转写 / 数字人发言预留 |
 
 脚本：`sql/lecture_meeting.sql`、`sql/lecture_meeting_attendee.sql`、`sql/lecture_meeting_message.sql`（需手工执行）。
@@ -305,7 +304,7 @@ PPT 页(放映态) --POST /ppt/speech/speak--> tb-module-lecture
 3. **取消变得免费**：断流即取消合成，不再需要 `DELETE /say/{id}` 与 worker 的 `clearQueue`。
 4. **代价**：① 共享时必须带上「这一页的声音」（浏览器默认勾选，脚本不能代选）；② 学生端不再有一个独立的数字人形象 —— 形象只存在于老师共享的画面里；③ 后端同时活跃的播报数上限沿用 `max-concurrent-speak`（超出的排队）；④ **播放需要那一页被用户激活过**：浏览器规定 `AudioContext` 在页面拿到过用户手势前只能挂起，因此**刷新过放映页之后**要先在该页点一下任意处，否则控制台发来的播报会「念了但没声音」（本轮不加 UI 提示，看到学生没声音先想起来这一条）。
 
-**控制台的「开始演讲」仍是开始信号**：本轮内容固定为 mock（`MOCK_LECTURE_TEXT = '你好'`），下一轮换成「放映页念当前页 `remark`」（docs/18 A 段）或 AI 现场讲词（B 段）—— **信号本身不变**，只换取文本那一步。控制台的「数字人播报」手输框保留，作为多源 / 长文本入口。
+**控制台的「开始演讲」仍是开始信号**：本轮内容固定为 mock（`MOCK_LECTURE_TEXT = '你好'`），下一轮换成「放映页念当前页 `remark`」（§13 A 段）或 AI 现场讲词（B 段）—— **信号本身不变**，只换取文本那一步。控制台的「数字人播报」手输框保留，作为多源 / 长文本入口。
 
 **放映页怎么知道会议号**：建会成功时把地址写成 `/index/ppt?screen=1&meetid={会议号}`（`router.replace`），刷新与重新打开这条链接都能恢复；本页据此挂上这一场的播报总线。会议号不是秘密；`hostToken` 仍只落在 `localStorage`（`src/utils/hostSession.js`），**永不进 URL**。
 
@@ -364,11 +363,11 @@ PPT 页(放映态) --POST /ppt/speech/speak--> tb-module-lecture
 
 | 变更 | 已同步 |
 | --- | --- |
-| 接口增删与白名单 | [05-API规范.md](./05-API规范.md)（接口清单、放行规则、前端 API 层表） |
-| 路由与安全对应 | [06-路由规范.md](./06-路由规范.md)（路由表、映射前缀、安全对应） |
-| 模块与目录 | [03-项目结构.md](./03-项目结构.md)（模块表、前端目录） |
-| 环境变量 | [08-通用约束.md](./08-通用约束.md) §4（实时通信改为 LiveKit）、根 `.env.example` |
-| 依赖 | [01-项目概述.md](./01-项目概述.md) §4（前端加 `livekit-client`；后端实时通道一行改写） |
+| 接口增删与白名单 | [doc-api.md](./doc-api.md)（接口清单、放行规则、前端 API 层表） |
+| 路由与安全对应 | [doc-conventions.md](./doc-conventions.md)（路由表、映射前缀、安全对应） |
+| 模块与目录 | [doc-conventions.md](./doc-conventions.md)（模块表、前端目录） |
+| 环境变量 | [doc.md](./doc.md) §4（实时通信改为 LiveKit）、根 `.env.example` |
+| 依赖 | [doc.md](./doc.md) §4（前端加 `livekit-client`；后端实时通道一行改写） |
 | 子规约 | [../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md)（技术栈、模块、接口表、实时通信） |
 
 ---
@@ -394,7 +393,7 @@ PPT 页(放映态) --POST /ppt/speech/speak--> tb-module-lecture
 
 - `LiveKitTokenServiceTest`（9 条）：JWT 结构（三段 / base64url 无 padding / HS256 头）、**用独立实现的 HMAC 复算签名**、老师/学生/服务端三类令牌的字段级断言、有效期与时钟偏差、未配置时的行为、信令地址推导；另有 `-DlivekitProbe=true` 探针用于对着真实服务端验收。
 - `LanAddressUtilsTest`（6 条）：局域网 IPv4 探测（热点换 IP 时信令地址跟着走）。
-- **`MeetingServiceImplTest`（7 条，M5 新增）**：Mockito mock 三个 mapper，**不启 Spring 上下文、不连库** —— 全仓没有独立测试库，而 [11-测试规范.md](./11-测试规范.md) §2.2 禁止污染 `tb` 生产库。锁的行为：台账 25 行仍可入会（闸门回归锁）、离会幂等与两类凭据错误、`close` 走 `markAllLeft`、响应 VO 里 `online` / `onlineCount` 字段已消失。
+- **`MeetingServiceImplTest`（7 条，M5 新增）**：Mockito mock 三个 mapper，**不启 Spring 上下文、不连库** —— 全仓没有独立测试库，而 [doc-conventions.md](./doc-conventions.md) §2.2 禁止污染 `tb` 生产库。锁的行为：台账 25 行仍可入会（闸门回归锁）、离会幂等与两类凭据错误、`close` 走 `markAllLeft`、响应 VO 里 `online` / `onlineCount` 字段已消失。
   **已知盲区（必须知道）**：mock 掉 mapper 意味着 **SQL 文本本身没被测过** —— `WHERE leave_time IS NULL`、`deleted = FALSE`、删列后的建表脚本都只由 §11.2 的手工联调 + 逐字 review 兜住。
 
 ```bash
@@ -403,14 +402,14 @@ cd frontend && node --test tests/attendees.test.js            # 6/6（在线名�
 cd frontend && npm test                                       # 159/160（1 条既有 workflow 用例失败，与本期无关）
 ```
 
-### 9.3 后续阶段（进度见 `docs/17` / `docs/18`）
+### 9.3 后续阶段（语音链路现状见 §5.7；演讲体系规划见 §13）
 
 | 阶段 | 目标 | 状态 |
 | --- | --- | --- |
 | ~~后续一~~ | ~~PPT 演讲稿优化~~ | **已落地，见 §12** |
-| 后续二 · 语音链路 | CosyVoice 流式合成 → Node worker 发布 LiveKit 音频轨（**不是**「Java 直接发轨」，见 §1.3 修正与 `docs/17`） | **已落地（2026-10-09，`docs/17` §9.1），默认关闭**：`tb.lecture.digital-human.enabled=false` |
-| 后续二 · 跟页播报 | 放映 / 会议两种形态 × 照读 / AI 现场讲词四种组合；页码总线、串行播报队列、可取消、试听通路 | **规划中，工程化设计见 [18-放映与会议演讲体系方案.md](./18-放映与会议演讲体系方案.md)**（本文 §1.4 的「共享音频」一项已被它细化为「画面继续走屏幕共享 + 数字人轨出声」） |
-| 后续二 · `@Tool` 编排 | LLM 决定翻页 / 播报 / 开关答疑 | 规划（`docs/18` D 段，需先出 ADR） |
+| 后续二 · 语音链路 | CosyVoice 流式合成 PCM → `POST /ppt/speech/speak`（SSE）→ 放映页本页播放并驱动口型，声音随屏幕共享轨到学生端（原 Node worker 方案已废弃删除） | **已落地（2026-10-10 重构）**，见 §5.7 |
+| 后续二 · 跟页播报 | 放映 / 会议两种形态 × 照读 / AI 现场讲词四种组合；页码总线、串行播报队列、可取消、试听通路 | **规划中，工程化设计见本文 §13**（本文 §1.4 的「共享音频」一项已被它细化为「画面继续走屏幕共享 + 数字人轨出声」） |
+| 后续二 · `@Tool` 编排 | LLM 决定翻页 / 播报 / 开关答疑 | 规划（§13 D 段，需先出 ADR） |
 
 ---
 
@@ -581,4 +580,45 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 
 ---
 
-> 本文件为**方案 + 落地记录**：§5 起描述的是已落地实现，凡标「规划 / 待开发」者仍未实现；改动时按 [10-文档规范.md](./10-文档规范.md) §4.1 同步受影响文件。
+---
+
+## 13. 规划（未落地）：放映与会议演讲体系
+
+> **本节整体为规划**：出现的接口、组件、配置一律是设计，不得据此写依赖代码；落地后需同步 [doc-api.md](./doc-api.md)、[doc-conventions.md](./doc-conventions.md) §1 与 [doc.md](./doc.md)。
+> 前提已按实实施：①会议入口搬进 PPT 页（§5.6）；②编排层放前端；③语音链路已落地但形态是「本页播放」（§5.7）。因此本节历史上的 `digital-human-worker`、`POST /meeting/digital/say(/cancel)`、`presenter` 画法**一律作废**；仍未落地的是页码总线、编排状态机、翻页自动照读（A 段）、AI 现场讲词（B 段）与 `narrate`。
+
+### 13.1 目标：四格组合共用一套播报编排
+
+| 维度 | 取值 | 含义 |
+| --- | --- | --- |
+| 播放形态 | 放映 | 老师独自试听（≈ 彩排），画面不出房间 |
+| 播放形态 | 会议 | 有学生：画面继续走 LiveKit 屏幕共享，声音走播报链路 |
+| 讲述方式 | 照读 | 完全按本页 `remark` 逐字念（按句切段连续播） |
+| 讲述方式 | AI 现场讲 | `remark` 只是资料，模型现场产出这一段口播文本，**一次性派生、不写回 `remark`** |
+
+会议形态的 AI 讲述携带更多现场信息（会议标题、已进行时长、在线人数、当前页/总页）；放映形态支持同样两种讲法，只是「听众只有老师」。
+
+### 13.2 设计要点
+
+- **页面真相只有一个**（adr/0004 修订：页码写入方必须持有推进授权，模型永远不是页码写入方）：翻页由老师在放映页操作，编排层只跟随、不指挥（阶段 A）。
+- **页码总线**：同源两标签页 `BroadcastChannel('tb-ppt-page')`，消息只带最小集 `{type:'page', index, total, title, remark}`；发布方是放映页翻页收敛点（`useExecPlay` 之后），订阅方是编排层。
+- **讲述方式开关**：`mode = 'verbatim' | 'ai'` 只影响文本来源；ai 模式新增 `POST /ppt/speech/narrate`——与 `optimize` 明确分工：optimize 改写讲稿并写回 `remark`、分批；narrate 一次一页、额外接 `context`（由**前端随请求带上**，在线人数的真相只在房间事件，符合 adr/0002）。
+- **取消与串行**：编排状态机 `idle → preparing → speaking(page N)`，翻页先取消当前段再入队；**取消必须穿透**（试听断流；会议侧需补取消端点）；一次演讲会话内同一时刻只有一段在响；形态切换不允许在 speaking 中发生。
+- **预取**：播第 N 页期间并行准备第 N+1 页，失败降级为「到页再生成」（多等 1–2 秒），是体感「跟手」的验收重点。
+- **分期**（每段可独立验收）：A 跟页照读 + 能停（总线 / 队列 / 试听端点 / 单飞闸门 / remark 按句切段）→ B AI 现场讲词（narrate + 上下文注入 + 预取）→ C 形象与口型统一为一份组件（放映页与会议室共用）→ D 会中 `@Tool` 编排（需先出 ADR：`@Tool` 触发翻页与「页面真相归老师」原则冲突）。
+- **明确不做**：给学生同步页码 / 学生自主翻页、讲稿落库与版本历史、老师麦克风 / 系统声音入轨、ASR 与 barge-in、录制 / egress / 字幕导出。
+
+### 13.3 待拍板问题（设计时的开放决策）
+
+| # | 问题 | 推荐口径 |
+| --- | --- | --- |
+| Q1 | 试听怎么出声 | 后端 WAV 流回浏览器（不依赖 LiveKit、不占席位、worker/链路挂了也能彩排） |
+| Q2 | AI 现场讲词是否写回 `remark` | 不写回（写回等于覆盖老师定稿） |
+| Q3 | 现场信息由谁组装 | 前端随请求带（不给后端加 ListParticipants 依赖） |
+| Q4 | 编排层放哪 | 前端（改动最小，页面真相天然在放映页） |
+| Q5 | 翻页由谁驱动 | 先老师手动翻、数字人跟随；「念完自动翻页」作为后续小增量 |
+| Q6 | `optimize` 的「整篇」入口 | 不动，`narrate` 只管单页现场讲述 |
+
+---
+
+> 本文件为**业务逻辑实录**：§3–§12 描述的是已落地实现，凡标「规划 / 未落地」（§13 及各处标注）者不得据以写依赖代码；改动时按 [doc-conventions.md](./doc-conventions.md) §11.4 同步受影响文件。

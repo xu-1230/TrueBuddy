@@ -1,9 +1,8 @@
-# 05 - API 规范
+# doc-api · API 接口设计
 
-> 项目：TrueBuddy
-> 生效日期：2026-09-18 ｜ 最近核对代码现状：2026-10-10 ｜ 规范入口：[README.md](./README.md)
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-13
 > 适用范围：后端接口定义与前端 `src/api/` 调用层
-> 相关：[06-路由规范.md](./06-路由规范.md)、[08-通用约束.md](./08-通用约束.md)、[12-工作流规范.md](./12-工作流规范.md)
+> 相关：[doc-conventions.md](./doc-conventions.md)（路由与安全对应）、[doc.md](./doc.md)（全局硬约束）、[doc-workflow.md](./doc-workflow.md)（SSE 执行协议）、[doc-devops.md](./doc-devops.md)（配置）
 
 ---
 
@@ -38,7 +37,7 @@
 
 - 静态工厂：`CommonResult.success(data)` / `CommonResult.error(code, message)`。
 - 分页场景使用 `CommonResult<PageResult<T>>`（`PageResult` = `list` + `total`）。
-- 错误码与异常处理见 [08-通用约束.md](./08-通用约束.md) §2。
+- 错误码与异常处理见本文 §5。
 
 ### 2.2 方法语义
 
@@ -100,13 +99,13 @@
 | 22 | `WorkflowController` | POST | `/workflow/save` | 保存工作流定义（`id` 空 = 新建，非空 = 更新；画布 JSON 整存，**不做版本管理**；返回 String 类型的雪花 id） | `CommonResult<String>` |
 | 23 | `WorkflowController` | GET | `/workflow/detail` | 工作流详情（query 参数 `workflow_id`；含 `schemaJson` 画布字符串与 `builtin` / `stepCount`） | `CommonResult<WorkflowDetailRespVO>` |
 | 24 | `WorkflowController` | GET | `/workflow/list` | 工作流列表（不含 `schemaJson`，按更新时间倒序；含 `builtin` / `stepCount`） | `CommonResult<List<WorkflowVO>>` |
-| 25 | `ChatController` | POST | `/chat` | **执行入口（SSE）**：`produces = text/event-stream`，请求体 `{conversationId, workflowId?, message?}`；首轮与人工确认续跑同一端点，画布**不内联提交**（靠 `workflowId` 引用已落库定义）。事件协议见 `ChatProtocol`，详见 [12-工作流规范.md](./12-工作流规范.md) §2.2 | `SseEmitter` |
+| 25 | `ChatController` | POST | `/chat` | **执行入口（SSE）**：`produces = text/event-stream`，请求体 `{conversationId, workflowId?, message?}`；首轮与人工确认续跑同一端点，画布**不内联提交**（靠 `workflowId` 引用已落库定义）。事件协议见 `ChatProtocol`，详见 [doc-workflow.md](./doc-workflow.md) §2.2 | `SseEmitter` |
 | 26 | `ChatController` | POST | `/chat/conversation` | 新建会话（`workflowId` 必须已落库） | `CommonResult<ConversationVO>` |
 | 27 | `ChatController` | GET | `/chat/conversation/list` | 会话列表（按最近活跃倒序） | `CommonResult<List<ConversationVO>>` |
 | 28 | `HomeworkController` | POST | `/homework/upload` | 作业文件夹批量上传（multipart：`files` + `paths`（与 `files` 顺序一一对应的相对路径）+ 可选 `folderName`），落 `homework_task` / `homework_file` 并返回文件树 | `CommonResult<HomeworkUploadRespVO>` |
 | 29 | `HomeworkController` | POST | `/homework/grade` | 提交批改（`taskId` / `spaceIds` / `files` / `description` / `exportFormat` / `workflowId`）；当前仅接收并记录 | `CommonResult<Boolean>` |
 | 30 | `HomeworkFileTextController` | GET | `/test2/file-text` | 读取作业文件文本，逐条返回、单文件失败不影响整批（HTTP 恒 200）；内部用模拟批改请求，**是联调桩，不是业务接口** | `CommonResult<HomeworkFileTextRespVO>` |
-| 31 | `MeetingController` | POST | `/meeting/create` | 创建会议（**入口在 PPT 页**：建会后本页进放映、控制台另开标签页，见 [16](./16-PPT演讲与模拟会议方案.md) §5.6）：返回会议号、入会链接与主持人凭据 | `CommonResult<MeetingCreateRespVO>` |
+| 31 | `MeetingController` | POST | `/meeting/create` | 创建会议（**入口在 PPT 页**：建会后本页进放映、控制台另开标签页，见 [16](./doc-lecture.md) §5.6）：返回会议号、入会链接与主持人凭据 | `CommonResult<MeetingCreateRespVO>` |
 | 32 | `MeetingController` | POST | `/meeting/join` | 学生入会（会议号 + 昵称），返回参会凭据与会议初始数据；**不限人数**（上限闸门已作废，见 ADR-0001） | `CommonResult<MeetingJoinRespVO>` |
 | 33 | `MeetingController` | GET | `/meeting/detail` | 会议详情（`meetingNo` + `hostToken`）：控制台初始化 / 刷新恢复；响应不含 `onlineCount`（在线只看房间事件，ADR-0002） | `CommonResult<MeetingDetailRespVO>` |
 | 34 | `MeetingController` | GET | `/meeting/state` | 学生侧会议状态（`meetingNo` + `attendeeToken`）：刷新 / 断线重连后补齐数据；同 `detail` 不下发 `onlineCount` | `CommonResult<MeetingDetailRespVO>` |
@@ -115,14 +114,14 @@
 | 37 | `MeetingController` | POST | `/meeting/close` | 结束会议（`meetingNo` + `hostToken`）：置为已结束、给台账补离会时间并**删除 LiveKit 房间**（房间内学生立即断开） | `CommonResult<Boolean>` |
 | 38 | `MeetingController` | GET | `/meeting/digital/status` | 语音可用性（**无参数**）：只看开关与 DashScope 合成配置是否齐备，**不探测任何进程**（worker 已删）。播报本身不在会议接口里，见 40 | `CommonResult<DigitalStatusVO>` |
 | 39 | `PptSpeechController` | POST | `/ppt/speech/optimize` | PPT 讲稿生成（`pages` 长度 1 = 本页，长度 N = 全部）；无状态、不落库，内部按 `tb.lecture.ppt.batch-size` 分批调用模型，部分失败走 `failedIndexes` | `CommonResult<PptSpeechOptimizeRespVO>` |
-| 40 | `PptSpeechController` | POST | `/ppt/speech/speak` | **讲稿流式播报**（SSE，`produces=text/event-stream`）：`{ text, meetingNo?, hostToken? }` → 事件 `status`（started / done）、`chunk`（base64 的 48kHz 单声道 16bit PCM）、`error`；**调用方断开即取消合成**。带齐会议号与凭据时以数字人身份落库（`kind=2`），否则是彩排试听。链路见 [16](./16-PPT演讲与模拟会议方案.md) §5.7 | `SseEmitter` |
+| 40 | `PptSpeechController` | POST | `/ppt/speech/speak` | **讲稿流式播报**（SSE，`produces=text/event-stream`）：`{ text, meetingNo?, hostToken? }` → 事件 `status`（started / done）、`chunk`（base64 的 48kHz 单声道 16bit PCM）、`error`；**调用方断开即取消合成**。带齐会议号与凭据时以数字人身份落库（`kind=2`），否则是彩排试听。链路见 [16](./doc-lecture.md) §5.7 | `SseEmitter` |
 | 41 | `AdminAuthController` | GET | `/admin/auth/profile` | 当前管理端账号资料 + 角色 + 权限；`@PreAuthorize("hasAuthority('admin:dashboard')")` | `CommonResult<AdminProfileRespVO>` |
 | 42 | `AdminAuthController` | GET | `/admin/auth/permissions` | 当前账号权限码集合；同样要求 `admin:dashboard` | `CommonResult<List<String>>` |
 | 43 | `AuthController` | POST | `/system/auth/refresh` | 刷新令牌：旧 refreshToken 一次性消费，返回新 accessToken + refreshToken 与最新角色/权限 | `CommonResult<AuthLoginRespVO>` |
 
 > 接口 21~27 属**自定义工作流模块**（包根 `org.example.textflow`），分两块：
 >
-> - **定义持久化（接口 22~24）**：工作流定义落在 `workflow` 表（脚本 `sql/workflow.sql`，表结构见 [12-工作流规范.md](./12-工作流规范.md) §6）。`POST /workflow/save` 新建 / 更新定义（`id` 空 = 新建、非空 = 更新；`id` 全程为**字符串形式**的雪花 id，避免前端 JS 丢精度）；`GET /workflow/detail` 返回含 `schemaJson` 的详情；`GET /workflow/list` 返回不含画布的列表。详情与列表都带 `builtin`（是否内置模板）与 `stepCount`（顶层节点数），供批改页工作流下拉分组与「N 个步骤」展示。内置模板「标准批改作业」由启动初始化器在表为空时写入（固定 id，幂等）。
+> - **定义持久化（接口 22~24）**：工作流定义落在 `workflow` 表（脚本 `sql/workflow.sql`，表结构见 [doc-workflow.md](./doc-workflow.md) §6）。`POST /workflow/save` 新建 / 更新定义（`id` 空 = 新建、非空 = 更新；`id` 全程为**字符串形式**的雪花 id，避免前端 JS 丢精度）；`GET /workflow/detail` 返回含 `schemaJson` 的详情；`GET /workflow/list` 返回不含画布的列表。详情与列表都带 `builtin`（是否内置模板）与 `stepCount`（顶层节点数），供批改页工作流下拉分组与「N 个步骤」展示。内置模板「标准批改作业」由启动初始化器在表为空时写入（固定 id，幂等）。
 > - **执行链路（接口 25~27）**：入口是 **`POST /chat`**（不再是 `POST /workflow/run`，也没有 `POST /workflow/resume`）。请求体 `{conversationId, workflowId?, message?}`：无 `conversationId` 时先建会话，**首轮与人工确认续跑共用同一端点**，靠「该会话最新一条执行记录的状态」分流（客户端不传状态）。事件帧为 `conversation.chat.in_progress` → `conversation.message.completed`\*（节点产出 / 表单卡片 / 正文）→ 终态帧 `conversation.chat.{completed,failed,requires_action}`，每轮都以 `done` 收尾（**终态看帧，不看流是否结束**）。会话与执行实例落 `workflow_conversation` / `workflow_run`；**中断点与图 checkpoint 仍是内存 Map**（`executeId` → `InterruptionMetadata`、`MemorySaver`），进程重启后续跑会退化为新执行。LLM 节点注入真实 `ChatClient`（知识库检索工具仍为占位）。
 >
 > 放行与鉴权的分工：`/workflow/**` 免登录（联调方便），**`/chat/**` 不在白名单内**——会话与执行实例要记 `creator` 并按用户隔离，因此要求登录（这也是它不挂在 `/workflow` 前缀下的原因）。
@@ -237,4 +236,58 @@ async function load() {
 
 ---
 
-> 免登录白名单、错误码与安全约束见 [08-通用约束.md](./08-通用约束.md)。
+## 5. 错误码与异常
+
+常量定义于 `framework.common.exception.enums.GlobalErrorCodeConstants`：
+
+| code | 含义 | code | 含义 |
+| --- | --- | --- | --- |
+| 0 | 成功 | 429 | 请求过多 |
+| 400 | 请求参数错误 | 500 | 系统异常 |
+| 401 | 未认证 | 501 | 未实现 |
+| 403 | 无权限 | 502 | 系统配置错误 |
+| 404 | 资源不存在 | 900 | 重复请求 |
+| 405 | 方法不允许 | 901 | 演示模式禁止操作 |
+| 423 | 已锁定 | 999 | 未知错误 |
+
+- 业务异常使用 `ServiceException` / `ServerException`，通过 `ServiceExceptionUtil.exception(ErrorCode)` 抛出。
+- 全局异常处理 `GlobalExceptionHandler`（`@RestControllerAdvice`）统一转换为 `CommonResult`，**不得向客户端泄漏堆栈**。
+- 各模块自定义错误码集中在模块内 `enums/ErrorCodeConstants`。
+
+---
+
+## 6. Controller 映射规范
+
+### 6.1 映射约定
+
+| 项 | 要求 |
+| --- | --- |
+| 类级 | `@RestController` + `@RequestMapping("/{模块}/{资源}")` 作为统一前缀；方法级 `@GetMapping` / `@PostMapping` / `@PutMapping` / `@DeleteMapping` 声明具体动作 |
+| 上下文路径 | `server.servlet.context-path = /api` **不计入** Controller 映射，仅出现在完整 URL |
+| 路径命名 | 小写 + 中划线（`/knowledge-base`、`/doc-template`）；资源用名词复数或集合名（`space`、`document`、`chunk`、`file`）；禁止大写字母与下划线、禁止写 `/api` 前缀 |
+
+### 6.2 现有映射前缀
+
+| Controller | 类级映射 | 完整前缀 |
+| --- | --- | --- |
+| `TestController` | `/test` | `/api/test` |
+| `AuthController` | `/system/auth` | `/api/system/auth` |
+| `Test2Controller` / `HomeworkFileTextController` | `/test2` | `/api/test2`（两个类共用同一前缀，新增接口勿再扩散） |
+| `AdminAuthController` | `/admin/auth` | `/api/admin/auth`（要求 `admin:dashboard`） |
+| `FileController` | `/infra/file` | `/api/infra/file` |
+| `DocTemplateController` | `/doc-template` | `/api/doc-template` |
+| `KbSpaceController` / `KbDocumentController` / `KbDocumentChunkController` | `/knowledge-base/{space,document,chunk}` | `/api/knowledge-base/*` |
+| `WorkflowController` | `/workflow` | `/api/workflow` |
+| `ChatController` | `/chat` | `/api/chat`（SSE 执行入口，**不挂在 `/workflow` 下**：`/workflow/**` 免登录而 `/chat/**` 要求登录） |
+| `HomeworkController` | `/homework` | `/api/homework` |
+| `MeetingController` | `/meeting` | `/api/meeting`（实时媒体与聊天走自托管 LiveKit，不经过本服务的 Controller） |
+| `PptSpeechController` | `/ppt/speech` | `/api/ppt/speech` |
+
+### 6.3 路径风格
+
+- 项目现状采用「**前缀 + 动作**」风格（`/space/create`、`/space/update`、`/document/upload`）；**同一 Controller 内保持一致**；新增模块优先使用 REST 资源风格（`POST /knowledge-base/space`、`PUT /knowledge-base/space/{id}`、`DELETE /knowledge-base/space/{id}`）。
+- 非 CRUD 的动作（`generate`、`vectorize`）允许动词式路径，但必须语义明确。
+
+---
+
+> 免登录白名单见 §2.4；全局硬约束见 [doc.md](./doc.md)。

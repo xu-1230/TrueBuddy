@@ -1,9 +1,10 @@
-# 15 - 知识库问答与检索增强集成方案
+# doc-knowledgebase · 知识库业务逻辑
 
-> 项目：TrueBuddy
-> 生效日期：2026-10-04 ｜ 规范入口：[README.md](./README.md)
-> 适用范围：知识库「检索链增强」「问答对话」「联网与入库入口」三项能力的规划方案（**本轮不含实现**）
-> 相关：[03-项目结构.md](./03-项目结构.md)、[05-API规范.md](./05-API规范.md)、[08-通用约束.md](./08-通用约束.md)、[11-测试规范.md](./11-测试规范.md)、[12-工作流规范.md](./12-工作流规范.md)、[../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md)
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-13
+> 适用范围：知识库模块的**已实现链路**（§2 现状盘点）与三项能力的**规划方案**（§3 起）
+> 相关：[doc-api.md](./doc-api.md)（接口清单）、[doc-database.md](./doc-database.md)（kb_* 表）、[doc-conventions.md](./doc-conventions.md)、[doc-doctemplate.md](./doc-doctemplate.md)（检索增强的唯一消费方）、[../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md)
+
+> ⚠️ **落地状态（2026-11-13 逐项核对）**：**§2 现状盘点**描述的入库-检索底座链路已实现——空间 / 文档 / 分块 / 分片管理 + DocMind 解析 + AI 语义分片（失败回退逐块）+ DashScope 向量化 + pgvector 单路向量检索（`searchBySpace`，唯一消费方是 doc-template 的 RAG 上下文）。**§3 起的规划全部未实现**——代码中不存在：关键词检索通道、多路召回融合去重、重排降级、父子分块、引用回填、问答会话与消息表（无 `kb_qa_*` 表）、问答接口与 SSE 流式回答、联网搜索与 SSRF 出口控制。规划内容落地前不得被其它模块依赖。
 
 ---
 
@@ -71,10 +72,10 @@
 | 向量存储 | Spring AI `VectorStore`（pgvector） | `application.yml`：`index-type=hnsw`、`distance-type=COSINE_DISTANCE`、`dimensions=1024`、`initialize-schema=true`；**向量表由 Spring AI 自动建**，`sql/vector_store.sql` 只建扩展 | 保留不换库；关键词通道与它按 `chunkId` 关联 |
 | 向量化写入 | `KbDocumentServiceImpl#vectorize` | 先 `chunkMapper.deleteByDocumentId` 覆盖式重建分片，再为每片建 `org.springframework.ai.document.Document`，metadata 写入 `chunkId` / `documentId` / `spaceId`（**均为字符串**）；旧向量按 `documentId == '..'` 清理后分批 `add`（批大小 10） | 引用回填直接依赖 `chunkId` metadata |
 | 文件存储 | `tb-module-infra` 的 `MinioFileStorageService` + `infra_file` 表 | 只有 `bucket` / `path` / `url` / `size` / `type`，**无 provider 抽象** | 抓取到的正文与图片转存 |
-| SSE 基建 | `tb-module-workflow` 的 `WorkflowController`（包 `org.example.textflow.controller`）+ `frontend/src/utils/workflow-sse.js` | 后端 `new SseEmitter(0L)` + `SseEmitter.event().name(event).data(payload)`，命名事件为 `run` / `node` / `interrupt`，**无心跳**；前端导出 `readWorkflowStream(url, { body, signal, onEvent })`，用 `fetch` + `ReadableStream` 手工切分 SSE | 问答流式直接复用（见 §5.3） |
+| SSE 基建 | `tb-module-workflow` 的 `ChatController`（SSE 发布器 `ChatSsePublisher`）+ `frontend/src/utils/event-stream.js` | 后端 `SseEmitter` 推事件帧（协议见 [doc-workflow.md](./doc-workflow.md) §2.2）；前端导出 `readEventStream(url, { body, signal, onEvent })`，用 `fetch` + `ReadableStream` 手工切分 SSE（未用 `EventSource`，因其只支持 GET 且带不了请求体） | 问答流式直接复用（见 §5.3） |
 | 现有数据表 | `backend/sql/` | `kb_space`、`kb_document`、`kb_document_parse_block`、`kb_document_chunk`、`infra_file`、`doc_template_generation`、`doc_template_file`、`workflow` | 扩展基础 |
 | jsoup 文档读取器 | `tb-module-test2/pom.xml` | `spring-ai-jsoup-document-reader` 2.0.0-M3 **已声明但代码中未使用** | 网页正文提取的候选依赖 |
-| 解析编排细节 | `KbDocumentServiceImpl` | 文档状态常量：`0` 待处理 / `1` 解析中 / `2` 已完成 / `3` 失败 / `4` 分片待确认 / `5` 解析完成待分片 / `6` AI 分片中；`processingDocuments`（`Set<Long>`）阻断解析轮询的并发重入 | 问答链路只消费 `status = 2` 的文档 |
+| 解析编排细节 | `KbDocumentServiceImpl` | 文档状态常量：`0` 待处理 / `1` 解析中 / `2` 已向量化 / `3` 失败 / `4` 分片待确认 / `5` 解析完成待分片 / `6` AI 分片中 / `7` 向量化中；`processingDocuments`（`Set<Long>`）阻断解析轮询的并发重入 | 问答链路只消费 `status = 2` 的文档 |
 
 ### 2.2 缺口矩阵
 
@@ -98,12 +99,12 @@
 
 | # | 位置 | 现状 | 规范要求 | 待整改动作 |
 | --- | --- | --- | --- | --- |
-| 1 | `tb-module-workflow` SSE | 类 `WorkflowStreamRegistry` **不存在**；SSE 逻辑内联在 `WorkflowController`，事件名为 `run` / `node` / `interrupt`，无心跳 | [03-项目结构.md](./03-项目结构.md) §2.2 与 [../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md) §9.1 描述为 `WorkflowStreamRegistry` 与 `created` / `message` / `completed` / `error` / `done` | 二选一：按代码修订规范，或按规范补齐实现；**本方案 §5.3 以代码现状为准**，不引用不存在的事件名 |
+| 1 | `tb-module-workflow` SSE | 类 `WorkflowStreamRegistry` **不存在**；SSE 逻辑内联在 `WorkflowController`，事件名为 `run` / `node` / `interrupt`，无心跳 | [doc-conventions.md](./doc-conventions.md) §2.2 与 [../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md) §9.1 描述为 `WorkflowStreamRegistry` 与 `created` / `message` / `completed` / `error` / `done` | 二选一：按代码修订规范，或按规范补齐实现；**本方案 §5.3 以代码现状为准**，不引用不存在的事件名 |
 | 2 | `workflow` 表落库 | `sql/workflow.sql` 已建表（雪花 ID + `schema_json`），但 `WorkflowServiceImpl` 只有 `getProcess`，实际**只读 classpath `text.json`**，表中数据未被读取 | 规范描述为「工作流定义已持久化」 | 明确该表为「已建表未接线」，避免后续据此编写依赖代码 |
-| 3 | 后端测试 | `tb-module-workflow/src/test/java/` 下已有 2 个测试类（`NodeStateReaderTest`、`IterateNodeTest`） | [11-测试规范.md](./11-测试规范.md) §1 记为「后端不存在测试代码（无 `src/test/java`）」 | 修订 [11-测试规范.md](./11-测试规范.md) §1 与 §5 |
-| 4 | Mapper 口径 | 业务模块用原生 `@Mapper` 接口 + `@Select` / `@Insert` / `@Delete` / `@Options` 注解 SQL，**无 XML**（`KbDocumentChunkMapper` 即此写法） | [08-通用约束.md](./08-通用约束.md) §3 要求「使用 `Wrappers` 条件构造器」 | 修订规范措辞（框架的 `BaseMapperX` 能力保留但业务模块未接入）；**新增表沿用现状注解口径**，不引入 XML |
+| 3 | 后端测试 | `tb-module-workflow/src/test/java/` 下已有 2 个测试类（`NodeStateReaderTest`、`IterateNodeTest`） | [doc-conventions.md](./doc-conventions.md) §1 记为「后端不存在测试代码（无 `src/test/java`）」 | 修订 [doc-conventions.md](./doc-conventions.md) §1 与 §5 |
+| 4 | Mapper 口径 | 业务模块用原生 `@Mapper` 接口 + `@Select` / `@Insert` / `@Delete` / `@Options` 注解 SQL，**无 XML**（`KbDocumentChunkMapper` 即此写法） | [doc.md](./doc.md) §3 要求「使用 `Wrappers` 条件构造器」 | 修订规范措辞（框架的 `BaseMapperX` 能力保留但业务模块未接入）；**新增表沿用现状注解口径**，不引入 XML |
 | 5 | `kb_document_chunk.enabled` / `hit_count` | 两列已在建表脚本中定义，但代码只有 select / insert / delete，**没有任何写入或使用** | 未定义 | 本方案约定：关键词通道过滤 `enabled = TRUE`；向量通道无法过滤（metadata 不含 `enabled`），需在 §9 记录该不一致 |
-| 6 | `application.yml` 明文密钥 | 对话 / 向量化 `api-key` 与 `minio.secret-key` 仍为明文或带明文默认值 | [08-通用约束.md](./08-通用约束.md) §1.1 要求只写 `${VAR}` 占位符 | 既有待整改项，本方案不复述明文、不新增明文 |
+| 6 | `application.yml` 明文密钥 | 对话 / 向量化 `api-key` 与 `minio.secret-key` 仍为明文或带明文默认值 | [doc.md](./doc.md) §1.1 要求只写 `${VAR}` 占位符 | 既有待整改项，本方案不复述明文、不新增明文 |
 
 ---
 
@@ -333,7 +334,7 @@ CREATE TABLE IF NOT EXISTS kb_message (
 
 ### 5.2 接口设计
 
-路径沿用 `/knowledge-base/**` 前缀，方法语义遵循 [05-API规范.md](./05-API规范.md) §2.2：
+路径沿用 `/knowledge-base/**` 前缀，方法语义遵循 [doc-api.md](./doc-api.md) §2.2：
 
 | # | 方法 | 路径 | 说明 |
 | --- | --- | --- | --- |
@@ -377,7 +378,7 @@ data: {"type":"citations","items":[{"chunkId":12,"documentId":3,"name":"示例.d
 
 ### 5.4 前端落点
 
-沿用「业务模块自治」目录约定（[03-项目结构.md](./03-项目结构.md) §3.3）：
+沿用「业务模块自治」目录约定（[doc-conventions.md](./doc-conventions.md) §3.3）：
 
 ```text
 frontend/src/views/knowledgebase/
@@ -408,7 +409,7 @@ API 层落在现有 `frontend/src/api/knowledgebase.js`（一个业务模块一�
 | 第一版 provider | **收敛到 1 个**：自建 SearXNG（JSON 接口、无密钥、地址可自定义，最贴合内网 / 毕业设计环境）；商业 API 待后续按需追加 |
 | 失败语义 | 搜索失败**降级为「无搜索结果」**，不中断问答；日志记原因 |
 
-> 若引入需要密钥的商业搜索 API，按 [08-通用约束.md](./08-通用约束.md) §1.1 的现行口径（2026-10-10 起）把真实值写在 `application.yml` 的 `${SEARCH_API_KEY:字面值}` 位，并同步 §1.2 的变量清单；**源码 / 脚本 / 文档里仍禁止出现明文**。
+> 若引入需要密钥的商业搜索 API，按 [doc.md](./doc.md) §1.1 的现行口径（2026-10-10 起）把真实值写在 `application.yml` 的 `${SEARCH_API_KEY:字面值}` 位，并同步 §1.2 的变量清单；**源码 / 脚本 / 文档里仍禁止出现明文**。
 
 ### 6.2 网页正文提取
 
@@ -506,14 +507,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_kb_document_source_url
 
 | 变更类型 | 需同步 |
 | --- | --- |
-| 新增接口（§5.2、§6） | [05-API规范.md](./05-API规范.md) §2.5 接口清单、§2.4 放行规则；[06-路由规范.md](./06-路由规范.md) 映射前缀 |
-| 新增模块 / 目录 | [03-项目结构.md](./03-项目结构.md) §2（后端）、§3（前端）；[../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md) |
-| 新增环境变量（搜索 / 抓取） | [08-通用约束.md](./08-通用约束.md) §1.2 清单与根目录 `.env.example` |
-| 新增依赖 | [01-项目概述.md](./01-项目概述.md) §4 技术栈表；若引入到 `tb-dependencies` BOM 亦需同步 |
-| 新增表与索引 | [03-项目结构.md](./03-项目结构.md) §2.5 数据库脚本表；本文件 §5.1 / §6.4 的草案转正 |
-| 新增测试 | [11-测试规范.md](./11-测试规范.md) §1 现状与 §5 待整改 |
-| SSE 事件契约 | [12-工作流规范.md](./12-工作流规范.md) 若抽出通用事件读取器；本文件 §5.3 |
-| 顺手修订（§2.3 待整改） | [03-项目结构.md](./03-项目结构.md) §2.2、[../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md) §9.1（SSE 现状）、[11-测试规范.md](./11-测试规范.md) §1（后端测试现状）、[08-通用约束.md](./08-通用约束.md) §3（Mapper 措辞） |
+| 新增接口（§5.2、§6） | [doc-api.md](./doc-api.md) §2.5 接口清单、§2.4 放行规则；[doc-conventions.md](./doc-conventions.md) 映射前缀 |
+| 新增模块 / 目录 | [doc-conventions.md](./doc-conventions.md) §2（后端）、§3（前端）；[../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md) |
+| 新增环境变量（搜索 / 抓取） | [doc.md](./doc.md) §1.2 清单与根目录 `.env.example` |
+| 新增依赖 | [doc.md](./doc.md) §4 技术栈表；若引入到 `tb-dependencies` BOM 亦需同步 |
+| 新增表与索引 | [doc-conventions.md](./doc-conventions.md) §2.5 数据库脚本表；本文件 §5.1 / §6.4 的草案转正 |
+| 新增测试 | [doc-conventions.md](./doc-conventions.md) §1 现状与 §5 待整改 |
+| SSE 事件契约 | [doc-workflow.md](./doc-workflow.md) 若抽出通用事件读取器；本文件 §5.3 |
+| 顺手修订（§2.3 待整改） | [doc-conventions.md](./doc-conventions.md) §2.2、[../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md) §9.1（SSE 现状）、[doc-conventions.md](./doc-conventions.md) §1（后端测试现状）、[doc.md](./doc.md) §3（Mapper 措辞） |
 
 ---
 
@@ -567,4 +568,4 @@ cd frontend && npm test                     # node:test（前端纯函数层）
 
 ---
 
-> 本文件为**规划方案**，未实现的能力一律以「规划 / 待开发」标注；落地时按 §8.2 同步受影响的规范文件，并按 [10-文档规范.md](./10-文档规范.md) §4.1 复核。
+> 本文件为**规划方案**，未实现的能力一律以「规划 / 待开发」标注；落地时按 §8.2 同步受影响的规范文件，并按 [doc-conventions.md](./doc-conventions.md) §4.1 复核。
