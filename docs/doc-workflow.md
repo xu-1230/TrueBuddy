@@ -1,9 +1,8 @@
-# 12 - 工作流规范
+# doc-workflow · 工作流业务逻辑
 
-> 项目：TrueBuddy
-> 生效日期：2026-09-30 ｜ 最近核对代码现状：2026-10-10 ｜ 规范入口：[README.md](./README.md)
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-13
 > 适用范围：后端工作流模块 `tb-module-workflow`（包名 `org.example.textflow`）的接口参数定义与工作流定义 JSON 规范
-> 相关：[03-项目结构.md](./03-项目结构.md)、[05-API规范.md](./05-API规范.md)、[08-通用约束.md](./08-通用约束.md)
+> 相关：[doc-api.md](./doc-api.md)（接口清单）、[doc-conventions.md](./doc-conventions.md)（项目结构与编码规范）、[doc.md](./doc.md)（硬约束）、[doc-homework.md](./doc-homework.md)（批改复用执行链）、[doc-database.md](./doc-database.md)（三张工作流表）
 
 ---
 
@@ -512,10 +511,10 @@ data: {"conversation_id":"…","execute_id":"…"}
 
 | # | 位置 | 现状 | 规范要求 | 待整改动作 |
 | --- | --- | --- | --- | --- |
-| 1 | 接口集合 | 执行入口已**合并为 `/chat`**（+ `/chat/conversation` 建会话、`/chat/conversation/list` 会话列表），旧 `POST /workflow/run` / `/workflow/resume` 已废弃；`GET /workflow/get_process` **从未实现，已确定不做**（终态只认 SSE 帧，见 §2.2） | — | **已整改**：[05-API规范.md](./05-API规范.md) §2.5、[03-项目结构.md](./03-项目结构.md) §2.6、[08-通用约束.md](./08-通用约束.md) §4 已按 `/chat` 口径同步，不再把 `get_process` 写成规划项 |
+| 1 | 接口集合 | 执行入口已**合并为 `/chat`**（+ `/chat/conversation` 建会话、`/chat/conversation/list` 会话列表），旧 `POST /workflow/run` / `/workflow/resume` 已废弃；`GET /workflow/get_process` **从未实现，已确定不做**（终态只认 SSE 帧，见 §2.2） | — | **已整改**：[doc-api.md](./doc-api.md) §2.5、[doc-conventions.md](./doc-conventions.md) §2.6、[doc.md](./doc.md) §4 已按 `/chat` 口径同步，不再把 `get_process` 写成规划项 |
 | 2 | 定义来源 | **已整改**：数字 id 读 `workflow` 表 `schema_json`，非数字 id 回落 classpath（见 §6.1） | 按 §6.2 的 `workflow` 表读取并回落文件 | — |
-| 3 | SSE 事件名 | **已整改**：`conversation.chat.created` / `.in_progress` / `conversation.message.completed`（verbose / card / text）/ `.requires_action` / `.completed` / `.failed` / `done`，对齐 Coze 命名并裁掉冗余信号 | [03-项目结构.md](./03-项目结构.md)、[05-API规范.md](./05-API规范.md) 描述 `created` / `message` / `completed` / `error` / `done`、`requires_action` | **已整改**：两份文档已改为 §2.2 的事件名口径 |
-| 4 | 执行状态与轮询兜底 | 状态码已落地（`workflow_run.status`：0 待运行 / 1 执行中 / 2 成功 / 3 失败 / 4 中断 / 5 已取消，其中 `0` 与 `5` 一期未使用），但**仍无状态查询接口**；`/chat` 同步执行、无执行线程池 | 终态判定只依赖 SSE 帧；断线 / 刷新后不回溯执行状态 | 若要做「刷新后恢复执行状态」，需实现按 `execute_id` / `conversation_id` 的状态查询接口（一期明确不做，[05](./05-API规范.md)/[08](./08-通用约束.md) 已按无兜底口径记录） |
+| 3 | SSE 事件名 | **已整改**：`conversation.chat.created` / `.in_progress` / `conversation.message.completed`（verbose / card / text）/ `.requires_action` / `.completed` / `.failed` / `done`，对齐 Coze 命名并裁掉冗余信号 | [doc-conventions.md](./doc-conventions.md)、[doc-api.md](./doc-api.md) 描述 `created` / `message` / `completed` / `error` / `done`、`requires_action` | **已整改**：两份文档已改为 §2.2 的事件名口径 |
+| 4 | 执行状态与轮询兜底 | 状态码已落地（`workflow_run.status`：0 待运行 / 1 执行中 / 2 成功 / 3 失败 / 4 中断 / 5 已取消，其中 `0` 与 `5` 一期未使用），但**仍无状态查询接口**；`/chat` 同步执行、无执行线程池 | 终态判定只依赖 SSE 帧；断线 / 刷新后不回溯执行状态 | 若要做「刷新后恢复执行状态」，需实现按 `execute_id` / `conversation_id` 的状态查询接口（一期明确不做，[05](./doc-api.md)/[08](./doc.md) 已按无兜底口径记录） |
 | 5 | 大模型节点 | **已整改**：`apply` 调用真实 `ChatClient`（`nodeChatClient.prompt().system().user()`，可挂 `toolCallbacks`），返回文本按 `outputs` 声明拆成 `{变量名: 值}` 写回状态；未配置模型客户端时抛「未配置对话模型客户端」，返回为空同样报错 | 调用模型并将结果写入 `state[节点id][outputs 变量名]` | 收尾项：`LlmNode.apply` 里残留一行 `System.out.println(output)` 待删 |
 | 6 | 结束节点 | `apply` 返回 `Map.of()`（TODO） | 组装最终返回内容 | 实现最终输出组装；在此之前 `content_type: text` 的「最终答案」帧不发 |
 | 7 | 迭代节点汇总 | 已按 `outputs` 声明聚合各轮子块同名产出（空轮次跳过） | 按 `outputs` 汇总各轮真实结果 | 已整改：`aggregate()` 按变量名聚合（`outputs` 变量名须与子块产出名一致） |

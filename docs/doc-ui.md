@@ -1,9 +1,8 @@
-# 09 - 样式规范
+# doc-ui · 样式设计
 
-> 项目：TrueBuddy
-> 生效日期：2026-09-18 ｜ 最近核对代码现状：2026-10-25（主题由 Harbor 换为 Ink） ｜ 规范入口：[README.md](./README.md)
-> 适用范围：前端全部样式与主题、动效实现
-> 相关：[02-编码规范.md](./02-编码规范.md)、[04-组件规范.md](./04-组件规范.md)、[ui.html](./ui.html)（视觉样张）
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-13（主题 Ink，2026-10-25 由 Harbor 换入）
+> 适用范围：前端全部样式与主题、动效实现，以及展示页模块（`/guides`、`/docs`）全流程（§8）
+> 相关：[doc-conventions.md](./doc-conventions.md)（编码与组件规范）、[ui.html](./ui.html)（视觉样张）
 
 ---
 
@@ -196,8 +195,60 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 | 7 | `views/LoginView.vue` | **已完成**（2026-10-09 登录页视觉重构）：模板里的行内 `style` 全部收敛为 `scoped` 类，唯一保留的动态值是展示台环境光坐标（`--gx/--gy`，由 `LoginShowcase.vue` 直接写在元素上，不进响应式） | §1「内联样式禁止用于常规布局，仅限动态计算值」 |
 | 8 | `views/workflow2/node/**`、`views/homework/components/FolderUploader.vue`、`views/ppt/index.vue` 等 | 仍有 `border-radius: 0` 的方正硬值，与既有圆角语言并用 | 若要统一圆角语言，改为 `var(--tb-radius-xs)`；圆角与描边的边界按 §3.3 的形态参数执行（组件轮廓用 `--tb-border-width`，分隔线恒 1px） |
 | 9 | 全站 **56 处** `z-index: <裸数字>`（含 EP 浮层避让值） | 样张 `ui.html` 里的 `--tb-z-rail`(30) / `--tb-z-toast`(90) 与 `--tb-control-radius` **在 `theme.css` 中尚未实现**，本文也没有层级表 | 先在 `theme.css` 落一层 `--tb-z-*` 刻度（含与 EP 弹层默认 2000+ 的避让关系），再逐步替换裸数字 |
-| 10 | `assets/theme.css` 头部注释引用「09-样式规范.md §3.3 / §3.4」，`ui.html` 使用 `--tb-z-*` 等尚未实现的变量 | 样张与代码的能力差集需显式标注，小节编号与注释保持一致 | 按 [10-文档规范.md](./10-文档规范.md) 的同步流程处理：样张先行、代码落地后回填本文 |
+| 10 | `assets/theme.css` 头部注释引用「doc-ui.md §3.3 / §3.4」，`ui.html` 使用 `--tb-z-*` 等尚未实现的变量 | 样张与代码的能力差集需显式标注，小节编号与注释保持一致 | 按 [doc-conventions.md](./doc-conventions.md) 的同步流程处理：样张先行、代码落地后回填本文 |
 
 ---
 
-> 组件写法与分层见 [04-组件规范.md](./04-组件规范.md)，编码格式见 [02-编码规范.md](./02-编码规范.md)。
+## 8. 展示页模块全流程（/guides 与 /docs）
+
+### 8.1 模块定位
+
+`views/guides/` 是项目的**展示型页面骨架**（对比控制台型骨架：亮场、固定侧栏 + 工具栏 + 内容区）：
+
+| 页面 | 路由 | 文件 | 性质 | 后端依赖 |
+| --- | --- | --- | --- | --- |
+| 首页 | `/guides` | `views/guides/HomeView.vue` | 营销首页：顶部导航 + 8 个滚动章节 | 无 |
+| 文档页 | `/docs` | `views/guides/DocsView.vue` | 左登录卡 + 右品牌展示台 | 仅登录表单 `POST /system/auth/login` |
+
+特征：**纯前端**（除登录表单外全部为静态文案与装饰）；GSAP + ScrollTrigger 整页滚动编排 + Lenis 平滑滚动 + Canvas 2D 封面粒子形变；颜色 / 间距全部取 `assets/theme.css` 的 `--tb-*` 语义变量，组件内不写 `light-dark()`。`/guides` 与 `/docs` 是**平级顶层路由**（非子路由，以 `src/router/index.js` 为准）。
+
+### 8.2 文件依赖
+
+| 文件 | 职责 |
+| --- | --- |
+| `views/guides/{HomeView,DocsView}.vue`、`guides/components/HeroParticles.vue` | 页面本体与封面粒子（Canvas 2D 宿主） |
+| `components/NavbarItem.vue` | 全局顶栏（fixed、越阈 `SCROLL_THRESHOLD = 24` 渐显、明暗切换、汉堡） |
+| `components/navbar/{NavbarMenu,NavbarDrawer,menuData.js}` | 桌面 Mega 菜单 / 移动抽屉 / 菜单数据（**改文案与路由只改 menuData.js**） |
+| `composables/{useSmoothScroll,useAppearance}.js` | Lenis + GSAP ticker 同步与锚点委托；明暗态（记忆 / 跟随系统 / 多标签同步，首帧防闪在 `index.html` 内联脚本） |
+| `lib/{particleMorph,spring,springTo}.js` | 粒子形变引擎与弹簧补间 |
+| `public/shapes/*.svg` | 粒子采样素材（书架线稿 / 学术剪影；只形变一次、不循环） |
+
+### 8.3 首页滚动动效契约
+
+每个 `[data-section]` 建一条与滚动进度绑定的时间线（`scrub: 1`；`MID = 1.6`：`0 → MID` 进场、`MID → 2×MID` 退场，退场幅度按层级递增）。`data-*` 属性契约（新增元素按此标注，脚本无需改选择器）：`data-reveal-word`（逐词标题）、`data-reveal-line`（段落行）、`data-reveal-item`（列表项）、`data-card`（卡片）、`data-zoom`（面板 / 圆核）、`data-slide-x`（流程步骤）、`data-fade-in`（自带 CSS 自转的元素）、`data-count`（数字随滚动增长）、`data-bar`（柱条）、`data-parallax`（视差，模板暂无对应元素）、`data-drift`（修饰反向退场）。通用页面动效约定见本文 §6.2。
+
+**清理约定（重要）**：每个 ScrollTrigger 都经 `track()` 登记到页面级 `triggers`，`onBeforeUnmount` **只回收本页登记的实例**；禁止改回 `ScrollTrigger.getAll().forEach((t) => t.kill())` 的全局清空——会把当时挂在页面上的其它组件的 ScrollTrigger（如 `/docs`）一并杀掉。
+
+### 8.4 修改指引（按目标定位）
+
+| 想改什么 | 改哪里 | 注意 |
+| --- | --- | --- |
+| 顶栏菜单栏目 / 子项文案 / 跳转 | `components/navbar/menuData.js` | 组件无需改动；`MENU_TABS` 与 `MENUS` 的 id 必须对应 |
+| 首页章节文案 / 增删章节 | `HomeView.vue` 模板 `<section>` + 脚本 `sections` 数组 | 两处必须同时改（`sections` 供 CTA `goTo(idx)` 锚点） |
+| 动效节奏 | `HomeView.vue` 的 `setupAnimations()` | 退场统一挂在 `MID`；改动进场时长需同步评估 `MID` 与退场 |
+| 粒子形状 / 采样密度 | `public/shapes/*.svg` + `HeroParticles.vue` | `spacing` 与 `pointRadius` 需配成一对（点径×2 ≈ 间隔） |
+| 主题色 / 圆角 / 阴影 | 先改 [ui.html](./ui.html) 的 `[data-theme="ink"]` 块再同步 `assets/theme.css` | 见本文 §3.3 |
+| 登录表单 | `components/LoginForm.vue` | 同时影响 `/docs` 与 `/login`；事件名需与父组件监听一致 |
+| 锚点跳转 | `useSmoothScroll.js` / `HomeView.vue` 的 `goTo()` | 锚点元素 id 必须与 `sections[i].id` 一致 |
+
+### 8.5 现状与待整改
+
+1. `DocsView.vue` 模板引用未定义的 `tabs`，`login-tabs` 行渲染为空（控制台有 Vue 告警）；`activeTab` 无消费方。
+2. `<LoginForm />` 未监听 `login-success`，`/docs` 账号登录成功后不跳转。
+3. `LoginView.vue` 登录成功 `router.push('/')`，路由表无 `/` 路由，会落空视图（应改 `/index/home` 或补 `/` 重定向）。
+4. 本页与 `views/LoginView.vue` 的登录能力重复：改登录逻辑应优先改 `components/LoginForm.vue`，两页同时生效。
+5. 规划：用户端路由守卫（`meta.requiresAuth`，见 doc-conventions.md §5.3）；Live2D 数字人独立组件（`public/live2d/` 资源已就位、未接入）。
+
+---
+
+> 组件写法与分层、编码格式见 [doc-conventions.md](./doc-conventions.md) §3 / §4。

@@ -1,7 +1,7 @@
 # TrueBuddy 前端（frontend/）
 
 > AI 驱动的教学辅助平台 TrueBuddy 的前端子项目。
-> 详细规范请参阅 [AGENT - 前端技术规约](./AGENT%20-%20前端技术规约.md) 与 [总体技术规约](../总体技术规约.md)。
+> 详细规范请参阅 [AGENT - 前端技术规约](./AGENT%20-%20前端技术规约.md) 与 [docs/doc.md](../docs/doc.md)。
 
 ## 技术栈
 

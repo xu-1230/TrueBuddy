@@ -1,33 +1,29 @@
 spring:
-  # 配置一律写在本文件（2026-10-10 起不再加载仓库根 .env）：值直接写在 `${ENV_KEY:字面值}` 的冒号后面，
-  # 想临时覆盖就用环境变量，不必改本文件。
-  # 这样做的原因见 docs/08 §4：配置曾只以临时环境变量形式存在，进程一重启就回到默认值，
-  # 现象是「昨天还能播报，今天却报数字人未启用 / 口令不符」这种查不出的故障。
+  # 配置真实值统一在 gitignored 的 backend/.env（2026-11-13 决策，见 docs/adr/0005）：
+  # 本文件只保留 ${VAR} 占位符；双路径 optional 兼容从仓库根或 backend/ 启动，文件缺失不阻断。
+  config:
+    import:
+      - optional:file:./.env[.properties]
+      - optional:file:./backend/.env[.properties]
   application:
     name: tb-server
   mvc:
     async:
-      # SSE 长连接不受 Tomcat 默认 30s 异步超时约束（工作流执行 + 人工确认等待可能持续数分钟）。
-      # 负值 = 不超时；主机制是代码里的 new SseEmitter(0L)，此处作为兜底。
       request-timeout: -1ms
   servlet:
     multipart:
-      # 单文件上限（知识库文档 / 作业文件共用）
       max-file-size: 50MB
-      # 整包上限：作业文件夹一次可提交最多 50 份作业，按单文件 50MB 预留到 1024MB
       max-request-size: 1024MB
   datasource:
     url: jdbc:postgresql://127.0.0.1:5432/tb
-    # 数据库账号密码：通过环境变量注入，缺失时回退为默认值（真实凭据禁止硬编码）
-    username: postgres
-    password:
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
-  # 注册 / 找回密码 / 验证码登录的邮件发送（QQ 邮箱 SSL）
   mail:
     host: smtp.qq.com
     port: 465
-    username: 780692702@qq.com
-    password: mazjccdzrtrxbbij
+    username: ${SPRING_MAIL_USERNAME}
+    password: ${SPRING_MAIL_PASSWORD}
     default-encoding: UTF-8
     properties:
       mail:
@@ -41,11 +37,11 @@ spring:
           writetimeout: 5000
   ai:
     openai:
-      api-key: sk-ca3e404a98e44cdaad87429d4e4b7879
-      base-url: https://api.deepseek.com
+      api-key: ${SPRING_AI_OPENAI_API_KEY}
+      base-url: ${SPRING_AI_OPENAI_BASE_URL}
       chat:
         options:
-          model: deepseek-flash
+          model: ${SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL}
           temperature: 0.7
         retry:
           max-attempts: 5
@@ -55,10 +51,10 @@ spring:
             multiplier: 2
       # 文本向量化模型（知识库 RAG 使用）：OpenAI 兼容接口
       embedding:
-        base-url: ${OPENAI_EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
-        api-key: ${OPENAI_EMBEDDING_API_KEY:sk-b33590d5dc864abfaa16e7080c80a97f}
+        base-url: ${OPENAI_EMBEDDING_BASE_URL}
+        api-key: ${OPENAI_EMBEDDING_API_KEY}
         options:
-          model: ${OPENAI_EMBEDDING_MODEL:text-embedding-v3}
+          model: ${OPENAI_EMBEDDING_MODEL}
           dimensions: 1024
     vectorstore:
       pgvector:
@@ -142,26 +138,23 @@ tb:
   # 讲课模块：模拟会议（本期）
   lecture:
     meeting:
-      # 学生入会链接基地址（如 http://192.168.1.5:5173）；留空时自动探测本机局域网 IPv4 并拼接前端端口
-      public-base-url: ${TB_MEETING_PUBLIC_BASE_URL:http://localhost:5173}
+      public-base-url: ${TB_MEETING_PUBLIC_BASE_URL}
       # 探测局域网 IP 时拼接的前端端口（Vite 开发服务器默认 5173）
-      frontend-port: ${TB_MEETING_FRONTEND_PORT:5173}
+      frontend-port: ${TB_MEETING_FRONTEND_PORT}
       # 入会与详情接口返回的历史消息条数上限
-      history-limit: ${TB_MEETING_HISTORY_LIMIT:50}
+      history-limit: 50
       # 参会昵称最大长度
-      nickname-max-length: ${TB_MEETING_NICKNAME_MAX_LENGTH:20}
+      nickname-max-length: 20
       # 单条消息长度上限（与前端 DataChannel 正文口径一致）
-      message-max-length: ${TB_MEETING_MESSAGE_MAX_LENGTH:500}
-      # 实时通道：LiveKit（媒体走音视频轨、聊天走 DataChannel，后端只签发令牌与删房间）
-      # 留空表示未配置：会议仍可创建、可查历史，但入会会被明确拒绝（错误码 1_007_000_010）
-      livekit-url: ${LIVEKIT_URL:}
+      message-max-length: 500
+      livekit-url: ${LIVEKIT_URL}
       # 推导信令地址时使用的端口（livekit-url 留空时按 ws://{局域网IP}:{该端口} 拼接）
-      livekit-port: ${LIVEKIT_PORT:7880}
+      livekit-port: ${LIVEKIT_PORT}
       # 必须与 D:\ctf\livekit\.env 里的 LIVEKIT_API_KEY / LIVEKIT_API_SECRET 一致
-      livekit-api-key: ${LIVEKIT_API_KEY:tbdevmeeting01}
-      livekit-api-secret: ${LIVEKIT_API_SECRET:7f3a91c65d2b48e0a1c4f6b93e7d2058}
+      livekit-api-key: ${LIVEKIT_API_KEY}
+      livekit-api-secret: ${LIVEKIT_API_SECRET}
       # 访问令牌有效期（小时）
-      livekit-token-ttl-hours: ${LIVEKIT_TOKEN_TTL_HOURS:6}
+      livekit-token-ttl-hours: 6
     # PPT 讲稿生成（前端 /index/ppt 的两个 AI 按钮 → POST /ppt/speech/optimize）
     ppt:
       # 时长 → 字数的语速常数（字/秒）：4.0 ≈ 240 字/分钟
@@ -178,32 +171,32 @@ tb:
     digital-human:
       enabled: ${TB_DH_ENABLED:true}
       # CosyVoice 走 DashScope 原生 WebSocket（不吃 OpenAI 兼容层），可与 embedding 共用同一个 Key
-      dashscope-api-key: ${DASHSCOPE_API_KEY:sk-b33590d5dc864abfaa16e7080c80a97f}
-      tts-model: ${TB_DH_TTS_MODEL:cosyvoice-v3-flash}
-      tts-voice: ${TB_DH_TTS_VOICE:longanhuan_v3}
+      dashscope-api-key: ${DASHSCOPE_API_KEY}
+      tts-model: ${TB_DH_TTS_MODEL}
+      tts-voice: ${TB_DH_TTS_VOICE}
       # 并发播报数（决定合成线程池大小）与单条文本长度上限
       max-concurrent-speak: ${TB_DH_MAX_SPEAK:2}
       max-text-length: ${TB_DH_MAX_TEXT_LENGTH:1000}
   # 知识库文档解析：阿里云文档智能（文档解析大模型版）
-  # AK/SK 为必填项，一律通过环境变量注入（项目根目录 .env，模板见 .env.example），缺失时启动即失败
+  # AK/SK 为必填项，真实值在 backend/.env（gitignored，经 spring.config.import 加载），缺失时启动即失败
   docmind:
-    endpoint: ${DOCMIND_ENDPOINT:docmind-api.cn-hangzhou.aliyuncs.com}
-    access-key-id: ${DOCMIND_ACCESS_KEY_ID:LTAI5t6r3qJiEKoSEpsSG9uT}
-    access-key-secret: ${DOCMIND_ACCESS_KEY_SECRET:S4ezpKHFonVoKHfcuaM5JqhPOYvgvp}
+    endpoint: ${DOCMIND_ENDPOINT}
+    access-key-id: ${DOCMIND_ACCESS_KEY_ID}
+    access-key-secret: ${DOCMIND_ACCESS_KEY_SECRET}
     # 大模型增强（PPT/图表场景效果更好，耗时与费用上升）
-    llm-enhancement: ${DOCMIND_LLM_ENHANCEMENT:true}
+    llm-enhancement: ${DOCMIND_LLM_ENHANCEMENT}
     # 增强模式，仅 llm-enhancement=true 时生效，可填 VLM
-    enhancement-mode: ${DOCMIND_ENHANCEMENT_MODE:}
-    formula-enhancement: ${DOCMIND_FORMULA_ENHANCEMENT:false}
+    enhancement-mode: ${DOCMIND_ENHANCEMENT_MODE}
+    formula-enhancement: ${DOCMIND_FORMULA_ENHANCEMENT}
     # 表格输出 HTML 正文（版面块的 llmResult 字段）；接口要求必须同时开启 llm-enhancement，否则提交报 Parameter is invalid
-    output-html-table: ${DOCMIND_OUTPUT_HTML_TABLE:true}
+    output-html-table: ${DOCMIND_OUTPUT_HTML_TABLE}
     layout-step-size: 3000
     connect-timeout-millis: 20000
     read-timeout-millis: 300000
 
 # MinIO 对象存储（知识库文件）
 minio:
-  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-  access-key: ${MINIO_ACCESS_KEY:admin}
-  secret-key: ${MINIO_SECRET_KEY:admin123456}
-  bucket: ${MINIO_BUCKET:test-bucket}
+  endpoint: ${MINIO_ENDPOINT}
+  access-key: ${MINIO_ACCESS_KEY}
+  secret-key: ${MINIO_SECRET_KEY}
+  bucket: ${MINIO_BUCKET}

@@ -2,8 +2,8 @@
 
 > 项目：TrueBuddy
 > 生效日期：2026-06-23
-> 上游文档：[总体技术规约](../总体技术规约.md)
-> 本规约是后端子项目（`backend/`）的详细规范，开发前需先阅读总体技术规约。
+> 上游文档：[docs/doc.md](../docs/doc.md)
+> 本规约是后端子项目（`backend/`）的详细规范，开发前需先阅读 docs/doc.md。
 
 ---
 
@@ -70,7 +70,7 @@ org.example.backend/
     └── doctemplate/               # controller / service(+Impl) / mapper / model(+vo) / config / enums / prompt
 ```
 
-`knowledgebase` 是当前结构最完整的模块，可作为新模块的样板（详见 [03-项目结构.md](../docs/03-项目结构.md) §2.3）。
+`knowledgebase` 是当前结构最完整的模块，可作为新模块的样板（详见 [doc-conventions.md](../docs/doc-conventions.md) §1 与 §8）。
 
 ### 2.2 分层约定
 
@@ -174,7 +174,7 @@ spring:
 
 ## 7. 接口规范
 
-接口清单以 [../docs/05-API规范.md](../docs/05-API规范.md) §2.5 为唯一权威来源，当前为 **12 个 Controller / 36 个接口**（实时媒体与聊天由自托管 LiveKit 承载，不经过本服务）：
+接口清单以 [../docs/doc-api.md](../docs/doc-api.md) §2.5 为唯一权威来源，当前为 **15 个 Controller / 43 个接口**（实时媒体与聊天由自托管 LiveKit 承载，不经过本服务）：
 
 | 模块 | 前缀 | 接口数 | 代表接口 |
 |------|------|--------|----------|
@@ -228,7 +228,7 @@ tb:
 ## 9. AI 配置
 
 - AI 模型相关配置（API Key、模型名、超时等）在 `application.yml` 中管理。
-- **配置一律写在 `application.yml`**（2026-10-10 决策，覆盖原先「只写占位符、值进 `.env`」的做法）：真实值直接写在 `${ENV_KEY:字面值}` 的冒号后面，根 `.env` **不再被加载**（`spring.config.import` 已移除）。想临时覆盖就用环境变量（优先级高于配置文件），见 [../docs/08-通用约束.md](../docs/08-通用约束.md) §1.1。
+- **配置一律写在 `application.yml`**（2026-10-10 决策，覆盖原先「只写占位符、值进 `.env`」的做法）：真实值直接写在 `${ENV_KEY:字面值}` 的冒号后面，根 `.env` **不再被加载**（`spring.config.import` 已移除）。想临时覆盖就用环境变量（优先级高于配置文件），见 [../docs/doc-devops.md](../docs/doc-devops.md) §2。
   - 触发原因是本模块一次真实故障：配置只存在于临时环境变量里，进程重启即回到默认值，表现为「昨天还能播报，今天报数字人未启用 / 口令不符」。
   - 代价：密钥进入 **git 跟踪**的 `application.yml`（源码与文档里仍禁止出现明文）。
 - **文档解析**：`tb.docmind.*` 由 `DocMindProperties` 承载；AK/SK 缺失时启动即失败（`missingCredentials()` 校验）。
@@ -277,7 +277,7 @@ tb:
 
 ## 10. 启动
 
-**前置：无**。真实值已写在 `tb-server/src/main/resources/application.yml` 的 `${ENV_KEY:字面值}` 位（2026-10-10 起不再加载项目根 `.env`，`cp .env.example .env` 这一步已作废 —— 见 §9 与 [../docs/08-通用约束.md](../docs/08-通用约束.md) §1.1）。
+**前置：无**。真实值已写在 `tb-server/src/main/resources/application.yml` 的 `${ENV_KEY:字面值}` 位（2026-10-10 起不再加载项目根 `.env`，`cp .env.example .env` 这一步已作废 —— 见 §9 与 [../docs/doc-devops.md](../docs/doc-devops.md) §2）。
 
 ```yaml
 # application.yml（节选）—— 值写在冒号后面，环境变量仍可临时覆盖
@@ -317,4 +317,4 @@ java -jar tb-server/target/tb-server-0.0.1-SNAPSHOT.jar   # 端口 8086，contex
 
 ---
 
-> **提醒**：后端开发前应先阅读 [总体技术规约](../总体技术规约.md) 与本文档，遵循统一约定。
+> **提醒**：后端开发前应先阅读 [docs/doc.md](../docs/doc.md) 与本文档，遵循统一约定。
