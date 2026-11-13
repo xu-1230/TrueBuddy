@@ -52,7 +52,7 @@
 2. 业务 Mapper 用 MyBatis 注解 SQL（禁 XML）；workflow 模块例外走 `JdbcTemplate`；DO 不得暴露到接口层。
 3. 前端纯 JS：`===`、`@/` 别名、`<script setup>`、`<style scoped>`。
 4. 未落地能力必须显式标注「规划」，不得被其它模块当现状依赖；已删除的端点/文件不得再作为现状描述。
-5. 配置真实值写在 `application.yml` 的 `${ENV_KEY:字面值}` 冒号后；根 `.env` 已不加载。代价：密钥进入 git（已知取舍），待整改见 doc-devops.md §3。
+5. 配置真实值统一在 **`backend/.env`**（已被 .gitignore 忽略，不进版本库），`application.yml` 只保留 `${VAR}` 占位符，经 `spring.config.import` 自动加载（见 adr/0005）。裸占位符缺键会启动失败——`.env` 必须覆盖全部被引用的键，键位清单见 doc-devops.md §2。**历史提交中的旧密钥已暴露，建议轮换**（doc-devops.md §3）。
 6. 长任务走 SSE（`fetch` + `ReadableStream` 读，未用 `EventSource`）；终态看帧不看流。
 7. 在线状态唯一真相源是 LiveKit 房间事件（adr/0002）；数据库只存累计入会台账。
 8. 质量门禁：前端 `npm run lint` + `npm test`；后端 `./mvnw clean install` + `./mvnw test`，全过才提交。

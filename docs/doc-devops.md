@@ -19,21 +19,24 @@
 
 ## 2. 配置落点与环境变量
 
-- **配置一律写在 `backend/tb-server/src/main/resources/application.yml`**：真实值放 `${ENV_KEY:字面值}` 的**冒号后面**。仓库根 `.env` 自 2026-10-10 起不再被加载（`spring.config.import` 已移除），`cp .env.example .env` 这一步已作废；根 `.env.example` 降级为「可覆盖的变量名清单」，环境变量优先级仍高于配置文件。
-- **改了 `application.yml` 必须重启后端**才生效。
-- ⚠️ **空值也会顶掉默认值**（实测踩坑）：`${VAR:默认值}` 只在 VAR **未定义**时用默认值，VAR 定义为空串就直接用空串。IDE 运行配置挂了 EnvFile 插件时，`.env` 里任何 `VAR=`（空值）都会顶掉 yml 真实值，现象是「yml 明明填了 Key，控制台却说未配置」。排查顺序：① `.env` 别留空行；② 关掉该插件对后端的注入；③ `$env:VAR` 看当前值（**未定义与空串不是一回事**）。
+- **真实值一律写在 `backend/.env`（已被根 .gitignore 忽略，不进版本库）；`application.yml` 只保留 `${VAR}` 占位符**（2026-11-13 决策，见 [adr/0005](./adr/0005-配置真实值唯一真相源为backend-env.md)；此前的「真实值写 yml 字面值位」口径已作废）。
+- **加载方式**：Spring Boot 经 `spring.config.import` 自动加载（`optional:file:./.env[.properties]` + `optional:file:./backend/.env[.properties]` 双路径，兼容从仓库根或 `backend/` 启动）；文件缺失不阻断启动，但**键缺失会**。
+- ⚠️ **裸占位符缺键即启动失败**：yml 中大量占位符没有默认值（`${DOCMIND_ENDPOINT}`、`${LIVEKIT_URL}`、`${TB_MEETING_PUBLIC_BASE_URL}`、`${TB_DH_TTS_MODEL}`、`${MINIO_ENDPOINT}` 等），`backend/.env` 必须覆盖每一个被引用的键（值可为空串，键不能缺），否则报 `Could not resolve placeholder` 直接失败。
+- **改了 `backend/.env` 或 `application.yml` 都必须重启后端**才生效；环境变量仍可临时覆盖（优先级高于配置文件与 .env 导入）。
+- ⚠️ **空值语义**：`KEY=`（空串）会把空串注入占位符——对 `LIVEKIT_URL` / `TB_MEETING_PUBLIC_BASE_URL` 这类「留空=自动推导」的键是**有意行为**；对必填密钥等于禁用该能力。IDE EnvFile 插件注入的环境变量优先级更高，注意它读取的 `.env` 里别留 `VAR=` 空值行（**未定义与空串不是一回事**）。
 
 环境变量清单（必填项缺失的表现见「用途」列；默认值以 `application.yml` / `.env.example` 为准）：
 
 | 变量 | 必填 | 用途 |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | 是 | 对话模型（模板生成 / 讲稿 / 工作流 LLM 节点 / 语义分片） |
+| `SPRING_AI_OPENAI_API_KEY` / `SPRING_AI_OPENAI_BASE_URL` / `SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL` | 是 | 对话模型（模板生成 / 讲稿 / 工作流 LLM 节点 / 语义分片）DeepSeek 密钥、基址与模型名（宽松绑定名） |
 | `OPENAI_EMBEDDING_API_KEY` | 是 | 向量化（知识库 RAG） |
 | `DOCMIND_ACCESS_KEY_ID` / `DOCMIND_ACCESS_KEY_SECRET` | 是 | 文档智能解析；**缺失时后端启动即失败** |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | 是（会议） | 与 `D:\ctf\livekit\.env` **同一对值**；缺失时建会可用、入会被明确拒绝（不静默失败） |
 | `DASHSCOPE_API_KEY` | 是（播报） | CosyVoice 流式合成，可与 embedding 共用同一百炼 Key |
-| `MINIO_SECRET_KEY` | 是 | MinIO 密钥（现状带弱默认值，见 §3） |
-| `OPENAI_BASE_URL` / `OPENAI_CHAT_MODEL` | 否 | 对话模型基址与模型名 |
+| `MINIO_SECRET_KEY` | 是 | MinIO 密钥（无默认值，值在 `backend/.env`） |
+| `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | 是 | PostgreSQL 凭据（宽松绑定名；本地为 `postgres` / 空密码） |
+| `SPRING_MAIL_USERNAME` / `SPRING_MAIL_PASSWORD` | 是（邮件功能） | QQ 邮箱账号与授权码（注册 / 验证码 / 找回密码；宽松绑定名） |
 | `OPENAI_EMBEDDING_BASE_URL` / `OPENAI_EMBEDDING_MODEL` | 否 | 向量化基址与模型名 |
 | `DOCMIND_ENDPOINT` / `DOCMIND_LLM_ENHANCEMENT` / `DOCMIND_ENHANCEMENT_MODE` / `DOCMIND_FORMULA_ENHANCEMENT` / `DOCMIND_OUTPUT_HTML_TABLE` | 否 | 解析行为开关（增强模式必须 `llm-enhancement=true`） |
 | `LIVEKIT_URL` / `LIVEKIT_PORT` / `LIVEKIT_TOKEN_TTL_HOURS` | 否 | 信令地址（留空按局域网 IP 推导）/ 端口 / 令牌有效期 |
@@ -43,24 +46,25 @@
 | `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_BUCKET` | 否 | MinIO 地址 / AK / 桶名 |
 | `TB_DOCTEMPLATE_TEMP_DIR` | 否 | 文档生成临时目录 |
 
-> 原 worker 相关变量（`TB_DH_WORKER_URL` / `TB_DH_MAX_SAY` / `TB_DH_PROBE_TIMEOUT_MS` 等）随 worker 删除已作废；`DB_USERNAME` / `DB_PASSWORD` 现未被 yml 引用（数据库凭据为 `postgres` / 空密码，见 §3 #4）。
+> 原 worker 相关变量（`TB_DH_WORKER_URL` / `TB_DH_MAX_SAY` / `TB_DH_PROBE_TIMEOUT_MS` 等）随 worker 删除已作废。键名分两类：数据源 / 邮件 / 对话模型在 yml 中**显式引用宽松绑定名**（`SPRING_DATASOURCE_*` / `SPRING_MAIL_*` / `SPRING_AI_OPENAI_*`），语义名（`DB_*` / `MAIL_*` / 裸 `OPENAI_API_KEY`）不被引用、写了也不生效；其余键（`OPENAI_EMBEDDING_*` / `DOCMIND_*` / `LIVEKIT_*` / `MINIO_*` / `TB_*`）是 yml 占位符原名。
 
-## 3. 安全待整改（如实记录，不引用密钥明文）
+## 3. 安全整改记录（如实记录，不引用密钥明文）
 
-| # | 位置 | 现状 | 规范要求 |
+| # | 位置 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| 1 | `application.yml` → `spring.ai.openai.api-key` | 明文密钥直接写入 | 占位符注入 |
-| 2 | `application.yml` → `spring.ai.openai.embedding.api-key` | 明文默认值 | 去默认值 |
-| 3 | `application.yml` → `minio.secret-key` | 明文默认值 | 去默认值 |
-| 4 | `application.yml` → `spring.datasource.username/password` | `postgres` / 空密码硬编码 | 占位符注入 |
-| 5 | `AdminUserServiceImpl.isPasswordMatch` | 恒返回 `true`（演示便利） | 上线前改 BCrypt 校验，并修正明文存储 |
-| 6 | 密钥进入 git 跟踪的 yml | 2026-10-10 决策的已知代价 | 毕业设计环境接受；对外发布前必须清理历史 |
+| 1 | `application.yml` → `spring.ai.openai.api-key` | **已整改（2026-11-13）** | 改为 `${SPRING_AI_OPENAI_API_KEY}`，真实值在 `backend/.env` |
+| 2 | `application.yml` → `spring.ai.openai.embedding.api-key` | **已整改（2026-11-13）** | 去默认值，改 `${OPENAI_EMBEDDING_API_KEY}` |
+| 3 | `application.yml` → `minio.secret-key` | **已整改（2026-11-13）** | 去默认值，改 `${MINIO_SECRET_KEY}` |
+| 4 | `application.yml` → `spring.datasource.username/password` | **已整改（2026-11-13）** | 改 `${SPRING_DATASOURCE_*}` 占位符 |
+| 5 | `AdminUserServiceImpl.isPasswordMatch` | **待整改** | 恒返回 `true`（演示便利）；上线前改 BCrypt 校验，并修正明文存储 |
+| 6 | **git 历史中的旧密钥** | **待处置（重要）** | 历史提交仍含 DeepSeek / DashScope / DocMind / LiveKit 凭据与 QQ 授权码——删除当前值收不回历史，**建议全部轮换**后再对外发布仓库 |
 
 ## 4. 启动前置与命令
 
 | 能力 | 前置 |
 | --- | --- |
-| 教案生成 / 知识库 | yml 中 `OPENAI_API_KEY`、`OPENAI_EMBEDDING_API_KEY`、DocMind AK/SK（缺则启动失败）；本机装有 `uv`（拉起 docx-mcp） |
+| 首次运行 / 换机 | **先准备 `backend/.env`**（对照根 `.env.example` 的变量名清单填真实值）；yml 大量占位符无默认值，缺键启动即失败 |
+| 教案生成 / 知识库 | `backend/.env` 中 `SPRING_AI_OPENAI_API_KEY`、`OPENAI_EMBEDDING_API_KEY`、DocMind AK/SK（缺则启动失败）；本机装有 `uv`（拉起 docx-mcp） |
 | 模拟会议 | 先启动自托管 LiveKit（§7）；`LIVEKIT_API_KEY/SECRET` 与其 `.env` 同值 |
 | 讲稿播报 | `tb.lecture.digital-human.enabled=true` + `DASHSCOPE_API_KEY` 有值，**无需任何额外进程**；`GET /meeting/digital/status` 应回 `available: true` |
 
