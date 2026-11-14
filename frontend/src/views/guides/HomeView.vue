@@ -6,6 +6,15 @@ import { CircleCheck, Refresh, VideoPause, VideoPlay } from '@element-plus/icons
 import { useSmoothScroll } from '../../composables/useSmoothScroll'
 import NavbarItem from '../../components/NavbarItem.vue'
 import HeroParticles from './components/HeroParticles.vue'
+import visionPlate from '../../assets/vision-proof.jpg'
+import railStep1 from '../../assets/rail-step-1.jpg'
+import railStep2 from '../../assets/rail-step-2.jpg'
+import railStep3 from '../../assets/rail-step-3.jpg'
+import railStep4 from '../../assets/rail-step-4.jpg'
+import railStep5 from '../../assets/rail-step-5.jpg'
+import featPlan from '../../assets/feat-plan.jpg'
+import featGrading from '../../assets/feat-grading.jpg'
+import featAvatar from '../../assets/feat-avatar.jpg'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -13,13 +22,13 @@ const { refresh, scrollTo } = useSmoothScroll()
 
 const sections = [
   { id: 'hero', label: '首页', en: 'HOME' },
+  { id: 'shift', label: '转折', en: 'SHIFT' },
   { id: 'vision', label: '核心理念', en: 'VISION' },
   { id: 'ai', label: 'AI 助手', en: 'ASSISTANT' },
   { id: 'rail', label: 'AI 工作流', en: 'WORKFLOW' },
-  { id: 'docs', label: '文档模板', en: 'TEMPLATE' },
+  { id: 'docs', label: '核心功能', en: 'FEATURES' },
   { id: 'grading', label: '作业批改', en: 'GRADING' },
   { id: 'knowledge', label: '知识库', en: 'KNOWLEDGE' },
-  { id: 'insight', label: '数据洞察', en: 'INSIGHT' },
   { id: 'start', label: '开始使用', en: 'START' },
 ]
 
@@ -37,6 +46,9 @@ onMounted(async () => {
   setupAnimations()
   setupRail()
   setupScan()
+  setupShift()
+  setupStrip()
+  setupMagnet()
   refresh()
 })
 
@@ -48,7 +60,7 @@ function setupAnimations() {
   //    区间 = 该章节「进入视口底部 → 完全离开视口顶部」，中线 = 章节居中于视口的时刻；
   //    前半段随滚动进场，后半段随滚动退场，
   //    同一章节内各组元素的起手时序与退出幅度各不相同，这就是「元素之间的配合」。
-  stages.forEach((sec) => {
+  stages.forEach((sec, si) => {
     const pick = (sel) => Array.from(sec.querySelectorAll(sel))
 
     const words = pick('[data-reveal-word]')
@@ -56,12 +68,54 @@ function setupAnimations() {
     const items = pick('[data-reveal-item]')
     const cards = pick('[data-card]')
     const zooms = pick('[data-zoom]')
-    const slideXs = pick('[data-slide-x]')
     const softFades = pick('[data-fade-in]')
     const fades = pick('[data-fade-out]')
     const counters = pick('[data-count]')
-    const bars = pick('[data-bar]')
     const parallax = pick('[data-parallax]')
+
+    // 终幕（最后一个章节）专属：只进场、永不退场。
+    // 通用时间线的退场段在「滚到底」之前就会播完——终幕恰好是最后一屏，
+    // 滚动到底 = 时间线走满，若沿用退场，标题在读到之前就已淡出消失。
+    if (si === stages.length - 1) {
+      const tl = gsap.timeline({
+        defaults: { ease: 'power2.out' },
+        scrollTrigger: {
+          trigger: sec,
+          start: 'top bottom',
+          end: 'bottom bottom',
+          scrub: 1,
+        },
+      })
+      if (words.length) {
+        tl.fromTo(
+          words,
+          { yPercent: 120, opacity: 0 },
+          { yPercent: 0, opacity: 1, duration: 0.35, stagger: 0.06 },
+          0,
+        )
+      }
+      if (lines.length) {
+        tl.fromTo(
+          lines,
+          { y: 30, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.25, stagger: 0.08 },
+          0.08,
+        )
+      }
+      if (items.length) {
+        tl.fromTo(
+          items,
+          { y: 44, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.25, stagger: 0.08 },
+          0.18,
+        )
+      }
+      if (softFades.length) {
+        tl.fromTo(softFades, { opacity: 0 }, { opacity: 1, duration: 0.2 }, 0.32)
+      }
+      track(tl.scrollTrigger)
+      return
+    }
 
     // MID 处正好是该章节居中的时刻：时间线中线与滚动中线重合
     const MID = 1.6
@@ -130,16 +184,6 @@ function setupAnimations() {
       tl.to(el, { y: -34, scale: 0.95, opacity: 0.45, duration: OUT, ease: 'power1.in' }, MID)
     })
 
-    // 流程步骤 / 标签：自右侧滑入
-    if (slideXs.length) {
-      tl.fromTo(
-        slideXs,
-        { x: 54, opacity: 0 },
-        { x: 0, opacity: 1, duration: 0.8, stagger: 0.12, ease: 'power3.out' },
-        0.4,
-      )
-    }
-
     // 自身带 CSS 自转的元素（知识库圆环）：只淡入，避免覆盖其 animation 的 transform
     if (softFades.length) {
       tl.fromTo(
@@ -150,9 +194,10 @@ function setupAnimations() {
       )
     }
 
-    // 数据：数字随滚动实时滚动到目标值
+    // 数据：数字随滚动实时滚动到目标值；data-decimals 声明小数位（默认整数）
     counters.forEach((el, i) => {
       const state = { value: 0 }
+      const decimals = Number(el.dataset.decimals) || 0
       tl.to(
         state,
         {
@@ -160,22 +205,12 @@ function setupAnimations() {
           duration: 0.9,
           ease: 'power2.out',
           onUpdate: () => {
-            el.textContent = String(Math.round(state.value))
+            el.textContent = state.value.toFixed(decimals)
           },
         },
         0.5 + i * 0.1,
       )
     })
-
-    // 图表：柱条自底部生长，与上方数字同步
-    if (bars.length) {
-      tl.fromTo(
-        bars,
-        { scaleY: 0, transformOrigin: 'bottom center' },
-        { scaleY: 1, duration: 0.75, stagger: 0.05, ease: 'power2.out' },
-        0.45,
-      )
-    }
 
     /* ---------------- 退场：MID → 2×MID ----------------
        幅度按「层级」递增：标题冲得最远、卡片几乎留在原地，
@@ -198,14 +233,8 @@ function setupAnimations() {
     if (cards.length) {
       tl.to(cards, { y: -22, opacity: 0.5, duration: OUT, ease: 'power1.in' }, MID)
     }
-    if (slideXs.length) {
-      tl.to(slideXs, { x: -18, y: -40, opacity: 0.4, duration: OUT, ease: 'power1.in' }, MID)
-    }
     if (softFades.length) {
       tl.to(softFades, { opacity: 0.4, duration: OUT, ease: 'power1.in' }, MID)
-    }
-    if (bars.length) {
-      tl.to(bars, { scaleY: 0.55, opacity: 0.6, duration: OUT, ease: 'power1.in' }, MID)
     }
 
     /* ---------------- 装饰层视差：与内容错开节奏 ---------------- */
@@ -256,7 +285,8 @@ function setupRail() {
   const stage = document.querySelector('.stage--rail')
   const rail = stage?.querySelector('[data-rail]')
   const trackEl = stage?.querySelector('[data-rail-track]')
-  const bar = stage?.querySelector('[data-rail-bar]')
+  const cards = trackEl ? Array.from(trackEl.querySelectorAll('.rail__card')) : []
+  const linkFills = trackEl ? Array.from(trackEl.querySelectorAll('[data-rail-link] i')) : []
   if (!stage || !rail || !trackEl) return
 
   // 可横移的距离：轨道总宽减去可视宽，视口变化时由 ScrollTrigger 重新求值
@@ -275,12 +305,172 @@ function setupRail() {
         scrub: 0.6,
         anticipatePin: 1,
         invalidateOnRefresh: true,
-        onUpdate: (self) => {
-          if (bar) bar.style.transform = `scaleX(${self.progress})`
+        onUpdate: () => {
+          // 工序连线：第 j 段随「下一张卡逼近版心中点」从 0 描到 1
+          if (linkFills.length) {
+            const center = rail.clientWidth / 2
+            const rects = cards.map((c) => c.getBoundingClientRect())
+            linkFills.forEach((el, j) => {
+              const a = rects[j]
+              const b = rects[j + 1]
+              if (!a || !b) return
+              const pitch = b.left - a.left || 1
+              const fill = Math.min(1, Math.max(0, 1 - (b.left + b.width / 2 - center) / pitch))
+              el.style.transform = `scaleX(${fill.toFixed(4)})`
+            })
+          }
         },
       },
     })
     track(tween.scrollTrigger)
+
+    // 横向 choreography：卡片随行进位置自下而上落位
+    // （containerAnimation 挂在横移补间上，随 pin 一起由 matchMedia 统一回收）
+    trackEl.querySelectorAll('.rail__card').forEach((card) => {
+      gsap.fromTo(
+        card,
+        { scale: 0.94, y: 16, opacity: 0.7 },
+        {
+          scale: 1,
+          y: 0,
+          opacity: 1,
+          ease: 'none',
+          scrollTrigger: {
+            trigger: card,
+            containerAnimation: tween,
+            start: 'left 92%',
+            end: 'left 55%',
+            scrub: true,
+          },
+        },
+      )
+    })
+  })
+}
+
+/* ==========================================================================
+   02 批注幕 · 一笔红批（sticky 钉住 260vh，滚动进度驱动整段编排）
+   划掉「重复」→ 圈出「创造」→ 逐条核销一张案头账单。
+   CSS 默认即终稿：跳过 / reduce-motion / 无 JS 时直接呈现完整构图。
+   ========================================================================== */
+let shiftTl = null
+
+function setupShift() {
+  const sec = document.getElementById('shift')
+  if (!sec || prefersReduced()) return
+
+  const q = (sel) => Array.from(sec.querySelectorAll(sel))
+  const head = sec.querySelector('.shift__head')
+  const kicker = sec.querySelector('.shift__kicker')
+  const lead = sec.querySelector('.shift__lead')
+  const strokes = [...q('.shift__strike path'), ...q('.shift__ring path')]
+  const oldWord = sec.querySelector('.shift__word--old')
+  const newWord = sec.querySelector('.shift__word--new')
+  const arrow = sec.querySelector('.shift__arrow')
+  const notes = q('.shift__note')
+  const crossLines = q('.receipt__cross')
+  const totalEl = sec.querySelector('[data-receipt-total]')
+  const mark = sec.querySelector('.receipt__mark')
+
+  // pathLength=1 归一化：dashoffset 1 → 0 即「一笔画完」
+  gsap.set(strokes, { strokeDasharray: 1, strokeDashoffset: 1 })
+  gsap.set(newWord, { opacity: 0, scale: 0.86, rotate: -3 })
+  gsap.set(notes, { opacity: 0, y: 10 })
+  gsap.set(crossLines, { scaleX: 0, transformOrigin: 'left center' })
+  gsap.set(mark, { opacity: 0, scale: 1.35, rotate: -5 })
+  gsap.set([head, kicker, lead], { opacity: 0, y: 26 })
+  if (totalEl) totalEl.textContent = '0.0'
+
+  const state = { hours: 0 }
+  shiftTl = gsap.timeline({
+    defaults: { ease: 'power2.out' },
+    scrollTrigger: {
+      trigger: sec,
+      start: 'top top',
+      end: 'bottom bottom',
+      scrub: 0.5,
+    },
+  })
+  track(shiftTl.scrollTrigger)
+
+  shiftTl
+    .to(head, { opacity: 1, y: 0, duration: 0.07 }, 0)
+    .to(kicker, { opacity: 1, y: 0, duration: 0.09 }, 0.03)
+    // 第一笔：两道红斜线划过「重复」
+    .to(q('.shift__strike path'), { strokeDashoffset: 0, duration: 0.15, stagger: 0.05 }, 0.16)
+    // 账单逐条核销
+    .to(crossLines, { scaleX: 1, duration: 0.05, stagger: 0.04 }, 0.32)
+    // 旧词退位，新词盖章落定
+    .to(oldWord, { opacity: 0.16, rotate: -2, scale: 0.97, duration: 0.12 }, 0.46)
+    .to(arrow, { x: 12, opacity: 0.45, duration: 0.07 }, 0.5)
+    .to(newWord, { opacity: 1, scale: 1, rotate: 0, duration: 0.13, ease: 'power3.out' }, 0.53)
+    .to(q('.shift__ring path'), { strokeDashoffset: 0, duration: 0.13 }, 0.58)
+    .to(notes, { opacity: 1, y: 0, duration: 0.05, stagger: 0.035 }, 0.62)
+    .to(lead, { opacity: 1, y: 0, duration: 0.07 }, 0.66)
+    // 合计小时数跳字
+    .to(
+      state,
+      {
+        hours: 14,
+        duration: 0.12,
+        onUpdate: () => {
+          if (totalEl) totalEl.textContent = state.hours.toFixed(1)
+        },
+      },
+      0.72,
+    )
+    .to(mark, { opacity: 1, scale: 1, rotate: -2, duration: 0.07, ease: 'power3.out' }, 0.86)
+}
+
+/* ==========================================================================
+   工序带 · 巨字转场（叙事幕 → 产品幕之间的帘幕）
+   两行描边巨字随整页滚动反向横移；reduce-motion 下静止。
+   ========================================================================== */
+function setupStrip() {
+  if (prefersReduced()) return
+  document.querySelectorAll('[data-strip]').forEach((row) => {
+    const dir = Number(row.dataset.strip) || -1
+    track(
+      gsap.fromTo(
+        row,
+        { xPercent: dir < 0 ? 2 : -12 },
+        {
+          xPercent: dir < 0 ? -14 : 2,
+          ease: 'none',
+          scrollTrigger: {
+            trigger: row.closest('.strip'),
+            start: 'top bottom',
+            end: 'bottom top',
+            scrub: 0.8,
+          },
+        },
+      ).scrollTrigger,
+    )
+  })
+}
+
+/* ==========================================================================
+   磁吸按钮 · 收尾 CTA 的微交互（仅桌面 + 未开启减少动效；不进入 hero / 03）
+   ========================================================================== */
+let magnetBinds = []
+
+function setupMagnet() {
+  if (!canHover || prefersReduced()) return
+  document.querySelectorAll('#start .btn').forEach((btn) => {
+    const xTo = gsap.quickTo(btn, 'x', { duration: 0.45, ease: 'power3' })
+    const yTo = gsap.quickTo(btn, 'y', { duration: 0.45, ease: 'power3' })
+    const onMove = (e) => {
+      const r = btn.getBoundingClientRect()
+      xTo((e.clientX - r.left - r.width / 2) * 0.24)
+      yTo((e.clientY - r.top - r.height / 2) * 0.4)
+    }
+    const onLeave = () => {
+      xTo(0)
+      yTo(0)
+    }
+    btn.addEventListener('mousemove', onMove)
+    btn.addEventListener('mouseleave', onLeave)
+    magnetBinds.push([btn, onMove, onLeave])
   })
 }
 
@@ -522,6 +712,13 @@ onBeforeUnmount(() => {
   triggers = []
   railMM?.revert()
   railMM = null
+  shiftTl?.kill()
+  shiftTl = null
+  magnetBinds.forEach(([el, onMove, onLeave]) => {
+    el.removeEventListener('mousemove', onMove)
+    el.removeEventListener('mouseleave', onLeave)
+  })
+  magnetBinds = []
   scanTl?.kill()
   scanTl = null
   scanIO?.disconnect()
@@ -575,10 +772,84 @@ function goTo(idx) {
         </div>
       </section>
 
-      <!-- 02 核心理念 -->
+      <!-- 02 批注 B-01 · 一笔红批：整屏钉住，滚动驱动划掉「重复」、圈出「创造」 -->
+      <section id="shift" class="shift">
+        <div class="shift__pin">
+          <header class="shift__head">
+            <span class="stage__idx">批注 B-01</span>
+            <p class="stage__eyebrow">转折 · 一笔红批</p>
+          </header>
+
+          <div class="shift__stage">
+            <div class="shift__words">
+              <p class="shift__kicker">每周的案头，都堆着可以不做的「重复」。</p>
+              <div class="shift__swap">
+                <span class="shift__word shift__word--old">
+                  重复
+                  <svg class="shift__strike" viewBox="0 0 320 120" preserveAspectRatio="none" aria-hidden="true">
+                    <path pathLength="1" d="M18 78 C 96 60, 210 52, 302 40" />
+                    <path pathLength="1" d="M22 96 C 110 84, 204 72, 296 58" />
+                  </svg>
+                  <span class="shift__note shift__note--cross" aria-hidden="true">×1 划去</span>
+                </span>
+                <span class="shift__arrow" aria-hidden="true">→</span>
+                <span class="shift__word shift__word--new">
+                  创造
+                  <svg class="shift__ring" viewBox="0 0 200 90" preserveAspectRatio="none" aria-hidden="true">
+                    <path pathLength="1" d="M28 52 C 30 16, 168 8, 186 34 C 200 60, 150 84, 92 84 C 40 84, 22 70, 30 44" />
+                  </svg>
+                  <span class="shift__note shift__note--circle" aria-hidden="true">○ 圈出</span>
+                </span>
+              </div>
+              <p class="shift__lead">案头的事交给机器，人的时间还给教学本身。</p>
+            </div>
+
+            <!-- 案头账单：一张被红笔逐条核销的小票 -->
+            <aside class="receipt">
+              <header class="receipt__head">
+                <span>案头账单 · 每周</span>
+                <span>WEEKLY PROOF</span>
+              </header>
+              <ul class="receipt__list">
+                <li data-receipt>
+                  <span>备课初稿</span>
+                  <i class="receipt__leader" aria-hidden="true"></i>
+                  <b>4.5h</b>
+                  <i class="receipt__cross" aria-hidden="true"></i>
+                </li>
+                <li data-receipt>
+                  <span>组卷编排</span>
+                  <i class="receipt__leader" aria-hidden="true"></i>
+                  <b>3.0h</b>
+                  <i class="receipt__cross" aria-hidden="true"></i>
+                </li>
+                <li data-receipt>
+                  <span>作业批改</span>
+                  <i class="receipt__leader" aria-hidden="true"></i>
+                  <b>5.0h</b>
+                  <i class="receipt__cross" aria-hidden="true"></i>
+                </li>
+                <li data-receipt>
+                  <span>资料归档</span>
+                  <i class="receipt__leader" aria-hidden="true"></i>
+                  <b>1.5h</b>
+                  <i class="receipt__cross" aria-hidden="true"></i>
+                </li>
+              </ul>
+              <footer class="receipt__total">
+                <span>合计</span>
+                <b><span data-receipt-total>14.0</span> h</b>
+              </footer>
+              <p class="receipt__mark">已核销 · 还给教学本身 ↩</p>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- 02 核心理念 · 一张贴在桌面上的校样 + 三条批注卡 -->
       <section id="vision" data-section data-index="1" class="section section--light">
         <header class="section__head">
-          <span data-reveal-item data-drift="72" class="section__index">02 / 09</span>
+          <span data-reveal-item data-drift="72" class="section__index">02 / 09 · PROOF</span>
           <h2 class="section__title">
             <span class="section__word"><span data-reveal-word>我们</span></span>
             <span class="section__word"><span data-reveal-word>相信</span></span>
@@ -589,21 +860,96 @@ function goTo(idx) {
           </p>
         </header>
         <div class="vision__grid">
-          <article data-card class="vision__card">
-            <span class="vision__num">01</span>
-            <h3>以教师为中心</h3>
-            <p>所有工具围绕教师真实工作流构建，而非让教师迁就系统。</p>
-          </article>
-          <article data-card class="vision__card">
-            <span class="vision__num">02</span>
-            <h3>AI 是协作而非替代</h3>
-            <p>人工智能负责检索、草拟与校验，决策与温度始终留给教师。</p>
-          </article>
-          <article data-card class="vision__card">
-            <span class="vision__num">03</span>
-            <h3>知识应当沉淀</h3>
-            <p>每一份教案、每一次批改，都应沉淀为可复用、可检索的资产。</p>
-          </article>
+          <!-- 左：纸胶带钉住的校样拼贴 -->
+          <figure data-parallax data-speed="-8" class="vision__plate">
+            <div class="vision__frame">
+              <!-- 内视差层：相框裁切不动，画芯随滚动轻微游走 -->
+              <div class="vision__drift" data-parallax data-speed="6">
+                <img
+                  class="vision__img"
+                  :src="visionPlate"
+                  width="1024"
+                  height="1280"
+                  alt="校样拼贴：墨蓝纸片、坐标格与红笔批注"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+            <figcaption class="vision__cap">
+              <span class="vision__cap-no">FIG. 02</span>
+              <span>我们的立场，逐条校对</span>
+            </figcaption>
+          </figure>
+
+          <!-- 右：三条批注卡，逐级右移的阶梯 -->
+          <div class="vision__cards">
+            <article data-card class="vision__card">
+              <svg class="vision__glyph" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 13.5 L9.5 19 L20 5" />
+              </svg>
+              <div class="vision__card-head">
+                <span class="vision__num">01</span>
+                <span class="vision__tag">KEEP · 保留</span>
+              </div>
+              <h3>以教师为中心</h3>
+              <p>所有工具围绕教师真实工作流构建，而非让教师迁就系统。</p>
+            </article>
+            <article data-card class="vision__card">
+              <svg class="vision__glyph" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 8.5 H17" />
+                <path d="M14 5.5 L17.5 8.5 L14 11.5" />
+                <path d="M21 15.5 H7" />
+                <path d="M10 12.5 L6.5 15.5 L10 18.5" />
+              </svg>
+              <div class="vision__card-head">
+                <span class="vision__num">02</span>
+                <span class="vision__tag">CO-EDIT · 协作</span>
+              </div>
+              <h3>AI 是协作而非替代</h3>
+              <p>人工智能负责检索、草拟与校验，决策与温度始终留给教师。</p>
+            </article>
+            <article data-card class="vision__card">
+              <svg class="vision__glyph" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3 V14" />
+                <path d="M7.5 10 L12 14.5 L16.5 10" />
+                <path d="M4 19.5 H20" />
+              </svg>
+              <div class="vision__card-head">
+                <span class="vision__num">03</span>
+                <span class="vision__tag">FILE · 归档</span>
+              </div>
+              <h3>知识应当沉淀</h3>
+              <p>每一份教案、每一次批改，都应沉淀为可复用、可检索的资产。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- 工序带 · 巨字转场：叙事幕与产品幕之间的帘幕，随滚动反向横移 -->
+      <section id="strip" class="strip" aria-hidden="true">
+        <div class="strip__row" data-strip="-1">
+          <span>备课<i>✓</i></span>
+          <span>批改<i>✓</i></span>
+          <span>组卷<i>✓</i></span>
+          <span>讲评<i>✓</i></span>
+          <span>沉淀<i>✓</i></span>
+          <span>备课<i>✓</i></span>
+          <span>批改<i>✓</i></span>
+          <span>组卷<i>✓</i></span>
+          <span>讲评<i>✓</i></span>
+          <span>沉淀<i>✓</i></span>
+        </div>
+        <div class="strip__row strip__row--b" data-strip="1">
+          <span>备课<i>✓</i></span>
+          <span>批改<i>✓</i></span>
+          <span>组卷<i>✓</i></span>
+          <span>讲评<i>✓</i></span>
+          <span>沉淀<i>✓</i></span>
+          <span>备课<i>✓</i></span>
+          <span>批改<i>✓</i></span>
+          <span>组卷<i>✓</i></span>
+          <span>讲评<i>✓</i></span>
+          <span>沉淀<i>✓</i></span>
         </div>
       </section>
 
@@ -756,163 +1102,236 @@ function goTo(idx) {
 
       <!-- 04 AI 工作流 · 横向轨道：滚到此后整条轨道横移（参考 karot 的 sticky 横滑） -->
       <section id="rail" data-section data-index="3" class="stage stage--rail">
-        <div class="stage__head rail__head">
-          <span class="stage__idx">04 / 09</span>
-          <p class="stage__eyebrow">AI 工作流</p>
-          <h2 class="stage__title">四步，<em>从需求到成稿</em>。</h2>
-          <p class="stage__lead">对话起稿、逐字段填充、引用回溯、结构校验——每一步都看得见。</p>
-          <p class="rail__hint" aria-hidden="true">横向滚动<span></span></p>
-        </div>
+        <span class="stage__run" aria-hidden="true">Nº 04 — WORKFLOW</span>
+        <span class="stage__ghost" aria-hidden="true">04</span>
+        <span class="rail__scroll" aria-hidden="true">SCROLL — 校样画廊</span>
 
         <div class="rail" data-rail>
           <div class="rail__track" data-rail-track>
+            <!-- 首屏标题板：随轨道一起行进（karot 同构） -->
+            <div class="rail__intro">
+
+              <h2 class="rail__intro-title">Features</h2>
+             </div>
+
             <article class="rail__card">
-              <span class="rail__num">01</span>
-              <h3 class="rail__title">对话起稿</h3>
-              <p class="rail__text">说清课时、学情与目标，AI 直接给出结构完整的初稿，不必从空白页开始。</p>
-              <div class="rail__art" aria-hidden="true"><i></i><i></i><i></i></div>
-              <span class="rail__meta">STEP 01 / 04</span>
+              <div class="rail__plate">
+                <header class="rail__card-head">
+                  <span class="rail__num">W·01</span>
+                  <span class="rail__tick" aria-hidden="true"></span>
+                </header>
+                <figure class="rail__fig" aria-hidden="true">
+                  <img class="rail__img" :src="railStep1" width="1024" height="768" alt="" loading="lazy" />
+                </figure>
+                <h3 class="rail__title">对话起稿</h3>
+                <p class="rail__text">说清课时、学情与目标，AI 直接给出结构完整的初稿，不必从空白页开始。</p>
+                <footer class="rail__card-foot">
+                  <span class="rail__points" aria-hidden="true"><i class="is-on"></i><i></i><i></i><i></i><i></i></span>
+                  <span class="rail__meta">STEP 01 ／ 04</span>
+                </footer>
+              </div>
             </article>
-            <span class="rail__link" aria-hidden="true"></span>
+            <div class="rail__link" data-rail-link aria-hidden="true"><i></i></div>
             <article class="rail__card">
-              <span class="rail__num">02</span>
-              <h3 class="rail__title">逐字段填充</h3>
-              <p class="rail__text">教学目标、重难点、活动与评价按你的模板落位，段落与表格结构一处不动。</p>
-              <div class="rail__art" aria-hidden="true"><i></i><i></i><i></i></div>
-              <span class="rail__meta">STEP 02 / 04</span>
+              <div class="rail__plate">
+                <header class="rail__card-head">
+                  <span class="rail__num">W·02</span>
+                  <span class="rail__tick" aria-hidden="true"></span>
+                </header>
+                <figure class="rail__fig" aria-hidden="true">
+                  <img class="rail__img" :src="railStep2" width="1024" height="768" alt="" loading="lazy" />
+                </figure>
+                <h3 class="rail__title">逐字段填充</h3>
+                <p class="rail__text">教学目标、重难点、活动与评价按你的模板落位，段落与表格结构一处不动。</p>
+                <footer class="rail__card-foot">
+                  <span class="rail__points" aria-hidden="true"><i></i><i class="is-on"></i><i></i><i></i><i></i></span>
+                  <span class="rail__meta">STEP 02 ／ 04</span>
+                </footer>
+              </div>
             </article>
-            <span class="rail__link" aria-hidden="true"></span>
+            <div class="rail__link" data-rail-link aria-hidden="true"><i></i></div>
             <article class="rail__card">
-              <span class="rail__num">03</span>
-              <h3 class="rail__title">引用可回溯</h3>
-              <p class="rail__text">每条结论都挂着教材页码与课标条目，点开即可核对原文，不留黑盒。</p>
-              <div class="rail__art" aria-hidden="true"><i></i><i></i><i></i></div>
-              <span class="rail__meta">STEP 03 / 04</span>
+              <div class="rail__plate">
+                <header class="rail__card-head">
+                  <span class="rail__num">W·03</span>
+                  <span class="rail__tick" aria-hidden="true"></span>
+                </header>
+                <figure class="rail__fig" aria-hidden="true">
+                  <img class="rail__img" :src="railStep3" width="1024" height="768" alt="" loading="lazy" />
+                </figure>
+                <h3 class="rail__title">引用可回溯</h3>
+                <p class="rail__text">每条结论都挂着教材页码与课标条目，点开即可核对原文，不留黑盒。</p>
+                <footer class="rail__card-foot">
+                  <span class="rail__points" aria-hidden="true"><i></i><i></i><i class="is-on"></i><i></i><i></i></span>
+                  <span class="rail__meta">STEP 03 ／ 04</span>
+                </footer>
+              </div>
             </article>
-            <span class="rail__link" aria-hidden="true"></span>
+            <div class="rail__link" data-rail-link aria-hidden="true"><i></i></div>
             <article class="rail__card">
-              <span class="rail__num">04</span>
-              <h3 class="rail__title">结构校验</h3>
-              <p class="rail__text">导出前自动体检：占位符、表头、字号与页边距，对着模板逐项校验。</p>
-              <div class="rail__art" aria-hidden="true"><i></i><i></i><i></i></div>
-              <span class="rail__meta">STEP 04 / 04</span>
+              <div class="rail__plate">
+                <header class="rail__card-head">
+                  <span class="rail__num">W·04</span>
+                  <span class="rail__tick" aria-hidden="true"></span>
+                </header>
+                <figure class="rail__fig" aria-hidden="true">
+                  <img class="rail__img" :src="railStep4" width="1024" height="768" alt="" loading="lazy" />
+                </figure>
+                <h3 class="rail__title">结构校验</h3>
+                <p class="rail__text">导出前自动体检：占位符、表头、字号与页边距，对着模板逐项校验。</p>
+                <footer class="rail__card-foot">
+                  <span class="rail__points" aria-hidden="true"><i></i><i></i><i></i><i class="is-on"></i><i></i></span>
+                  <span class="rail__meta">STEP 04 ／ 04</span>
+                </footer>
+              </div>
             </article>
-            <span class="rail__link rail__link--end" aria-hidden="true"></span>
+            <div class="rail__link" data-rail-link aria-hidden="true"><i></i></div>
+            <article class="rail__card rail__card--end">
+              <div class="rail__plate">
+                <figure class="rail__fig" aria-hidden="true">
+                  <img class="rail__img" :src="railStep5" width="1024" height="768" alt="" loading="lazy" />
+                </figure>
+                <h3 class="rail__title">成稿交付</h3>
+                <p class="rail__text">四步走完，一份可直接提交的 docx 落进你的文档库。</p>
+                <footer class="rail__card-foot">
+                  <span class="rail__points" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="is-on"></i></span>
+                  <RouterLink to="/login" class="rail__end-link">打开工作台 →</RouterLink>
+                </footer>
+              </div>
+            </article>
           </div>
         </div>
-
-        <div class="rail__progress" aria-hidden="true"><span data-rail-bar></span></div>
       </section>
 
-      <!-- 04 文档模板 · 整屏卡堆叠：上一张留在原地，下一张盖上来 -->
+      <!-- 05 核心功能 · 整屏卡堆叠：上一张留在原地，下一张盖上来 -->
       <section id="docs" data-section data-index="4" class="stack">
         <article class="stack__card">
           <div class="stack__inner">
-            <span class="stack__idx">01 / 04</span>
-            <p class="stage__eyebrow">文档模板</p>
-            <h3 class="stack__title">教案</h3>
-            <p class="stack__text">目标、重难点、活动与板书按教研组范式落位，新教师也能一次写对。</p>
+            <p class="stage__eyebrow">核心功能 · 教案复刻</p>
+            <h3 class="stack__title">教案复刻</h3>
+            <p class="stack__text">上传教研组的教案模板，说清章节与学情，AI 按原文逐处替换，版式一字不动。</p>
+            <ul class="stack__feats">
+              <li>结构锚点逐节落位：教学目标、学情、重难点、板书设计各归其位</li>
+              <li>板书设计的多行单元格逐行改写，嵌套子表也不放过</li>
+              <li>预演确认命中位置；签字与日期等敏感字段严禁编造</li>
+            </ul>
+            <p class="stack__pipe" aria-hidden="true">解析 ▸ 规划 ▸ 预演 ▸ 替换 ▸ 自检</p>
             <div class="stack__spec" aria-hidden="true">
-              <span class="stack__spec-title"></span>
-              <span style="--w: 92%"></span>
-              <span style="--w: 78%"></span>
-              <span style="--w: 86%"></span>
-              <span style="--w: 54%"></span>
+              <p class="stack__spec-meta">FEAT-01 · DOCX · 模板复刻</p>
+              <figure class="stack__spec-fig">
+                <img :src="featPlan" width="1024" height="768" alt="" loading="lazy" />
+              </figure>
+              <div class="stack__stamp">已核对 ✓</div>
             </div>
           </div>
         </article>
         <article class="stack__card">
           <div class="stack__inner">
-            <span class="stack__idx">02 / 04</span>
-            <p class="stage__eyebrow">文档模板</p>
-            <h3 class="stack__title">试卷</h3>
-            <p class="stack__text">按章节与难度自动组卷，题号、分值、答题栏严格沿用你的卷面格式。</p>
+            <p class="stage__eyebrow">核心功能 · 作业批改</p>
+            <h3 class="stack__title">作业批改</h3>
+            <p class="stack__text">整包上传作业文件夹，AI 识别学生归属，教师确认评分标准后逐人批改。</p>
+            <ul class="stack__feats">
+              <li>逐人评分、逐项扣分依据引用原文，评语面向学生本人</li>
+              <li>自动汇总成绩单：平均分、最高最低分与不及格名单</li>
+              <li>人工确认节点可中断续跑，批改过程全程流式可视化</li>
+            </ul>
+            <p class="stack__pipe" aria-hidden="true">归组 ▸ 确认 ▸ 逐人批改 ▸ 汇总</p>
             <div class="stack__spec" aria-hidden="true">
-              <span class="stack__spec-title"></span>
-              <span style="--w: 88%"></span>
-              <span style="--w: 96%"></span>
-              <span style="--w: 64%"></span>
-              <span style="--w: 80%"></span>
+              <p class="stack__spec-meta">FEAT-02 · WORKFLOW · SSE 流式</p>
+              <figure class="stack__spec-fig">
+                <img :src="featGrading" width="1024" height="768" alt="" loading="lazy" />
+              </figure>
+              <div class="stack__stamp">已核对 ✓</div>
             </div>
           </div>
         </article>
         <article class="stack__card">
           <div class="stack__inner">
-            <span class="stack__idx">03 / 04</span>
-            <p class="stage__eyebrow">文档模板</p>
-            <h3 class="stack__title">学案</h3>
-            <p class="stack__text">预习任务、课堂探究与课后巩固三段式，图例与留白位置保持不变。</p>
+            <p class="stage__eyebrow">核心功能 · 数字人课堂</p>
+            <h3 class="stack__title">数字人课堂</h3>
+            <p class="stack__text">LiveKit 实时课堂：教师屏幕与声音共享，AI 数字人语音播报讲稿，学生免登录入会。</p>
+            <ul class="stack__feats">
+              <li>屏幕共享含音频轨，学生断线可重连，状态由房间事件驱动</li>
+              <li>DataChannel 实时聊天 + 与会者在线列表，消息历史随时回看</li>
+              <li>数字人 CosyVoice 语音播报讲稿，可随时中断，发言以数字人身份入档</li>
+            </ul>
+            <p class="stack__pipe" aria-hidden="true">创建 ▸ 入会 ▸ 共享 ▸ 播报 ▸ 互动</p>
             <div class="stack__spec" aria-hidden="true">
-              <span class="stack__spec-title"></span>
-              <span style="--w: 72%"></span>
-              <span style="--w: 90%"></span>
-              <span style="--w: 58%"></span>
-              <span style="--w: 84%"></span>
-            </div>
-          </div>
-        </article>
-        <article class="stack__card">
-          <div class="stack__inner">
-            <span class="stack__idx">04 / 04</span>
-            <p class="stage__eyebrow">文档模板</p>
-            <h3 class="stack__title">教研报告</h3>
-            <p class="stack__text">把一学期的备课、批改与学情汇总成可提交的报告，数据自动成表。</p>
-            <div class="stack__spec" aria-hidden="true">
-              <span class="stack__spec-title"></span>
-              <span style="--w: 94%"></span>
-              <span style="--w: 66%"></span>
-              <span style="--w: 88%"></span>
-              <span style="--w: 48%"></span>
+              <p class="stack__spec-meta">FEAT-03 · LIVEKIT · 实时课堂</p>
+              <figure class="stack__spec-fig">
+                <img :src="featAvatar" width="1024" height="768" alt="" loading="lazy" />
+              </figure>
+              <div class="stack__stamp">已核对 ✓</div>
             </div>
           </div>
         </article>
       </section>
 
-      <!-- 05 作业智能批改 · 左右分栏 + 大数字 -->
+      <!-- 06 作业智能批改 · 左右分栏 + 大数字 + 批改工作台速写 -->
       <section id="grading" data-section data-index="5" class="stage stage--split">
+        <span class="stage__run" aria-hidden="true">Nº 06 — GRADING</span>
+        <span class="stage__ghost" data-parallax data-speed="-14" aria-hidden="true">06</span>
         <div class="stage__col">
-          <span class="stage__idx">06 / 09</span>
           <p class="stage__eyebrow">作业批改</p>
           <h2 class="stage__title">先让机器<em>跑一遍</em>。</h2>
           <p class="stage__lead">客观题自动判分，主观题给出批注建议；教师只复核、讲评与个别辅导。</p>
           <dl class="stats">
             <div class="stat">
-              <dd><span data-count="98">0</span><i>%</i></dd>
+              <dd><span data-count="99">0</span><i>%</i></dd>
               <dt>客观题判分准确率</dt>
             </div>
             <div class="stat">
-              <dd><span data-count="3">0</span><i>×</i></dd>
+              <dd><span data-count="3.8" data-decimals="1">0</span><i>×</i></dd>
               <dt>批改效率提升</dt>
             </div>
             <div class="stat">
-              <dd><span data-count="24">0</span><i>h</i></dd>
+              <dd><span data-count="5.4" data-decimals="1">0</span><i>h</i></dd>
               <dt>反馈周期压缩到</dt>
             </div>
           </dl>
+          <p data-reveal-item class="stage__margin-note">
+            <span><i class="stage__note-mark" aria-hidden="true">✓</i>客观题 · 机器初判</span>
+            <span><i class="stage__note-mark" aria-hidden="true">✎</i>主观题 · 教师终审</span>
+          </p>
         </div>
         <div class="stage__visual" aria-hidden="true">
-          <svg class="paper-art" viewBox="0 0 320 400" fill="none">
-            <rect x="24" y="16" width="248" height="348" rx="6" class="paper-art__sheet" />
-            <line x1="56" y1="72" x2="240" y2="72" class="paper-art__rule" />
-            <line x1="56" y1="104" x2="216" y2="104" class="paper-art__rule" />
-            <line x1="56" y1="136" x2="232" y2="136" class="paper-art__rule" />
-            <line x1="56" y1="168" x2="188" y2="168" class="paper-art__rule" />
-            <line x1="56" y1="220" x2="240" y2="220" class="paper-art__rule" />
-            <line x1="56" y1="252" x2="204" y2="252" class="paper-art__rule" />
-            <path d="M56 300 L96 316 L188 268" class="paper-art__check" />
-            <circle cx="232" cy="96" r="26" class="paper-art__mark" />
-            <text x="232" y="104" class="paper-art__mark-text">86</text>
+          <svg class="paper-art" viewBox="0 0 360 420" fill="none">
+            <!-- 底下一张压着的答卷 -->
+            <rect x="84" y="44" width="248" height="340" rx="6" class="paper-art__sheet paper-art__sheet--back" transform="rotate(3 208 214)" />
+            <!-- 上面正在批改的答卷 -->
+            <rect x="48" y="28" width="252" height="344" rx="6" class="paper-art__sheet" />
+            <line x1="84" y1="52" x2="84" y2="356" class="paper-art__margin" />
+            <line x1="104" y1="72" x2="196" y2="72" class="paper-art__rule" />
+            <circle cx="252" cy="86" r="27" class="paper-art__mark" />
+            <text x="252" y="94" class="paper-art__mark-text">99</text>
+            <line x1="104" y1="116" x2="272" y2="116" class="paper-art__rule" />
+            <line x1="104" y1="144" x2="240" y2="144" class="paper-art__rule" />
+            <line x1="104" y1="172" x2="272" y2="172" class="paper-art__rule" />
+            <path d="M104 210 L122 226 L158 192" class="paper-art__check" />
+            <line x1="104" y1="252" x2="272" y2="252" class="paper-art__rule" />
+            <path d="M118 288 L142 312" class="paper-art__cross" />
+            <path d="M142 288 L118 312" class="paper-art__cross" />
+            <line x1="104" y1="336" x2="232" y2="336" class="paper-art__rule" />
+            <!-- 搁在纸角的红铅笔 -->
+            <g transform="rotate(36 306 352)">
+              <rect x="298" y="278" width="16" height="8" rx="2" class="paper-art__pencil-eraser" />
+              <rect x="298" y="286" width="16" height="64" rx="2" class="paper-art__pencil" />
+              <path d="M298 350 L306 366 L314 350 Z" class="paper-art__pencil-tip" />
+            </g>
           </svg>
+          <p class="stage__visual-cap">批改工作台 · 初判已就绪，等一支红笔</p>
         </div>
       </section>
 
-      <!-- 06 知识库 · 跑马灯带 -->
+      <!-- 07 知识库 · 双向跑马灯带 -->
       <section id="knowledge" data-section data-index="6" class="stage stage--kb">
+        <span class="stage__run" aria-hidden="true">Nº 07 — KNOWLEDGE</span>
+        <span class="stage__ghost" data-parallax data-speed="-14" aria-hidden="true">07</span>
         <header class="stage__head">
-          <span class="stage__idx">07 / 09</span>
           <p class="stage__eyebrow">教学知识库</p>
           <h2 class="stage__title">每一份素材，<em>都能被找回</em>。</h2>
         </header>
+        <span class="kb__axis" aria-hidden="true">双向检索 · BIDIRECTIONAL</span>
         <div class="mq" aria-hidden="true">
           <div class="mq__row">
             <span>人教版 · 生物必修 1</span>
@@ -925,6 +1344,18 @@ function goTo(idx) {
             <span>组内教案 · 光合作用</span>
             <span>学情档案 · 高二(3)班</span>
             <span>校本习题 · 上学期</span>
+          </div>
+          <div class="mq__row mq__row--reverse">
+            <span>历年期末卷</span>
+            <span>微课脚本</span>
+            <span>实验视频索引</span>
+            <span>板书照片</span>
+            <span>错题图谱</span>
+            <span>历年期末卷</span>
+            <span>微课脚本</span>
+            <span>实验视频索引</span>
+            <span>板书照片</span>
+            <span>错题图谱</span>
           </div>
         </div>
         <ul class="stage__items">
@@ -946,52 +1377,35 @@ function goTo(idx) {
         </ul>
       </section>
 
-      <!-- 07 数据洞察 · 柱状图 + 标签 -->
-      <section id="insight" data-section data-index="7" class="stage stage--chart">
-        <header class="stage__head">
-          <span class="stage__idx">08 / 09</span>
-          <p class="stage__eyebrow">数据洞察</p>
-          <h2 class="stage__title">每一次教学，<em>都留下轨迹</em>。</h2>
-        </header>
-        <div class="chart">
-          <div class="chart__bars">
-            <span data-bar style="--h: 38%"></span>
-            <span data-bar style="--h: 62%"></span>
-            <span data-bar style="--h: 48%"></span>
-            <span data-bar style="--h: 78%"></span>
-            <span data-bar style="--h: 55%"></span>
-            <span data-bar style="--h: 90%"></span>
-            <span data-bar style="--h: 70%"></span>
-          </div>
-          <div class="chart__legend">
-            <p data-reveal-item>班级知识掌握度</p>
-            <small data-reveal-item>近 7 个教学单元 · 每周更新</small>
-          </div>
-        </div>
-        <div class="stage__tags">
-          <span data-slide-x>学情画像</span>
-          <span data-slide-x>薄弱点识别</span>
-          <span data-slide-x>分层教学建议</span>
-          <span data-slide-x>成长档案</span>
-        </div>
-      </section>
-
-      <!-- 08 开始使用 · 巨型收尾 -->
+      <!-- 08 开始使用 · 巨型收尾 · 定稿页 -->
       <section id="start" data-section data-index="8" class="stage stage--cta">
-        <span class="stage__idx">09 / 09</span>
+        <div class="stage__crop" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <div class="stage__stamp" data-fade-in aria-hidden="true">
+          <span>TRUEBUDDY</span>
+          <span>已验收 · 2026</span>
+        </div>
         <h2 class="stage__title stage__title--xl">
           <span class="section__word"><span data-reveal-word>让</span></span>
           <span class="section__word"><span data-reveal-word>每一次</span></span>
           <span class="section__word"><span data-reveal-word>教学</span></span>
           <span class="section__word"><span data-reveal-word>都被</span></span>
-          <span class="section__word"><span data-reveal-word>看见</span></span>
+          <span class="final__word">
+            <span class="section__word"><span data-reveal-word>看见</span></span>
+            <svg class="final__ring" data-fade-in viewBox="0 0 120 64" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M14 34 C16 12 96 4 108 18 C118 32 92 56 52 58 C22 60 10 48 16 32" />
+            </svg>
+          </span>
         </h2>
         <p class="stage__cta-desc" data-reveal-line>加入 TrueBuddy，开启智能教学协作的下一程。</p>
         <div class="stage__cta" data-reveal-item>
           <RouterLink to="/login" class="btn btn--primary btn--lg">立即登录</RouterLink>
           <RouterLink to="/register" class="btn btn--ghost btn--lg">注册账号</RouterLink>
         </div>
-        <p class="stage__foot" data-reveal-item><span>TrueBuddy © 2026</span><span>让教学回归创造</span></p>
+        <p class="stage__foot" data-reveal-item>
+          <span>TrueBuddy © 2026</span>
+          <span>PROOF Nº 09 · FINAL</span>
+          <span>让教学回归创造</span>
+        </p>
       </section>
     </main>
   </div>
@@ -999,17 +1413,23 @@ function goTo(idx) {
 
 <style scoped>
 /* ==========================================================================
-  Harbor · 靛蓝 · 数据密集（皮肤层）
+  Proof · 校样美学（皮肤层）
   本页只消费 src/assets/theme.css 的 --tb-* 语义变量，明暗两态由 light-dark() 派生。
 
+  设计主题：整页是一张正在被批注的「校样」——
+  红笔对勾 / 叉 / 圈注 / 插入符是贯穿各章的批注母题，
+  mono 小字充当页边批语，大号衬线承担正文宣言。
+  hero 粒子画布与 03 文档读取窗口两处既有效果保持原样。
+
   背景版式角色：全页统一为「纸面网格」（paper-grid，Token 见 theme.css）。
-  原来「基底 / 交替 / 强调」三套区块背景已全部取消——所有章节背景透明，
-  共用 .page 上同一张纸面；区块之间靠垂直节奏与内容分层，不再靠换底色。
+  所有章节背景透明，共用 .page 上同一张纸面；
+  区块之间靠垂直节奏与内容分层，不再靠换底色。
   ========================================================================== */
 .page {
   /* 面片取值（卡片 / 芯片共用），随明暗态自动换算 */
   --hv-alt-surface: light-dark(#fdfdfb, #1f232d);
   --hv-block-surface: var(--tb-bg-surface);
+  position: relative;
   color: var(--tb-text-primary);
   /* 铺在 .page 而不是某个内容容器上：fixed 顶栏所在的那条顶部区域也落在同一张纸面上，
      否则会出现「顶栏一条纯色 + 内容一段纸面」的色差断层 */
@@ -1020,12 +1440,37 @@ function goTo(idx) {
   background-size: var(--tb-paper-size) var(--tb-paper-size);
 }
 
+/* 纸张颗粒：只铺在 redesigned 章节上（hero 与 03 两处既有效果不覆盖） */
+.section::after,
+.stage--rail::after,
+.stage--split::after,
+.stage--kb::after,
+.stage--cta::after,
+.stack::after,
+.shift::after,
+.strip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background-image: var(--tb-noise);
+  opacity: calc(var(--tb-grain) * 0.7);
+}
+
+/* 选中文字 = 被荧光批注 */
+.page ::selection {
+  background: color-mix(in oklab, var(--tb-accent) 26%, transparent);
+}
+
 /* 横向裁切交给内容区 main，而不是 .page：
    .page 一旦 overflow 非 visible 就成为滚动容器，其内部的 position: sticky 顶栏
    会以 .page 的滚动区为基准，页面滚动时无法吸顶；main 不是顶栏的祖先，
-   既裁掉装饰溢出，又不影响顶栏吸顶。 */
+   既裁掉装饰溢出，又不影响顶栏吸顶。
+   用 clip 而非 hidden：hidden 会把 main 变成滚动容器，吞掉后代所有
+   position: sticky（05 堆叠卡的整屏覆盖、02 批注幕的整屏钉住都依赖 sticky）。 */
 main {
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* ===== 通用按钮 ===== */
@@ -1233,17 +1678,88 @@ main {
   100% { transform: translateY(100%); }
 }
 
-/* ===== 02 Vision ===== */
+/* ===== 02 Vision · 校样拼贴 + 批注卡 ===== */
 .vision__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--tb-size-5);
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: start;
   max-width: 1200px;
   margin: 0 auto;
   width: 100%;
 }
+
+/* 左：用纸胶带钉在桌面上的一张校样 */
+.vision__plate {
+  margin: 0;
+  position: relative;
+  will-change: transform;
+}
+.vision__frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--tb-radius-md);
+  border: 1px solid var(--tb-border);
+  background: var(--tb-bg-surface);
+  box-shadow: var(--tb-shadow-4);
+  transform: rotate(-1.6deg);
+}
+/* 两截纸胶带钉在相框上缘（挂在 plate 上，避免被相框的裁切剪掉） */
+.vision__plate::before,
+.vision__plate::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: -12px;
+  width: 88px;
+  height: 26px;
+  background: color-mix(in oklab, var(--tb-primary-soft) 72%, var(--tb-paper-bg));
+  border: 1px solid var(--tb-border);
+  box-shadow: var(--tb-shadow-1);
+}
+.vision__plate::before {
+  left: 9%;
+  transform: rotate(-5deg);
+}
+.vision__plate::after {
+  right: 9%;
+  transform: rotate(4deg);
+}
+.vision__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  /* 轻微放大裁切：吃掉画布毛边，让构图更满 */
+  transform: scale(1.16) translateY(-2%);
+}
+.vision__cap {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tb-size-3);
+  margin-top: var(--tb-size-4);
+  padding-left: var(--tb-size-4);
+  border-left: 2px solid var(--tb-accent);
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-wide);
+  color: var(--tb-text-tertiary);
+}
+.vision__cap-no {
+  color: var(--tb-accent);
+  font-weight: 700;
+}
+
+/* 右：三条批注卡，逐级右移成阶梯 */
+.vision__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-size-5);
+}
 .vision__card {
-  padding: 2.5rem var(--tb-size-6);
+  position: relative;
+  padding: 2rem var(--tb-size-6) 2rem 4.8rem;
   border-radius: var(--tb-radius-lg);
   background: var(--hv-alt-surface);
   border: 1px solid var(--tb-border);
@@ -1252,9 +1768,33 @@ main {
     transform var(--tb-dur-3) var(--tb-ease-out),
     box-shadow var(--tb-dur-3) var(--tb-ease-out);
 }
+.vision__card:nth-child(2) {
+  margin-left: clamp(0px, 4vw, 44px);
+}
+.vision__card:nth-child(3) {
+  margin-left: clamp(0px, 9vw, 96px);
+}
 .vision__card:hover {
   transform: translateY(-6px);
   box-shadow: var(--tb-shadow-3);
+}
+/* 卡左缘的红笔批注符：保留 / 协作 / 归档 */
+.vision__glyph {
+  position: absolute;
+  left: var(--tb-size-5);
+  top: 2.15rem;
+  width: 26px;
+  height: 26px;
+  stroke: var(--tb-accent);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+.vision__card-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tb-size-3);
 }
 .vision__num {
   font-family: var(--font-mono);
@@ -1264,14 +1804,353 @@ main {
   color: var(--tb-primary-text);
   letter-spacing: 0.1em;
 }
+.vision__tag {
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-wide);
+  color: var(--tb-text-tertiary);
+}
 .vision__card h3 {
-  margin: var(--tb-size-4) 0 var(--tb-size-3);
+  margin: var(--tb-size-3) 0 var(--tb-size-2);
   font-size: 1.4rem;
   font-weight: 700;
 }
 .vision__card p {
   color: var(--tb-text-secondary);
   line-height: var(--tb-leading-normal);
+}
+
+/* 画芯内视差层：相框裁切不动，画随滚动游走 */
+.vision__drift {
+  will-change: transform;
+}
+
+/* ==========================================================================
+   02 批注 B-01 · 一笔红批
+   整节 260vh，内层 sticky 钉满一屏；滚动进度由 setupShift 的时间线驱动：
+   划掉「重复」→ 圈出「创造」→ 逐条核销案头账单。
+   ========================================================================== */
+.shift {
+  --stage-inset: max(var(--tb-size-5), calc((100% - 1360px) / 2));
+  position: relative;
+  height: 260vh;
+}
+
+.shift__pin {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(24px, 5vh, 48px);
+  padding: clamp(72px, 12vh, 120px) var(--stage-inset) clamp(40px, 8vh, 72px);
+  overflow: hidden;
+}
+
+.shift__head {
+  max-width: 1360px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.shift__stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.22fr) minmax(0, 0.78fr);
+  align-items: center;
+  gap: clamp(32px, 6vw, 96px);
+  max-width: 1360px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.shift__kicker {
+  max-width: 34ch;
+  font-size: clamp(1rem, 1.5vw, 1.25rem);
+  line-height: var(--tb-leading-normal);
+  color: var(--tb-text-secondary);
+}
+
+/* 大字对：重复 → 创造 */
+.shift__swap {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: clamp(14px, 3vw, 40px);
+  margin-top: clamp(18px, 4vh, 36px);
+}
+
+.shift__word {
+  position: relative;
+  display: inline-block;
+  font-family: var(--tb-font-display);
+  font-size: clamp(3.2rem, 8.4vw, 7.2rem);
+  font-weight: var(--tb-weight-display);
+  line-height: 1.08;
+  letter-spacing: var(--tb-tracking-display);
+}
+.shift__word--old {
+  color: var(--tb-text-primary);
+}
+.shift__word--new {
+  color: var(--tb-primary-text);
+}
+
+/* 两道红斜线压在「重复」上；圈注套住「创造」 */
+.shift__strike,
+.shift__ring {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+.shift__strike {
+  left: -6%;
+  top: 10%;
+  width: 112%;
+  height: 84%;
+}
+.shift__ring {
+  left: -8%;
+  top: -14%;
+  width: 116%;
+  height: 128%;
+}
+.shift__strike path,
+.shift__ring path {
+  fill: none;
+  stroke: var(--tb-accent);
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.shift__strike path {
+  stroke-width: 5px;
+}
+.shift__ring path {
+  stroke-width: 3px;
+  opacity: 0.85;
+}
+
+/* 页边小注：划去 / 圈出 */
+.shift__note {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-wide);
+  color: var(--tb-accent);
+  white-space: nowrap;
+}
+.shift__note--cross {
+  top: -1.6em;
+  right: -1.2em;
+  transform: rotate(6deg);
+}
+.shift__note--circle {
+  bottom: -1.8em;
+  right: -0.6em;
+  transform: rotate(-4deg);
+}
+
+.shift__arrow {
+  font-family: var(--tb-font-display);
+  font-size: clamp(1.5rem, 3vw, 2.6rem);
+  color: var(--tb-accent);
+}
+
+.shift__lead {
+  margin-top: clamp(18px, 4vh, 36px);
+  font-size: clamp(1rem, 1.4vw, 1.2rem);
+  color: var(--tb-text-secondary);
+}
+
+/* 案头账单：被红笔核销的小票 */
+.receipt {
+  justify-self: end;
+  width: min(100%, 380px);
+  padding: var(--tb-size-5) var(--tb-size-5) var(--tb-size-4);
+  border: 1px dashed var(--tb-border-strong);
+  border-radius: var(--tb-radius-md);
+  background: var(--hv-alt-surface);
+  box-shadow: var(--tb-shadow-3);
+  transform: rotate(1.6deg);
+  font-family: var(--font-mono);
+}
+
+.receipt__head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--tb-size-3);
+  padding-bottom: var(--tb-size-3);
+  border-bottom: 1px dashed var(--tb-border-strong);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-wide);
+  color: var(--tb-text-tertiary);
+}
+
+.receipt__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-size-3);
+  margin-top: var(--tb-size-4);
+  list-style: none;
+}
+
+.receipt__list li {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: var(--tb-size-2);
+  font-size: var(--tb-text-xs);
+  color: var(--tb-text-secondary);
+}
+
+.receipt__leader {
+  flex: 1 1 auto;
+  align-self: center;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, var(--tb-border) 0 4px, transparent 4px 8px);
+}
+
+.receipt__list b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--tb-text-primary);
+}
+
+/* 红笔核销线：默认已划（无 JS / reduce-motion 的静态终稿），滚动时由脚本重划 */
+.receipt__cross {
+  position: absolute;
+  top: 50%;
+  left: -4px;
+  right: -4px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--tb-accent);
+  transform-origin: left center;
+}
+
+.receipt__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: var(--tb-size-4);
+  padding-top: var(--tb-size-3);
+  border-top: 1px dashed var(--tb-border-strong);
+  font-size: var(--tb-text-xs);
+  color: var(--tb-text-secondary);
+}
+
+.receipt__total b {
+  font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--tb-text-primary);
+}
+
+.receipt__mark {
+  margin-top: var(--tb-size-3);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-wide);
+  text-align: right;
+  color: var(--tb-accent);
+}
+
+/* ==========================================================================
+   工序带 · 巨字转场：两行描边衬线巨字随整页滚动反向横移
+   ========================================================================== */
+.strip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(8px, 2vh, 20px);
+  padding-block: clamp(40px, 9vh, 96px);
+  border-block: 1px solid var(--tb-border);
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.strip__row {
+  display: flex;
+  align-items: baseline;
+  gap: clamp(24px, 4vw, 64px);
+  width: max-content;
+  will-change: transform;
+}
+
+.strip__row span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.32em;
+  font-family: var(--tb-font-display);
+  font-size: clamp(3.2rem, 8.4vw, 7.6rem);
+  font-weight: var(--tb-weight-display);
+  line-height: 1.1;
+  white-space: nowrap;
+  color: transparent;
+  -webkit-text-stroke: 1.5px var(--tb-text-tertiary);
+}
+@supports not (-webkit-text-stroke: 1px #000) {
+  .strip__row span {
+    color: var(--tb-border-strong);
+  }
+}
+
+/* 字后的红勾：这一道工序已被校对 */
+.strip__row span i {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 0.2em;
+  color: var(--tb-accent);
+  -webkit-text-stroke: 0;
+}
+
+/* 第二行换成极淡的实心墨色，反向而行 */
+.strip__row--b span {
+  -webkit-text-stroke: 0;
+  color: color-mix(in oklab, var(--tb-primary) 16%, transparent);
+}
+
+/* ---------- 章节页眉与幽灵序号（红批版式的「 Running head」） ---------- */
+.stage__run {
+  position: absolute;
+  top: clamp(20px, 4vh, 36px);
+  left: var(--stage-inset);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-size-2);
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-widest);
+  color: var(--tb-text-tertiary);
+}
+.stage__run::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--tb-accent);
+  border-radius: 50%;
+}
+
+/* 大号描边数字沉在内容后面（z-index: -1 落到纸面之上、内容之下） */
+.stage__ghost {
+  position: absolute;
+  top: clamp(4px, 1.5vh, 20px);
+  right: clamp(8px, 4vw, 72px);
+  z-index: -1;
+  font-family: var(--font-mono);
+  font-size: clamp(7rem, 16vw, 15rem);
+  font-weight: 700;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1px var(--tb-border-strong);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+@supports not (-webkit-text-stroke: 1px #000) {
+  .stage__ghost {
+    color: var(--tb-border);
+    opacity: 0.4;
+  }
 }
 
 /* ==========================================================================
@@ -1354,7 +2233,8 @@ main {
   color: var(--tb-text-secondary);
 }
 
-/* ---------- 03 横向轨道 ---------- */
+/* ---------- 03 横向轨道 · 校样画廊 ----------
+   满幅钉住横移：切角卡上下交错串在一条点线轨道上 */
 .stage--rail {
   height: 100vh;
   padding-inline: 0;
@@ -1363,79 +2243,156 @@ main {
   gap: clamp(32px, 6vh, 64px);
 }
 
-.rail__head {
-  flex: 0 0 auto;
-  padding-inline: var(--stage-inset);
-}
-
-.rail__hint {
-  display: flex;
-  align-items: center;
-  gap: var(--tb-size-3);
-  margin-top: var(--tb-size-5);
+/* 右缘竖排 SCROLL 标签（karot 同款位置） */
+.rail__scroll {
+  position: absolute;
+  top: 50%;
+  right: clamp(10px, 1.6vw, 24px);
+  z-index: 2;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
   font-family: var(--font-mono);
   font-size: var(--tb-text-2xs);
-  letter-spacing: var(--tb-tracking-wide);
+  letter-spacing: var(--tb-tracking-widest);
   color: var(--tb-text-tertiary);
 }
 
-/* 一条会自己走完的细线，暗示这一节是横向的 */
-.rail__hint span {
-  position: relative;
-  width: 72px;
-  height: 1px;
-  background: var(--tb-border-strong);
-  overflow: hidden;
-}
-
-.rail__hint span::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--tb-accent);
-  transform-origin: left center;
-  animation: railHint 2.6s var(--tb-ease-inout) infinite;
-}
-
-@keyframes railHint {
-  0% {
-    transform: scaleX(0);
-  }
-  55% {
-    transform: scaleX(1);
-  }
-  100% {
-    transform: scaleX(1);
-    opacity: 0;
-  }
-}
+/* 页眉已移除：画廊独占本节，章序信息交给左上角 Running head 与右缘竖排标签 */
 
 .rail {
   position: relative;
   flex: 0 0 auto;
-  height: clamp(280px, 40vh, 400px);
+  height: clamp(400px, 54vh, 560px);
   display: flex;
   overflow: hidden;
 }
 
+/* 首屏标题板：随轨道一起行进（karot 同构） */
+.rail__intro {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--tb-size-4);
+  width: clamp(320px, 32vw, 460px);
+  padding-right: clamp(16px, 3vw, 56px);
+}
+
+.rail__intro-title {
+  font-family: var(--tb-font-display);
+  font-size: clamp(4.1rem, 6.4vw, 6.2rem);
+  font-weight: var(--tb-weight-display);
+  line-height: 1.14;
+  letter-spacing: var(--tb-tracking-display);
+  color: var(--tb-text-primary);
+}
+.rail__intro-title em {
+  font-style: normal;
+  color: var(--tb-accent);
+}
+
+
 .rail__track {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: stretch;
+  gap: clamp(28px, 3vw, 64px);
   height: 100%;
   padding-inline: var(--stage-inset);
   will-change: transform;
 }
 
+/* 折角卡：左上斜切 + 右下折角（karot 折角掩膜的同构，像一张折了一角的校样） */
 .rail__card {
+  position: relative;
   flex: 0 0 auto;
+  width: clamp(300px, 26vw, 420px);
+}
+
+.rail__plate {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  width: clamp(248px, 24vw, 360px);
-  padding: clamp(20px, 3vh, 32px);
-  border: 1px solid var(--tb-border);
-  border-radius: var(--tb-radius-xl);
+  /* 左缘加宽避开左上斜切；底部加高让内容停在右下折角上方 */
+  padding: clamp(18px, 2.6vh, 26px);
+  padding-left: calc(clamp(18px, 2.6vh, 26px) + 7%);
+  padding-bottom: calc(clamp(18px, 2.6vh, 26px) + clamp(22px, 4vh, 42px));
   background: var(--hv-alt-surface);
-  box-shadow: var(--tb-shadow-1);
+  /* drop-shadow 沿折角轮廓投出，而不是沿矩形 */
+  filter: drop-shadow(0 14px 26px color-mix(in oklab, var(--tb-brand-600) 16%, transparent));
+  clip-path: polygon(
+    7% 0,
+    100% 0,
+    100% 94%,
+    77% 94%,
+    71% 100%,
+    0 100%,
+    0 26%,
+    7% 16%
+  );
+}
+
+/* 工序连线：红笔随行进逐段描红（karot scrollline 同构） */
+.rail__link {
+  position: relative;
+  flex: 0 0 clamp(64px, 8vw, 150px);
+  align-self: center;
+  height: 2px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--tb-border-strong) 0 3px,
+    transparent 3px 10px
+  );
+}
+.rail__link i {
+  position: absolute;
+  inset: 0;
+  background: var(--tb-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+/* 进度指示已收敛到卡上的分页点与工序连线，不再有独立进度条 */
+
+/* 卡底：分页点（本卡序号点亮）+ STEP 角标 */
+.rail__card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tb-size-3);
+  margin-top: auto;
+  padding-top: var(--tb-size-3);
+}
+.rail__points {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rail__points i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tb-border-strong);
+}
+.rail__points i.is-on {
+  background: var(--tb-accent);
+}
+
+/* 卡头：工序板号 + 右上角的验收勾 */
+.rail__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--tb-size-4);
+}
+
+.rail__tick {
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-sm);
+  color: var(--tb-accent);
+}
+.rail__tick::before {
+  content: '✓';
 }
 
 /* ---------- 03 文档读取窗口：独占一屏 ---------- */
@@ -1942,33 +2899,66 @@ main {
   color: var(--tb-text-secondary);
 }
 
-/* 卡片中段的示意线条：一小段「文档」，把上下两块内容连起来 */
-.rail__art {
+/* 卡首插画：一张装裱在纸衬上的样张，弹性撑满卡身剩余高度 */
+.rail__fig {
+  flex: 1 1 auto;
+  min-height: clamp(140px, 20vh, 220px);
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: auto 0;
-  padding-block: var(--tb-size-4);
+  margin: 0 0 var(--tb-size-4);
+  padding: clamp(5px, 0.7vh, 9px);
+  border: 1px solid var(--tb-border);
+  background: var(--tb-paper-bg);
+  box-shadow: var(--tb-shadow-1);
+  overflow: hidden;
 }
-
-.rail__art i {
+.rail__img {
   display: block;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--tb-bg-sunken);
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  object-fit: cover;
+  /* 构图略上移并放大：吃掉画布毛边（含水印位） */
+  object-position: center 42%;
+  transform: scale(1.06);
+  transition: transform var(--tb-dur-4) var(--tb-ease-out);
+}
+@media (hover: hover) {
+  .rail__card:hover .rail__img {
+    transform: scale(1.12);
+  }
 }
 
-.rail__art i:nth-child(1) {
-  width: 72%;
-}
-
-.rail__art i:nth-child(2) {
-  width: 92%;
+/* 终点卡：工序走完，交付成稿（淡蓝卡面 + 入口） */
+.rail__card--end .rail__plate {
   background: var(--tb-primary-soft);
 }
-
-.rail__art i:nth-child(3) {
-  width: 54%;
+.rail__card--end .rail__title {
+  color: var(--tb-primary-text);
+}
+.rail__end-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-size-2);
+  margin-top: var(--tb-size-4);
+  padding: var(--tb-size-2) var(--tb-size-4);
+  border: 1px solid var(--tb-primary-border);
+  border-radius: var(--tb-radius-sm);
+  background: var(--tb-bg-surface);
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-wide);
+  color: var(--tb-primary-text);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background var(--tb-dur-2) var(--tb-ease-out),
+    border-color var(--tb-dur-2) var(--tb-ease-out);
+}
+@media (hover: hover) {
+  .rail__end-link:hover {
+    border-color: var(--tb-primary);
+    background: var(--tb-bg-raised);
+  }
 }
 
 .rail__meta {
@@ -1978,57 +2968,13 @@ main {
   color: var(--tb-text-tertiary);
 }
 
-/* 卡片之间的虚线连接 + 一枚菱形节点 */
-.rail__link {
-  position: relative;
-  flex: 0 0 clamp(40px, 6vw, 88px);
-  align-self: center;
-  height: 1px;
-  background: repeating-linear-gradient(
-    90deg,
-    var(--tb-border-strong) 0 6px,
-    transparent 6px 12px
-  );
-}
-
-.rail__link::after {
+/* 尾部留白：让终点卡也能推到画面中间 */
+.rail__track::after {
   content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin: -3.5px 0 0 -3.5px;
-  background: var(--tb-accent);
-  transform: rotate(45deg);
+  flex: 0 0 clamp(120px, 30vw, 520px);
 }
 
-/* 尾部留白：让最后一张卡也能推到画面中间 */
-.rail__link--end {
-  flex-basis: clamp(120px, 34vw, 560px);
-}
-
-.rail__link--end::after {
-  display: none;
-}
-
-.rail__progress {
-  position: relative;
-  height: 1px;
-  margin-inline: var(--stage-inset);
-  background: var(--tb-border);
-  overflow: hidden;
-}
-
-.rail__progress span {
-  position: absolute;
-  inset: 0;
-  background: var(--tb-accent);
-  transform: scaleX(0);
-  transform-origin: left center;
-}
-
-/* ---------- 04 整屏卡堆叠 ---------- */
+/* ---------- 05 整屏卡堆叠 · 模板样张 ---------- */
 .stack {
   position: relative;
 }
@@ -2053,17 +2999,47 @@ main {
   width: 100%;
   max-width: 1360px;
   margin: 0 auto;
-  padding-right: min(40%, 420px);
+  padding-right: min(40%, 460px);
 }
 
-.stack__idx {
+/* 每页三条真实功能点：红勾标记（亮色红笔 / 暗色蓝笔） */
+.stack__feats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-size-3);
+  margin-top: var(--tb-size-5);
+  max-width: 46ch;
+  list-style: none;
+}
+.stack__feats li {
+  position: relative;
+  padding-left: var(--tb-size-5);
+  font-size: var(--tb-text-md);
+  line-height: var(--tb-leading-normal);
+  color: var(--tb-text-secondary);
+}
+.stack__feats li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  top: 0.1em;
   font-family: var(--font-mono);
   font-size: var(--tb-text-xs);
-  letter-spacing: var(--tb-tracking-widest);
+  font-weight: 700;
+  color: var(--tb-accent);
+}
+
+/* 共享管线带：五个环节一览 */
+.stack__pipe {
+  margin-top: var(--tb-size-4);
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-wide);
   color: var(--tb-text-tertiary);
 }
 
 .stack__title {
+  position: relative;
   margin-top: var(--tb-size-4);
   font-family: var(--tb-font-display);
   font-size: clamp(3.2rem, 10vw, 8.5rem);
@@ -2074,6 +3050,7 @@ main {
 }
 
 .stack__text {
+  position: relative;
   margin-top: var(--tb-size-4);
   max-width: 38ch;
   font-size: var(--tb-text-lg);
@@ -2081,51 +3058,74 @@ main {
   color: var(--tb-text-secondary);
 }
 
-/* 右侧的模板样张：标题条 + 正文条 + 一张表，示意一页真实文档 */
+/* 右侧的模板样张：元信息 + 插画 + 红章 */
 .stack__spec {
   position: absolute;
   right: 0;
   top: 50%;
   width: min(38%, 400px);
-  transform: translateY(-50%);
+  height: clamp(340px, 46vh, 480px);
+  transform: translateY(-50%) rotate(1.2deg);
   display: flex;
   flex-direction: column;
   gap: var(--tb-size-4);
-  padding: var(--tb-size-6);
+  padding: var(--tb-size-5);
   border: 1px solid var(--tb-border);
   border-radius: var(--tb-radius-md);
   background: var(--tb-bg-surface);
-  box-shadow: var(--tb-shadow-2);
+  box-shadow: var(--tb-shadow-3);
 }
 
-.stack__spec span {
+.stack__spec-meta {
+  margin: 0;
+  padding-bottom: var(--tb-size-3);
+  border-bottom: 1px solid var(--tb-border);
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-wide);
+  color: var(--tb-text-tertiary);
+}
+
+/* 插画样张：弹性撑满元信息与红章之间 */
+.stack__spec-fig {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  border: 1px solid var(--tb-border);
+  background: var(--tb-paper-bg);
+  overflow: hidden;
+}
+.stack__spec-fig img {
   display: block;
-  width: var(--w, 100%);
-  height: 10px;
-  border-radius: var(--tb-radius-xs);
-  background: var(--tb-bg-sunken);
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 45%;
 }
 
-.stack__spec .stack__spec-title {
-  width: 52%;
-  height: 18px;
-  background: var(--tb-primary-soft);
+/* 教研组的红章：这张样张已经被核对过 */
+.stack__stamp {
+  position: absolute;
+  right: var(--tb-size-5);
+  bottom: var(--tb-size-5);
+  padding: var(--tb-size-2) var(--tb-size-4);
+  border: 2px solid var(--tb-accent);
+  border-radius: var(--tb-radius-sm);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tb-accent) 40%, transparent);
+  color: var(--tb-accent);
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-xs);
+  font-weight: 700;
+  letter-spacing: var(--tb-tracking-widest);
+  transform: rotate(-6deg);
+  opacity: 0.92;
+  user-select: none;
+}
+.stack__card:nth-child(2n) .stack__stamp {
+  transform: rotate(5deg);
 }
 
-/* 样张下半部分用重复渐变画一张表，比再多几个 div 省事 */
-.stack__spec::after {
-  content: '';
-  height: 132px;
-  border-top: 1px solid var(--tb-border-strong);
-  border-bottom: 1px solid var(--tb-border-strong);
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0 32px,
-    var(--tb-border) 32px 33px
-  );
-}
-
-/* ---------- 05 左右分栏 + 大数字 ---------- */
+/* ---------- 06 左右分栏 + 大数字 + 批改工作台 ---------- */
 .stage--split {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
@@ -2170,13 +3170,40 @@ main {
   color: var(--tb-text-tertiary);
 }
 
+/* 页边批注：分工口径像写在版心外侧的批语 */
+.stage__margin-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tb-size-2) var(--tb-size-5);
+  margin: clamp(20px, 4vh, 40px) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-wide);
+  color: var(--tb-text-tertiary);
+}
+
+.stage__note-mark {
+  font-style: normal;
+  margin-right: 6px;
+  color: var(--tb-accent);
+}
+
 .stage__visual {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--tb-size-3);
+}
+
+.stage__visual-cap {
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-wide);
+  color: var(--tb-text-tertiary);
 }
 
 .paper-art {
-  width: min(100%, 320px);
+  width: min(100%, 380px);
   height: auto;
   color: var(--tb-text-tertiary);
 }
@@ -2187,10 +3214,22 @@ main {
   stroke-width: 1.5;
 }
 
+.paper-art__sheet--back {
+  fill: var(--tb-bg-raised);
+  stroke: var(--tb-border);
+}
+
 .paper-art__rule {
   stroke: var(--tb-border);
   stroke-width: 2;
   stroke-linecap: round;
+}
+
+/* 红笔批改痕迹：勾 / 叉 / 圈分 / 批注线，统一一支笔的颜色 */
+.paper-art__margin {
+  stroke: var(--tb-accent);
+  stroke-width: 1;
+  opacity: 0.5;
 }
 
 .paper-art__check {
@@ -2201,22 +3240,43 @@ main {
   fill: none;
 }
 
+.paper-art__cross {
+  stroke: var(--tb-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
 .paper-art__mark {
   fill: none;
-  stroke: var(--tb-warning);
+  stroke: var(--tb-accent);
   stroke-width: 2;
 }
 
 .paper-art__mark-text {
-  fill: var(--tb-warning);
+  fill: var(--tb-accent);
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: 20px;
   text-anchor: middle;
 }
 
-/* ---------- 06 跑马灯 ---------- */
+.paper-art__pencil {
+  fill: var(--tb-primary);
+}
+
+.paper-art__pencil-tip {
+  fill: var(--tb-border-strong);
+}
+
+.paper-art__pencil-eraser {
+  fill: var(--tb-accent);
+}
+
+/* ---------- 07 知识库 · 双向跑马灯 ---------- */
 .mq {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-size-3);
   margin-inline: calc(-1 * var(--stage-inset));
   padding-block: var(--tb-size-4);
   border-block: 1px solid var(--tb-border);
@@ -2227,7 +3287,12 @@ main {
 .mq__row {
   display: flex;
   width: max-content;
-  animation: mqScroll 38s linear infinite;
+  animation: mqScroll 42s linear infinite;
+}
+
+/* 第二行反向对开：两条来源带相向而行 */
+.mq__row--reverse {
+  animation-direction: reverse;
 }
 
 /* 每块右移一个间距：整行平移 50% 正好与第二份首尾相接，不会跳 */
@@ -2241,10 +3306,25 @@ main {
   white-space: nowrap;
 }
 
-@keyframes mqScroll {
-  to {
-    transform: translateX(-50%);
-  }
+.mq__row--reverse span {
+  background: var(--tb-bg-raised);
+  color: var(--tb-text-tertiary);
+}
+
+/* 跑马灯左缘的竖排注记，垫一小块纸面保证可读 */
+.kb__axis {
+  position: absolute;
+  left: max(10px, calc(var(--stage-inset) / 2));
+  top: 50%;
+  z-index: 1;
+  transform: translateY(-50%);
+  padding: var(--tb-size-3) 0;
+  background: var(--tb-paper-bg);
+  writing-mode: vertical-rl;
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  letter-spacing: var(--tb-tracking-widest);
+  color: var(--tb-text-tertiary);
 }
 
 .stage__items {
@@ -2252,6 +3332,19 @@ main {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--tb-size-6);
   list-style: none;
+}
+
+/* 条目改成批注式：一条顶线压住，悬停时线变红 */
+.stage__items li {
+  padding-top: var(--tb-size-4);
+  border-top: 2px solid var(--tb-border-strong);
+  transition: border-color var(--tb-dur-3) var(--tb-ease-out);
+}
+
+@media (hover: hover) {
+  .stage__items li:hover {
+    border-top-color: var(--tb-accent);
+  }
 }
 
 .stage__items-num {
@@ -2274,76 +3367,7 @@ main {
   color: var(--tb-text-secondary);
 }
 
-/* ---------- 07 柱状图 ---------- */
-.chart {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 200px;
-  align-items: end;
-  gap: var(--tb-size-6);
-  padding-bottom: var(--tb-size-4);
-  border-bottom: 1px solid var(--tb-border-strong);
-}
-
-.chart__bars {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: clamp(12px, 2.4vw, 40px);
-  height: clamp(220px, 38vh, 360px);
-}
-
-.chart__bars span {
-  flex: 0 1 84px;
-  max-width: 84px;
-  height: var(--h);
-  border-radius: var(--tb-radius-xs) var(--tb-radius-xs) 0 0;
-  background: var(--tb-border-strong);
-  transform-origin: bottom center;
-}
-
-/* 最高的一根用强调色，作为读数锚点 */
-.chart__bars span:nth-child(6) {
-  background: var(--tb-accent);
-}
-
-.chart__legend p {
-  font-size: 1.05rem;
-  font-weight: 600;
-}
-
-.chart__legend small {
-  display: block;
-  margin-top: var(--tb-size-1);
-  font-family: var(--font-mono);
-  font-size: var(--tb-text-2xs);
-  letter-spacing: var(--tb-tracking-wide);
-  color: var(--tb-text-tertiary);
-}
-
-.stage__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--tb-size-3);
-  margin-top: var(--tb-size-2);
-}
-
-.stage__tags span {
-  padding: var(--tb-size-3) var(--tb-size-5);
-  border: 1px solid var(--tb-border);
-  border-radius: var(--tb-radius-full);
-  font-size: var(--tb-text-md);
-  color: var(--tb-text-secondary);
-  transition: border-color var(--tb-dur-2) var(--tb-ease-out);
-}
-
-@media (hover: hover) {
-  .stage__tags span:hover {
-    border-color: var(--tb-accent);
-    color: var(--tb-text-primary);
-  }
-}
-
-/* ---------- 08 收尾 ---------- */
+/* ---------- 08 收尾 · 定稿页 ---------- */
 .stage--cta {
   align-items: center;
   text-align: center;
@@ -2353,6 +3377,89 @@ main {
 .stage__title--xl {
   font-size: clamp(2.4rem, 6.4vw, 5.4rem);
   line-height: 1;
+}
+
+/* 四角裁切线：这是最终定稿的那一版 */
+.stage__crop {
+  position: absolute;
+  inset: clamp(16px, 3vh, 28px);
+  pointer-events: none;
+}
+.stage__crop i {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 0 solid var(--tb-border-strong);
+}
+.stage__crop i:nth-child(1) {
+  left: 0;
+  top: 0;
+  border-left-width: 1px;
+  border-top-width: 1px;
+}
+.stage__crop i:nth-child(2) {
+  right: 0;
+  top: 0;
+  border-right-width: 1px;
+  border-top-width: 1px;
+}
+.stage__crop i:nth-child(3) {
+  left: 0;
+  bottom: 0;
+  border-left-width: 1px;
+  border-bottom-width: 1px;
+}
+.stage__crop i:nth-child(4) {
+  right: 0;
+  bottom: 0;
+  border-right-width: 1px;
+  border-bottom-width: 1px;
+}
+
+/* 验收章：随章节入场盖下来 */
+.stage__stamp {
+  position: absolute;
+  right: clamp(6%, 12vw, 18%);
+  top: 22%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--tb-size-3) var(--tb-size-5);
+  border: 2px solid var(--tb-accent);
+  border-radius: var(--tb-radius-md);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tb-accent) 40%, transparent);
+  color: var(--tb-accent);
+  font-family: var(--font-mono);
+  font-size: var(--tb-text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tb-tracking-widest);
+  transform: rotate(-7deg);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* 被红笔圈出的「看见」：圈在手绘路径上，不随逐词动画裁切 */
+.final__word {
+  position: relative;
+  display: inline-block;
+}
+.final__ring {
+  position: absolute;
+  left: -10%;
+  top: -16%;
+  width: 120%;
+  height: 132%;
+  overflow: visible;
+  pointer-events: none;
+}
+.final__ring path {
+  fill: none;
+  stroke: var(--tb-accent);
+  stroke-width: 3px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
 }
 
 .stage__cta-desc {
@@ -2398,6 +3505,9 @@ main {
   .stack {
     --stage-inset: var(--tb-size-5);
   }
+  .shift {
+    --stage-inset: var(--tb-size-5);
+  }
   /* 文档窗口：右栏收窄，补充段落让位，窗口不至于拉成两三屏 */
   .docgen__body {
     grid-template-columns: minmax(0, 1fr) 280px;
@@ -2405,15 +3515,32 @@ main {
   .docgen__para--wide {
     display: none;
   }
+  /* 宣言区：单栏，拼贴提到批注卡前面，阶梯取消 */
+  .vision__grid {
+    grid-template-columns: 1fr;
+    gap: var(--tb-size-6);
+  }
+  .vision__plate {
+    order: -1;
+    max-width: 520px;
+    margin-inline: auto;
+    width: 100%;
+  }
+  .vision__card:nth-child(2),
+  .vision__card:nth-child(3) {
+    margin-left: 0;
+  }
   .stage--split {
     grid-template-columns: 1fr;
   }
   .stage__visual {
     display: none;
   }
-  .chart {
-    grid-template-columns: 1fr;
-    gap: var(--tb-size-4);
+  .kb__axis {
+    display: none;
+  }
+  .rail__scroll {
+    display: none;
   }
   .stage__items {
     grid-template-columns: 1fr;
@@ -2428,6 +3555,44 @@ main {
   }
   .stage {
     padding-block: clamp(56px, 10vh, 96px);
+  }
+  /* 批注幕：单栏、小票居中，页边小注收起 */
+  .shift {
+    --stage-inset: var(--tb-size-5);
+    height: 220vh;
+  }
+  .shift__pin {
+    padding-block: 88px var(--tb-size-6);
+  }
+  .shift__stage {
+    grid-template-columns: 1fr;
+    align-content: center;
+    gap: var(--tb-size-5);
+  }
+  .shift__word {
+    font-size: clamp(2.6rem, 11vw, 4rem);
+  }
+  .shift__note {
+    display: none;
+  }
+  .receipt {
+    justify-self: center;
+    width: min(100%, 360px);
+    transform: rotate(0.8deg);
+  }
+  .receipt__list li {
+    font-size: var(--tb-text-2xs);
+  }
+  .receipt__total b {
+    font-size: 1.2rem;
+  }
+  /* 页眉与幽灵序号在窄屏让位 */
+  .stage__run,
+  .stage__ghost {
+    display: none;
+  }
+  .strip__row span {
+    font-size: clamp(2.4rem, 10.5vw, 4rem);
   }
   /* 轨道不再 pin，退回原生横滑 + 吸附 */
   .stage--rail {
@@ -2447,6 +3612,9 @@ main {
   .rail__track {
     height: auto;
     padding-inline: var(--stage-inset);
+  }
+  .rail__intro {
+    width: 78vw;
   }
   .rail__card {
     width: 78vw;
@@ -2479,21 +3647,13 @@ main {
   .docgen__toggle-text {
     display: none;
   }
-  .rail__link {
-    flex-basis: var(--tb-size-6);
-  }
-  .rail__link--end {
-    flex-basis: var(--tb-size-5);
-  }
-  .rail__progress {
-    display: none;
-  }
   .stack__inner {
     padding-right: 0;
   }
   .stack__spec {
     position: static;
     width: 100%;
+    height: clamp(300px, 44vh, 400px);
     margin-top: var(--tb-size-5);
     transform: none;
   }
@@ -2504,8 +3664,11 @@ main {
   .stage__title {
     font-size: clamp(1.9rem, 7.2vw, 2.6rem);
   }
-  .chart__bars {
-    height: clamp(160px, 28vh, 220px);
+  /* 收尾区：验收章收回正文流，跟在标题上方 */
+  .stage__stamp {
+    position: static;
+    margin-inline: auto;
+    transform: rotate(-4deg);
   }
 }
 
@@ -2516,10 +3679,9 @@ main {
   }
 }
 
-/* 矮视口：横向轨道的说明文字让位，保证 100vh 内放得下 */
+/* 矮视口：插画让位，保证 100vh 内放得下 */
 @media (max-height: 720px) {
-  .rail__head .stage__lead,
-  .rail__hint {
+  .rail__fig {
     display: none;
   }
 }
@@ -2527,13 +3689,13 @@ main {
    常驻装饰动画静止（内容仍可见），交互过渡取消；
    滚动编排动效由 GSAP 承担，见 composables/useSmoothScroll.js 与 09-样式规范.md §6.2 */
 @media (prefers-reduced-motion: reduce) {
-  .rail__hint span::after,
   .mq__row,
   .docgen__status.is-scanning i {
     animation: none;
   }
   .btn,
   .vision__card,
+  .stage__items li,
   .docgen__mark { transition: none; }
   .docgen__prose :deep(.docgen__w) { transition: none; }
 }
