@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onBeforeUnmount, nextTick, ref, computed } from 'vue'
+import { onMounted, onBeforeUnmount, nextTick, ref, reactive, computed } from 'vue'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { CircleCheck, Refresh, VideoPause, VideoPlay } from '@element-plus/icons-vue'
@@ -20,6 +20,35 @@ gsap.registerPlugin(ScrollTrigger)
 
 const { refresh, scrollTo } = useSmoothScroll()
 
+/* ==========================================================================
+   06 / 07 常见疑问（FAQ 版式，参考 karot questions 区块）
+   每条问答分「常显」与「可折叠」两组，中间用一条批注线隔开；
+   可折叠行点击开合，展开时答案字符逐个浮现（CSS 过渡 + --i 延迟）。
+   ========================================================================== */
+const generalFaqs = [
+  { q: 'TrueBuddy 是什么？', a: '覆盖备课、课堂、批改与学情的全流程 AI 教学工作流平台。' },
+  { q: '怎么开始？', a: '注册账号进入工作台，跟着引导三步即可创建你的第一份备课任务。' },
+]
+const generalFaqsMore = [
+  { q: '我可以通过 TrueBuddy 处理我的日常任务吗？', a: '可以，备课、批改、学情分析等日常教学任务都能在 TrueBuddy 里完成。' },
+  { q: '如果我遇到困难怎么办？', a: '随时联系我们的支持团队，我们会第一时间帮你处理。' },
+  { q: '我应该怎么关注你们？', a: '关注官网动态与社区渠道，新功能与教程都会第一时间同步。' },
+]
+
+/** 当前展开的可折叠行：组名 → 组内索引集合（reactive Set，add/delete 即响应） */
+const openSets = { general: reactive(new Set()) }
+
+function toggleFaq(group, idx) {
+  const set = openSets[group]
+  if (set.has(idx)) set.delete(idx)
+  else set.add(idx)
+}
+
+/** 问答文案逐字拆成 span：中文逐字、空格换成不塌陷的 nbsp */
+function splitChars(text) {
+  return Array.from(text).map((ch) => (ch === ' ' ? '\u00A0' : ch))
+}
+
 const sections = [
   { id: 'hero', label: '首页', en: 'HOME' },
   { id: 'shift', label: '转折', en: 'SHIFT' },
@@ -27,8 +56,7 @@ const sections = [
   { id: 'ai', label: 'AI 助手', en: 'ASSISTANT' },
   { id: 'rail', label: 'AI 工作流', en: 'WORKFLOW' },
   { id: 'docs', label: '核心功能', en: 'FEATURES' },
-  { id: 'grading', label: '作业批改', en: 'GRADING' },
-  { id: 'knowledge', label: '知识库', en: 'KNOWLEDGE' },
+  { id: 'faq', label: '常见疑问', en: 'FAQ' },
   { id: 'start', label: '开始使用', en: 'START' },
 ]
 
@@ -49,6 +77,7 @@ onMounted(async () => {
   setupShift()
   setupStrip()
   setupMagnet()
+  setupFaq()
   refresh()
 })
 
@@ -471,6 +500,49 @@ function setupMagnet() {
     btn.addEventListener('mousemove', onMove)
     btn.addEventListener('mouseleave', onLeave)
     magnetBinds.push([btn, onMove, onLeave])
+  })
+}
+
+/* ==========================================================================
+   06 / 07 FAQ · 滚动编排
+   标题与问答行随滚动进场/退场；常显问答的字符随滚动进度逐个点亮
+   （可折叠答案的显隐由点击驱动，交给 CSS 过渡，不与滚动时间线抢同一元素）。
+   ========================================================================== */
+function setupFaq() {
+  document.querySelectorAll('.stage--faq').forEach((sec) => {
+    const tl = gsap.timeline({
+      defaults: { ease: 'power3.out' },
+      scrollTrigger: {
+        trigger: sec,
+        start: 'top bottom',
+        end: 'bottom top',
+        scrub: 1,
+      },
+    })
+    track(tl.scrollTrigger)
+
+    // 副标 + 两行大标题：先上浮进场，滚过中线后整块上推退场
+    const heads = sec.querySelectorAll('[data-faq-head]')
+    tl.fromTo(heads, { y: 48, opacity: 0 }, { y: 0, opacity: 1, duration: 0.55, stagger: 0.14 }, 0)
+    tl.to(heads, { y: -56, opacity: 0.2, duration: 0.9, ease: 'power1.in' }, 1.6)
+
+    // 问答行：逐条错位进场
+    const rows = sec.querySelectorAll('[data-faq-row]')
+    tl.fromTo(rows, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45, stagger: 0.13 }, 0.3)
+    tl.to(rows, { y: -28, opacity: 0.35, duration: 0.9, ease: 'power1.in' }, 1.6)
+
+    // 常显问答文字：字符由浅到深，随滚动点亮（类似 03 的读线效果）
+    const chars = sec.querySelectorAll('[data-faq-chars] .qa__ch')
+    tl.fromTo(chars, { opacity: 0.12 }, { opacity: 1, duration: 0.03, stagger: 0.004, ease: 'none' }, 0.35)
+
+    // 提问侧图标：缩放浮现
+    const icons = sec.querySelectorAll('[data-faq-icon]')
+    tl.fromTo(
+      icons,
+      { opacity: 0, scale: 0.7, y: 14 },
+      { opacity: 1, scale: 1, y: 0, duration: 0.4, stagger: 0.08 },
+      0.5,
+    )
   })
 }
 
@@ -1103,7 +1175,6 @@ function goTo(idx) {
       <!-- 04 AI 工作流 · 横向轨道：滚到此后整条轨道横移（参考 karot 的 sticky 横滑） -->
       <section id="rail" data-section data-index="3" class="stage stage--rail">
         <span class="stage__run" aria-hidden="true">Nº 04 — WORKFLOW</span>
-        <span class="stage__ghost" aria-hidden="true">04</span>
         <span class="rail__scroll" aria-hidden="true">SCROLL — 校样画廊</span>
 
         <div class="rail" data-rail>
@@ -1267,114 +1338,123 @@ function goTo(idx) {
         </article>
       </section>
 
-      <!-- 06 作业智能批改 · 左右分栏 + 大数字 + 批改工作台速写 -->
-      <section id="grading" data-section data-index="5" class="stage stage--split">
-        <span class="stage__run" aria-hidden="true">Nº 06 — GRADING</span>
-        <span class="stage__ghost" data-parallax data-speed="-14" aria-hidden="true">06</span>
-        <div class="stage__col">
-          <p class="stage__eyebrow">作业批改</p>
-          <h2 class="stage__title">先让机器<em>跑一遍</em>。</h2>
-          <p class="stage__lead">客观题自动判分，主观题给出批注建议；教师只复核、讲评与个别辅导。</p>
-          <dl class="stats">
-            <div class="stat">
-              <dd><span data-count="99">0</span><i>%</i></dd>
-              <dt>客观题判分准确率</dt>
-            </div>
-            <div class="stat">
-              <dd><span data-count="3.8" data-decimals="1">0</span><i>×</i></dd>
-              <dt>批改效率提升</dt>
-            </div>
-            <div class="stat">
-              <dd><span data-count="5.4" data-decimals="1">0</span><i>h</i></dd>
-              <dt>反馈周期压缩到</dt>
-            </div>
-          </dl>
-          <p data-reveal-item class="stage__margin-note">
-            <span><i class="stage__note-mark" aria-hidden="true">✓</i>客观题 · 机器初判</span>
-            <span><i class="stage__note-mark" aria-hidden="true">✎</i>主观题 · 教师终审</span>
-          </p>
-        </div>
-        <div class="stage__visual" aria-hidden="true">
-          <svg class="paper-art" viewBox="0 0 360 420" fill="none">
-            <!-- 底下一张压着的答卷 -->
-            <rect x="84" y="44" width="248" height="340" rx="6" class="paper-art__sheet paper-art__sheet--back" transform="rotate(3 208 214)" />
-            <!-- 上面正在批改的答卷 -->
-            <rect x="48" y="28" width="252" height="344" rx="6" class="paper-art__sheet" />
-            <line x1="84" y1="52" x2="84" y2="356" class="paper-art__margin" />
-            <line x1="104" y1="72" x2="196" y2="72" class="paper-art__rule" />
-            <circle cx="252" cy="86" r="27" class="paper-art__mark" />
-            <text x="252" y="94" class="paper-art__mark-text">99</text>
-            <line x1="104" y1="116" x2="272" y2="116" class="paper-art__rule" />
-            <line x1="104" y1="144" x2="240" y2="144" class="paper-art__rule" />
-            <line x1="104" y1="172" x2="272" y2="172" class="paper-art__rule" />
-            <path d="M104 210 L122 226 L158 192" class="paper-art__check" />
-            <line x1="104" y1="252" x2="272" y2="252" class="paper-art__rule" />
-            <path d="M118 288 L142 312" class="paper-art__cross" />
-            <path d="M142 288 L118 312" class="paper-art__cross" />
-            <line x1="104" y1="336" x2="232" y2="336" class="paper-art__rule" />
-            <!-- 搁在纸角的红铅笔 -->
-            <g transform="rotate(36 306 352)">
-              <rect x="298" y="278" width="16" height="8" rx="2" class="paper-art__pencil-eraser" />
-              <rect x="298" y="286" width="16" height="64" rx="2" class="paper-art__pencil" />
-              <path d="M298 350 L306 366 L314 350 Z" class="paper-art__pencil-tip" />
-            </g>
-          </svg>
-          <p class="stage__visual-cap">批改工作台 · 初判已就绪，等一支红笔</p>
-        </div>
-      </section>
-
-      <!-- 07 知识库 · 双向跑马灯带 -->
-      <section id="knowledge" data-section data-index="6" class="stage stage--kb">
-        <span class="stage__run" aria-hidden="true">Nº 07 — KNOWLEDGE</span>
-        <span class="stage__ghost" data-parallax data-speed="-14" aria-hidden="true">07</span>
-        <header class="stage__head">
-          <p class="stage__eyebrow">教学知识库</p>
-          <h2 class="stage__title">每一份素材，<em>都能被找回</em>。</h2>
-        </header>
-        <span class="kb__axis" aria-hidden="true">双向检索 · BIDIRECTIONAL</span>
-        <div class="mq" aria-hidden="true">
-          <div class="mq__row">
-            <span>人教版 · 生物必修 1</span>
-            <span>课标 · 细胞代谢</span>
-            <span>组内教案 · 光合作用</span>
-            <span>学情档案 · 高二(3)班</span>
-            <span>校本习题 · 上学期</span>
-            <span>人教版 · 生物必修 1</span>
-            <span>课标 · 细胞代谢</span>
-            <span>组内教案 · 光合作用</span>
-            <span>学情档案 · 高二(3)班</span>
-            <span>校本习题 · 上学期</span>
+      <!-- 07 常见疑问 · FAQ：站点级通用问答收尾 -->
+      <section id="faq" data-section data-index="6" class="stage stage--faq">
+        <span class="stage__run" aria-hidden="true">Nº 07 — FAQ</span>
+        <div class="faq__content" data-faq-head>
+          <div class="faq__subtitle">
+            <svg class="faq__arrow faq__arrow--left" viewBox="0 0 310 250" aria-hidden="true">
+              <path d="M301,129h-77.5c-2.2,0-4-1.8-4-4v0c0-2.2,1.8-4,4-4H301c2.2,0,4,1.8,4,4v0C305,127.2,303.2,129,301,129z" />
+              <path d="M227.5,125c0,2.2-1.8,4-4,4c-2.2,0-4-1.8-4-4c0-48.8-39.7-88.5-88.5-88.5H72.3L57.2,62.7H22.4L5,32.5L22.4,2.4h34.8l15.1,26.1H131C184.2,28.5,227.5,71.8,227.5,125z" />
+              <path d="M227.5,125c0,53.2-43.3,96.5-96.5,96.5H72.3l-15.1,26.2H22.4L5,217.5l17.4-30.1h34.8l15.1,26.1H131c48.8,0,88.5-39.7,88.5-88.5c0-2.2,1.8-4,4-4C225.7,121,227.5,122.8,227.5,125z" />
+            </svg>
+            <p>You Ask <em>→</em> We Answer</p>
+            <svg class="faq__arrow" viewBox="0 0 310 250" aria-hidden="true">
+              <path d="M301,129h-77.5c-2.2,0-4-1.8-4-4v0c0-2.2,1.8-4,4-4H301c2.2,0,4,1.8,4,4v0C305,127.2,303.2,129,301,129z" />
+              <path d="M227.5,125c0,2.2-1.8,4-4,4c-2.2,0-4-1.8-4-4c0-48.8-39.7-88.5-88.5-88.5H72.3L57.2,62.7H22.4L5,32.5L22.4,2.4h34.8l15.1,26.1H131C184.2,28.5,227.5,71.8,227.5,125z" />
+              <path d="M227.5,125c0,53.2-43.3,96.5-96.5,96.5H72.3l-15.1,26.2H22.4L5,217.5l17.4-30.1h34.8l15.1,26.1H131c48.8,0,88.5-39.7,88.5-88.5c0-2.2,1.8-4,4-4C225.7,121,227.5,122.8,227.5,125z" />
+            </svg>
           </div>
-          <div class="mq__row mq__row--reverse">
-            <span>历年期末卷</span>
-            <span>微课脚本</span>
-            <span>实验视频索引</span>
-            <span>板书照片</span>
-            <span>错题图谱</span>
-            <span>历年期末卷</span>
-            <span>微课脚本</span>
-            <span>实验视频索引</span>
-            <span>板书照片</span>
-            <span>错题图谱</span>
+          <h2 class="faq__title"><span>Frequently Asked</span><span class="faq__title-accent">Questions</span></h2>
+        </div>
+        <div class="faq__main">
+          <!-- 常显问答：直接亮出（问题靠右、答案靠左的聊天气泡流） -->
+          <div v-for="(item, i) in generalFaqs" :key="`f0-${i}`" class="qa" data-faq-row>
+            <div class="qa__row qa__row--q qa__question">
+              <div class="qa__bubble qa__bubble--q" data-clip="left">
+                <p class="qa__text" data-faq-chars>
+                  <font>
+                    <span v-for="(ch, ci) in splitChars(item.q)" :key="ci" class="qa__ch">{{ ch }}</span>
+                  </font>
+                </p>
+              </div>
+              <svg class="qa__icon qa__icon--ask" viewBox="0 0 500 500" data-faq-icon aria-hidden="true">
+                <path d="M466.53,138.66c0-0.02,0-0.03-0.01-0.04c-2.41-7.65-6.5-14.7-11.96-20.59c-2.8-2.8-5.99-5.25-9.5-7.28l-172-99.3c-3.54-2.05-7.3-3.6-11.16-4.63c-0.01-0.01-0.03-0.01-0.05-0.01c-7.79-1.74-15.9-1.74-23.7,0c-0.02,0-0.04,0-0.05,0.01c-3.86,1.03-7.62,2.57-11.16,4.63l-172,99.3c-3.51,2.03-6.7,4.48-9.5,7.28c-5.46,5.89-9.55,12.94-11.96,20.59c-0.01,0.01-0.01,0.02-0.01,0.04c-1.04,3.88-1.59,7.92-1.59,12.04v198.61c0,4.12,0.55,8.16,1.59,12.04c0,0.01,0,0.03,0.01,0.04c2.4,7.6,6.44,14.6,11.83,20.46c0.02,0.02,0.03,0.04,0.05,0.05c3.66,3.97,7.94,7.43,12.73,10.19l164.82,95.16c8.35,4.83,17.72,7.24,27.1,7.24c9.37,0,18.74-2.41,27.1-7.24l164.82-95.16c4.79-2.77,9.07-6.22,12.73-10.19c0.02-0.01,0.03-0.03,0.05-0.05c5.38-5.86,9.43-12.86,11.83-20.46c0.01-0.01,0.01-0.03,0.01-0.04c1.04-3.88,1.59-7.93,1.59-12.04V150.7C468.13,146.57,467.58,142.54,466.53,138.66z M248.74,115.49c40.46,0,73.25,32.8,73.25,73.24c0,40.46-32.8,73.25-73.25,73.25c-40.45,0-73.24-32.8-73.24-73.25C175.5,148.29,208.3,115.49,248.74,115.49z M366.61,412.49l-99.5,57.45c-10.55,6.09-23.67,6.09-34.22,0l-99.5-57.45v-25.92c0-57.16,52.21-103.5,116.61-103.5s116.61,46.34,116.61,103.5V412.49z" />
+              </svg>
+            </div>
+            <div class="qa__row qa__row--a">
+              <div class="qa__answer">
+                <div class="qa__answer-clip">
+                  <div class="qa__answer-inner">
+                    <svg class="qa__icon qa__icon--ans" viewBox="0 0 120 120" data-faq-icon aria-hidden="true">
+                      <rect x="24" y="37" width="16" height="62" fill="currentColor" />
+                      <line x1="24" y1="44" x2="40" y2="44" stroke="var(--hv-alt-surface)" stroke-width="3" />
+                      <rect x="46" y="22" width="16" height="74" fill="none" stroke="currentColor" stroke-width="6" />
+                      <rect x="68" y="47" width="16" height="52" fill="currentColor" />
+                      <line x1="67" y1="55" x2="85" y2="55" stroke="var(--hv-alt-surface)" stroke-width="3" />
+                      <rect x="90" y="28" width="16" height="68" fill="none" stroke="currentColor" stroke-width="6" />
+                    </svg>
+                    <div class="qa__bubble qa__bubble--a">
+                      <p class="qa__text" data-faq-chars>
+                        <font>
+                          <span v-for="(ch, ci) in splitChars(item.a)" :key="ci" class="qa__ch">{{ ch }}</span>
+                        </font>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- 批注线：中间这句像写在版心外的页边批语 -->
+          <div class="qa__line" data-faq-row>
+            <i aria-hidden="true"></i>
+            <p>还有更多疑问 · AND MORE</p>
+            <i aria-hidden="true"></i>
+          </div>
+          <!-- 可折叠问答：点击问题气泡开合，答案气泡从下方展开、字符逐个浮现 -->
+          <div
+            v-for="(item, i) in generalFaqsMore"
+            :key="`f1-${i}`"
+            class="qa qa--fold"
+            :class="{ 'is-open': openSets.general.has(i) }"
+            data-faq-row
+          >
+            <div
+              class="qa__row qa__row--q qa__question"
+              role="button"
+              tabindex="0"
+              :aria-expanded="openSets.general.has(i)"
+              @click="toggleFaq('general', i)"
+              @keydown.enter.prevent="toggleFaq('general', i)"
+              @keydown.space.prevent="toggleFaq('general', i)"
+            >
+              <div class="qa__bubble qa__bubble--q" data-clip="left">
+                <p class="qa__text" data-faq-chars>
+                  <font>
+                    <span v-for="(ch, ci) in splitChars(item.q)" :key="ci" class="qa__ch">{{ ch }}</span>
+                  </font>
+                </p>
+              </div>
+              <svg class="qa__icon qa__icon--ask" viewBox="0 0 500 500" data-faq-icon aria-hidden="true">
+                <path d="M466.53,138.66c0-0.02,0-0.03-0.01-0.04c-2.41-7.65-6.5-14.7-11.96-20.59c-2.8-2.8-5.99-5.25-9.5-7.28l-172-99.3c-3.54-2.05-7.3-3.6-11.16-4.63c-0.01-0.01-0.03-0.01-0.05-0.01c-7.79-1.74-15.9-1.74-23.7,0c-0.02,0-0.04,0-0.05,0.01c-3.86,1.03-7.62,2.57-11.16,4.63l-172,99.3c-3.51,2.03-6.7,4.48-9.5,7.28c-5.46,5.89-9.55,12.94-11.96,20.59c-0.01,0.01-0.01,0.02-0.01,0.04c-1.04,3.88-1.59,7.92-1.59,12.04v198.61c0,4.12,0.55,8.16,1.59,12.04c0,0.01,0,0.03,0.01,0.04c2.4,7.6,6.44,14.6,11.83,20.46c0.02,0.02,0.03,0.04,0.05,0.05c3.66,3.97,7.94,7.43,12.73,10.19l164.82,95.16c8.35,4.83,17.72,7.24,27.1,7.24c9.37,0,18.74-2.41,27.1-7.24l164.82-95.16c4.79-2.77,9.07-6.22,12.73-10.19c0.02-0.01,0.03-0.03,0.05-0.05c5.38-5.86,9.43-12.86,11.83-20.46c0.01-0.01,0.01-0.03,0.01-0.04c1.04-3.88,1.59-7.93,1.59-12.04V150.7C468.13,146.57,467.58,142.54,466.53,138.66z M248.74,115.49c40.46,0,73.25,32.8,73.25,73.24c0,40.46-32.8,73.25-73.25,73.25c-40.45,0-73.24-32.8-73.24-73.25C175.5,148.29,208.3,115.49,248.74,115.49z M366.61,412.49l-99.5,57.45c-10.55,6.09-23.67,6.09-34.22,0l-99.5-57.45v-25.92c0-57.16,52.21-103.5,116.61-103.5s116.61,46.34,116.61,103.5V412.49z" />
+              </svg>
+            </div>
+            <div class="qa__row qa__row--a">
+              <div class="qa__answer">
+                <div class="qa__answer-clip">
+                  <div class="qa__answer-inner">
+                    <svg class="qa__icon qa__icon--ans" viewBox="0 0 120 120" aria-hidden="true">
+                      <rect x="24" y="37" width="16" height="62" fill="currentColor" />
+                      <line x1="24" y1="44" x2="40" y2="44" stroke="var(--hv-alt-surface)" stroke-width="3" />
+                      <rect x="46" y="22" width="16" height="74" fill="none" stroke="currentColor" stroke-width="6" />
+                      <rect x="68" y="47" width="16" height="52" fill="currentColor" />
+                      <line x1="67" y1="55" x2="85" y2="55" stroke="var(--hv-alt-surface)" stroke-width="3" />
+                      <rect x="90" y="28" width="16" height="68" fill="none" stroke="currentColor" stroke-width="6" />
+                    </svg>
+                    <div class="qa__bubble qa__bubble--a">
+                      <p class="qa__text">
+                        <font>
+                          <span v-for="(ch, ci) in splitChars(item.a)" :key="ci" class="qa__ch" :style="{ '--i': ci }">{{ ch }}</span>
+                        </font>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        <ul class="stage__items">
-          <li data-reveal-item>
-            <span class="stage__items-num">01</span>
-            <h3>向量检索</h3>
-            <p>语义级召回，跨学科、跨学段地找到同一知识点。</p>
-          </li>
-          <li data-reveal-item>
-            <span class="stage__items-num">02</span>
-            <h3>引用可追溯</h3>
-            <p>每条回答标注原始出处，复核只需点开那一条。</p>
-          </li>
-          <li data-reveal-item>
-            <span class="stage__items-num">03</span>
-            <h3>持续演进</h3>
-            <p>教学沉淀自动入库，知识随使用不断变厚。</p>
-          </li>
-        </ul>
       </section>
 
       <!-- 08 开始使用 · 巨型收尾 · 定稿页 -->
@@ -1443,8 +1523,7 @@ function goTo(idx) {
 /* 纸张颗粒：只铺在 redesigned 章节上（hero 与 03 两处既有效果不覆盖） */
 .section::after,
 .stage--rail::after,
-.stage--split::after,
-.stage--kb::after,
+.stage--faq::after,
 .stage--cta::after,
 .stack::after,
 .shift::after,
@@ -1460,7 +1539,7 @@ function goTo(idx) {
 
 /* 选中文字 = 被荧光批注 */
 .page ::selection {
-  background: color-mix(in oklab, var(--tb-accent) 26%, transparent);
+  background: color-mix(in oklab, var(--tb-primary) 26%, transparent);
 }
 
 /* 横向裁切交给内容区 main，而不是 .page：
@@ -1740,14 +1819,14 @@ main {
   gap: var(--tb-size-3);
   margin-top: var(--tb-size-4);
   padding-left: var(--tb-size-4);
-  border-left: 2px solid var(--tb-accent);
+  border-left: 2px solid var(--tb-primary);
   font-family: var(--font-mono);
   font-size: var(--tb-text-2xs);
   letter-spacing: var(--tb-tracking-wide);
   color: var(--tb-text-tertiary);
 }
 .vision__cap-no {
-  color: var(--tb-accent);
+  color: var(--tb-primary);
   font-weight: 700;
 }
 
@@ -1785,7 +1864,7 @@ main {
   top: 2.15rem;
   width: 26px;
   height: 26px;
-  stroke: var(--tb-accent);
+  stroke: var(--tb-primary);
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1918,7 +1997,7 @@ main {
 .shift__strike path,
 .shift__ring path {
   fill: none;
-  stroke: var(--tb-accent);
+  stroke: var(--tb-primary);
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
 }
@@ -1936,7 +2015,7 @@ main {
   font-family: var(--font-mono);
   font-size: var(--tb-text-2xs);
   letter-spacing: var(--tb-tracking-wide);
-  color: var(--tb-accent);
+  color: var(--tb-primary);
   white-space: nowrap;
 }
 .shift__note--cross {
@@ -1953,7 +2032,7 @@ main {
 .shift__arrow {
   font-family: var(--tb-font-display);
   font-size: clamp(1.5rem, 3vw, 2.6rem);
-  color: var(--tb-accent);
+  color: var(--tb-primary);
 }
 
 .shift__lead {
@@ -2025,7 +2104,7 @@ main {
   height: 2px;
   margin-top: -1px;
   border-radius: 1px;
-  background: var(--tb-accent);
+  background: var(--tb-primary);
   transform-origin: left center;
 }
 
@@ -2051,7 +2130,7 @@ main {
   font-size: var(--tb-text-2xs);
   letter-spacing: var(--tb-tracking-wide);
   text-align: right;
-  color: var(--tb-accent);
+  color: var(--tb-primary);
 }
 
 /* ==========================================================================
@@ -2099,7 +2178,7 @@ main {
   font-style: normal;
   font-family: var(--font-mono);
   font-size: 0.2em;
-  color: var(--tb-accent);
+  color: var(--tb-primary);
   -webkit-text-stroke: 0;
 }
 
@@ -2126,31 +2205,8 @@ main {
   content: '';
   width: 7px;
   height: 7px;
-  border: 1px solid var(--tb-accent);
+  border: 1px solid var(--tb-primary);
   border-radius: 50%;
-}
-
-/* 大号描边数字沉在内容后面（z-index: -1 落到纸面之上、内容之下） */
-.stage__ghost {
-  position: absolute;
-  top: clamp(4px, 1.5vh, 20px);
-  right: clamp(8px, 4vw, 72px);
-  z-index: -1;
-  font-family: var(--font-mono);
-  font-size: clamp(7rem, 16vw, 15rem);
-  font-weight: 700;
-  line-height: 1;
-  color: transparent;
-  -webkit-text-stroke: 1px var(--tb-border-strong);
-  opacity: 0.55;
-  pointer-events: none;
-  user-select: none;
-}
-@supports not (-webkit-text-stroke: 1px #000) {
-  .stage__ghost {
-    color: var(--tb-border);
-    opacity: 0.4;
-  }
 }
 
 /* ==========================================================================
@@ -2204,7 +2260,7 @@ main {
   content: '';
   width: 0;
   height: 0;
-  border-left: 7px solid var(--tb-accent);
+  border-left: 7px solid var(--tb-primary);
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
 }
@@ -2222,7 +2278,7 @@ main {
 /* 每句标题的第二段用强调色，对应 karot 的「橙色第一行」 */
 .stage__title em {
   font-style: normal;
-  color: var(--tb-accent);
+  color: var(--tb-primary);
 }
 
 .stage__lead {
@@ -2288,7 +2344,7 @@ main {
 }
 .rail__intro-title em {
   font-style: normal;
-  color: var(--tb-accent);
+  color: var(--tb-primary);
 }
 
 
@@ -2348,7 +2404,7 @@ main {
 .rail__link i {
   position: absolute;
   inset: 0;
-  background: var(--tb-accent);
+  background: var(--tb-primary);
   transform: scaleX(0);
   transform-origin: left center;
 }
@@ -2375,7 +2431,7 @@ main {
   background: var(--tb-border-strong);
 }
 .rail__points i.is-on {
-  background: var(--tb-accent);
+  background: var(--tb-primary);
 }
 
 /* 卡头：工序板号 + 右上角的验收勾 */
@@ -2389,7 +2445,7 @@ main {
 .rail__tick {
   font-family: var(--font-mono);
   font-size: var(--tb-text-sm);
-  color: var(--tb-accent);
+  color: var(--tb-primary);
 }
 .rail__tick::before {
   content: '✓';
@@ -2872,8 +2928,8 @@ main {
   left: -8px;
   right: -8px;
   height: 2px;
-  background: color-mix(in oklab, var(--tb-accent) 84%, transparent);
-  box-shadow: 0 0 16px 4px color-mix(in oklab, var(--tb-accent) 22%, transparent);
+  background: color-mix(in oklab, var(--tb-primary) 84%, transparent);
+  box-shadow: 0 0 16px 4px color-mix(in oklab, var(--tb-primary) 22%, transparent);
   opacity: 0;
   pointer-events: none;
 }
@@ -2882,7 +2938,7 @@ main {
   font-family: var(--font-mono);
   font-size: var(--tb-text-sm);
   letter-spacing: var(--tb-tracking-wide);
-  color: var(--tb-accent);
+  color: var(--tb-primary);
 }
 
 .rail__title {
@@ -3026,7 +3082,7 @@ main {
   font-family: var(--font-mono);
   font-size: var(--tb-text-xs);
   font-weight: 700;
-  color: var(--tb-accent);
+  color: var(--tb-primary);
 }
 
 /* 共享管线带：五个环节一览 */
@@ -3109,10 +3165,10 @@ main {
   right: var(--tb-size-5);
   bottom: var(--tb-size-5);
   padding: var(--tb-size-2) var(--tb-size-4);
-  border: 2px solid var(--tb-accent);
+  border: 2px solid var(--tb-primary);
   border-radius: var(--tb-radius-sm);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tb-accent) 40%, transparent);
-  color: var(--tb-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tb-primary) 40%, transparent);
+  color: var(--tb-primary);
   font-family: var(--font-mono);
   font-size: var(--tb-text-xs);
   font-weight: 700;
@@ -3125,246 +3181,303 @@ main {
   transform: rotate(5deg);
 }
 
-/* ---------- 06 左右分栏 + 大数字 + 批改工作台 ---------- */
-.stage--split {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  align-items: center;
-  gap: clamp(32px, 6vw, 96px);
+/* ---------- 06/07 常见疑问 · FAQ 版式 ----------
+   参考 karot questions：居中副标（双向箭头夹一句口令）+ 两行大标题，
+   下方是左问右答的问答带；常显行直接亮出，
+   可折叠行点击开合，答案字符用 --i 顺延延迟逐个浮现 */
+.stage--faq {
+  padding-block: clamp(72px, 12vh, 140px);
 }
 
-.stage__col {
-  display: flex;
-  flex-direction: column;
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--tb-size-5);
-  margin-top: clamp(24px, 5vh, 48px);
-}
-
-.stat dd {
-  display: flex;
-  align-items: baseline;
-  gap: 2px;
-  margin: 0;
-  font-family: var(--tb-font-display);
-  font-size: clamp(2rem, 3.4vw, 3.2rem);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  color: var(--tb-text-primary);
-}
-
-.stat dd i {
-  font-style: normal;
-  font-size: 0.46em;
-  color: var(--tb-accent);
-}
-
-.stat dt {
-  margin-top: var(--tb-size-2);
-  font-size: var(--tb-text-xs);
-  letter-spacing: var(--tb-tracking-wide);
-  color: var(--tb-text-tertiary);
-}
-
-/* 页边批注：分工口径像写在版心外侧的批语 */
-.stage__margin-note {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--tb-size-2) var(--tb-size-5);
-  margin: clamp(20px, 4vh, 40px) 0 0;
-  font-family: var(--font-mono);
-  font-size: var(--tb-text-2xs);
-  letter-spacing: var(--tb-tracking-wide);
-  color: var(--tb-text-tertiary);
-}
-
-.stage__note-mark {
-  font-style: normal;
-  margin-right: 6px;
-  color: var(--tb-accent);
-}
-
-.stage__visual {
+.faq__content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--tb-size-3);
+  text-align: center;
 }
 
-.stage__visual-cap {
+/* 副标：左右箭头指向一条问答口令 */
+.faq__subtitle {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 2vw, 28px);
   font-family: var(--font-mono);
-  font-size: var(--tb-text-2xs);
+  font-size: var(--tb-text-sm);
   letter-spacing: var(--tb-tracking-wide);
-  color: var(--tb-text-tertiary);
+  color: var(--tb-text-secondary);
 }
 
-.paper-art {
-  width: min(100%, 380px);
+.faq__subtitle em {
+  font-style: normal;
+  color: var(--tb-primary);
+}
+
+.faq__arrow {
+  width: clamp(34px, 4vw, 58px);
   height: auto;
-  color: var(--tb-text-tertiary);
-}
-
-.paper-art__sheet {
-  fill: var(--hv-alt-surface);
-  stroke: var(--tb-border-strong);
-  stroke-width: 1.5;
-}
-
-.paper-art__sheet--back {
-  fill: var(--tb-bg-raised);
-  stroke: var(--tb-border);
-}
-
-.paper-art__rule {
-  stroke: var(--tb-border);
-  stroke-width: 2;
-  stroke-linecap: round;
-}
-
-/* 红笔批改痕迹：勾 / 叉 / 圈分 / 批注线，统一一支笔的颜色 */
-.paper-art__margin {
-  stroke: var(--tb-accent);
-  stroke-width: 1;
-  opacity: 0.5;
-}
-
-.paper-art__check {
-  stroke: var(--tb-accent);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  fill: none;
-}
-
-.paper-art__cross {
-  stroke: var(--tb-accent);
-  stroke-width: 3;
-  stroke-linecap: round;
-}
-
-.paper-art__mark {
-  fill: none;
-  stroke: var(--tb-accent);
-  stroke-width: 2;
-}
-
-.paper-art__mark-text {
-  fill: var(--tb-accent);
-  font-family: var(--font-mono);
-  font-size: 20px;
-  text-anchor: middle;
-}
-
-.paper-art__pencil {
+  flex: none;
   fill: var(--tb-primary);
 }
 
-.paper-art__pencil-tip {
-  fill: var(--tb-border-strong);
+/* 左侧箭头镜像朝左，与右箭头相向 */
+.faq__arrow--left {
+  transform: scaleX(-1);
 }
 
-.paper-art__pencil-eraser {
-  fill: var(--tb-accent);
+.faq__title {
+  margin-top: var(--tb-size-4);
+  font-family: var(--tb-font-display);
+  font-size: clamp(2.4rem, 6vw, 5rem);
+  font-weight: var(--tb-weight-display);
+  line-height: 1.04;
+  letter-spacing: var(--tb-tracking-display);
+  color: var(--tb-text-primary);
 }
 
-/* ---------- 07 知识库 · 双向跑马灯 ---------- */
-.mq {
-  position: relative;
+.faq__title span {
+  display: block;
+}
+
+.faq__title-accent {
+  color: var(--tb-primary);
+}
+
+.faq__main {
   display: flex;
   flex-direction: column;
-  gap: var(--tb-size-3);
-  margin-inline: calc(-1 * var(--stage-inset));
-  padding-block: var(--tb-size-4);
-  border-block: 1px solid var(--tb-border);
-  overflow: hidden;
-  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  gap: clamp(26px, 4.5vh, 44px);
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
 }
 
-.mq__row {
+/* 一条问答 = 聊天流里的一问一答：问题气泡靠右、答案气泡靠左 */
+.qa {
   display: flex;
-  width: max-content;
-  animation: mqScroll 42s linear infinite;
+  flex-direction: column;
+  gap: clamp(12px, 2vh, 18px);
 }
 
-/* 第二行反向对开：两条来源带相向而行 */
-.mq__row--reverse {
-  animation-direction: reverse;
+.qa__row {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 1.6vw, 22px);
 }
 
-/* 每块右移一个间距：整行平移 50% 正好与第二份首尾相接，不会跳 */
-.mq__row span {
-  margin-right: var(--tb-size-3);
-  padding: var(--tb-size-2) var(--tb-size-4);
-  border: 1px solid var(--tb-border);
-  border-radius: var(--tb-radius-full);
-  font-size: var(--tb-text-sm);
-  color: var(--tb-text-secondary);
-  white-space: nowrap;
+.qa__row--q {
+  justify-content: flex-end;
 }
 
-.mq__row--reverse span {
-  background: var(--tb-bg-raised);
-  color: var(--tb-text-tertiary);
+.qa__row--a {
+  justify-content: flex-start;
 }
 
-/* 跑马灯左缘的竖排注记，垫一小块纸面保证可读 */
-.kb__axis {
+.qa__icon {
+  width: clamp(30px, 3vw, 44px);
+  height: auto;
+  flex: none;
+  fill: currentColor;
+}
+
+.qa__icon--ask {
+  color: var(--tb-primary);
+}
+
+/* 答案侧：项目 logo（TrueBuddy 柱状标志），随按钮主题蓝着色 */
+.qa__icon--ans {
+  width: clamp(30px, 3vw, 44px);
+  color: var(--tb-primary);
+}
+
+.qa__text {
+  display: block;
+  margin: 0;
+  min-width: 0;
+  font-size: clamp(1.05rem, 1.5vw, 1.3rem);
+  font-weight: 700;
+  line-height: 1.45;
+  transition: color var(--tb-dur-2) var(--tb-ease-out);
+}
+
+.qa__ch {
+  display: inline-block;
+}
+
+/* 气泡：圆角矩形 + 双层伪元素描边（参考 karot _block 的 ::before/::after）——
+   before 铺强调色作描边底，after 四边内缩 border 厚度垫面片色，
+   两个圆角矩形相减即等宽描边 */
+.qa__bubble {
+  --radius: 14px;
+  --border: 2px;
+  --gap: 18px;
+  max-width: min(100%, 720px);
+}
+
+/* 切角（对应 _clip_left/_clip_right）：问题块左下、答案块右下。
+   polygon 同时写在元素与两个伪元素上（参考站同款写法）——
+   描边底与内面被裁出同一条斜边，斜边描边只经历一次裁剪抗锯齿，保证闭合 */
+.qa__bubble--q,
+.qa__bubble--q::before,
+.qa__bubble--q::after {
+  clip-path: polygon(0% 0%, 100% 0%, 100% 100%, calc(0% + var(--gap)) 100%, 0% calc(100% - var(--gap)));
+}
+
+/* 答案气泡：实心浅面 + 右下切角 */
+.qa__bubble--a {
+  padding: 0.8em 1.4em;
+  border-radius: var(--radius);
+  background: var(--hv-alt-surface);
+  color: var(--tb-text-primary);
+  clip-path: polygon(0% 0%, 100% 0%, 100% calc(100% - var(--gap)), calc(100% - var(--gap)) 100%, 0% 100%);
+  transform: translateZ(0);
+}
+
+/* 问题气泡：纯展示块（对应 _block），背景由双层伪元素承担；
+   isolation 建立层叠上下文，确保 z-index: -1 的伪元素困在气泡内部。
+   内边距交给内部 p 承担（见 .qa__bubble--q .qa__text） */
+.qa__bubble--q {
+  position: relative;
+  isolation: isolate;
+  text-align: left;
+  color: var(--tb-primary-text);
+  transform: translateZ(0);
+}
+
+.qa__bubble--q .qa__text {
+  padding: 0.75em 1.35em;
+}
+
+/* 描边底：整块铺按钮主题蓝（明暗两态自动切换） */
+.qa__bubble--q::before {
+  content: "";
   position: absolute;
-  left: max(10px, calc(var(--stage-inset) / 2));
-  top: 50%;
-  z-index: 1;
-  transform: translateY(-50%);
-  padding: var(--tb-size-3) 0;
-  background: var(--tb-paper-bg);
-  writing-mode: vertical-rl;
-  font-family: var(--font-mono);
-  font-size: var(--tb-text-2xs);
-  letter-spacing: var(--tb-tracking-widest);
-  color: var(--tb-text-tertiary);
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius);
+  background-color: var(--tb-primary);
+  z-index: -1;
 }
 
-.stage__items {
+/* 内面：四边内缩 border 厚度露出描边；hover/聚焦时过渡为强调色填充。
+   切角比描边层大 0.8px：斜边缝隙 = (2·border + Δgap)/√2 = (3+0.8)/√2 ≈ 2.7px 法向，
+   扣除两层 45° 斜边各自的抗锯齿过渡带（合计约 1.2px）后净描边 ≈ 1.5px，
+   与四边等宽（逐像素采样实测校准；两层共用 --gap 时缝隙仅 2.1px，
+   斜边描边会粗到 2px 或被抗锯齿吃掉） */
+.qa__bubble--q::after {
+  --gap: 16.8px;
+  content: '';
+  position: absolute;
+  inset: var(--border);
+  border-radius: calc(var(--radius) - var(--border));
+  background: var(--tb-bg-surface);
+  transition: background-color var(--tb-dur-2) var(--tb-ease-out);
+  z-index: -1;
+}
+
+/* 可点击行（对应 qmq_question_clickable）：整行承载点击与键盘操作 */
+.qa--fold .qa__question {
+  cursor: pointer;
+}
+.qa__question:focus {
+  outline: none;
+}
+
+.qa__bubble--a .qa__text {
+  font-weight: 600;
+}
+
+/* 答案行：0fr→1fr 高度展开，折叠时气泡连同图标整体收起 */
+.qa__answer {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--tb-size-6);
-  list-style: none;
+  grid-template-rows: 1fr;
+  flex: 0 1 auto;
+  max-width: min(100%, 760px);
 }
 
-/* 条目改成批注式：一条顶线压住，悬停时线变红 */
-.stage__items li {
-  padding-top: var(--tb-size-4);
-  border-top: 2px solid var(--tb-border-strong);
-  transition: border-color var(--tb-dur-3) var(--tb-ease-out);
+.qa__answer-clip {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.qa__answer-inner {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 1.6vw, 22px);
+  padding-block: 2px;
+}
+
+/* 可折叠答案：默认收起（高度 0 + 透明），is-open 后展开、字符逐个浮回 */
+.qa--fold .qa__answer {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--tb-dur-3) var(--tb-ease-out),
+    opacity var(--tb-dur-3) var(--tb-ease-out);
+}
+
+.qa--fold .qa__answer .qa__icon,
+.qa--fold .qa__answer .qa__ch {
+  opacity: 0;
+  transform: translateY(80%);
+  transition:
+    opacity var(--tb-dur-3) var(--tb-ease-out),
+    transform var(--tb-dur-3) var(--tb-ease-out);
+}
+
+.qa--fold .qa__answer .qa__ch {
+  transform: translateY(110%);
+  /* 每个字符按 --i 顺延延迟，展开时像被一支笔逐字带出 */
+  transition-delay: calc(var(--i) * 18ms);
+}
+
+.qa--fold.is-open .qa__answer {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.qa--fold.is-open .qa__answer .qa__icon,
+.qa--fold.is-open .qa__answer .qa__ch {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 @media (hover: hover) {
-  .stage__items li:hover {
-    border-top-color: var(--tb-accent);
+  .qa--fold .qa__question:hover .qa__bubble--q::after {
+    background: var(--tb-primary);
+  }
+  .qa--fold .qa__question:hover .qa__text {
+    color: var(--tb-on-primary);
   }
 }
 
-.stage__items-num {
+/* 键盘聚焦给同样的填充态：反馈一律用填充，不画 outline */
+.qa__question:focus-visible .qa__bubble--q::after {
+  background: var(--tb-primary);
+}
+.qa__question:focus-visible .qa__text {
+  color: var(--tb-on-primary);
+}
+
+/* 分隔线：两侧渐隐细线夹一句橙色 mono 批语 */
+.qa__line {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: clamp(14px, 2vw, 28px);
   font-family: var(--font-mono);
-  font-size: var(--tb-text-xs);
-  letter-spacing: var(--tb-tracking-wide);
-  color: var(--tb-accent);
-}
-
-.stage__items h3 {
-  margin-top: var(--tb-size-3);
-  font-size: var(--tb-text-xl);
-  font-weight: 700;
-}
-
-.stage__items p {
-  margin-top: var(--tb-size-2);
   font-size: var(--tb-text-sm);
-  line-height: var(--tb-leading-normal);
-  color: var(--tb-text-secondary);
+  letter-spacing: var(--tb-tracking-wide);
+  color: var(--tb-primary);
+}
+
+.qa__line i:first-child {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--tb-border-strong));
+}
+
+.qa__line i:last-child {
+  height: 1px;
+  background: linear-gradient(90deg, var(--tb-border-strong), transparent);
 }
 
 /* ---------- 08 收尾 · 定稿页 ---------- */
@@ -3426,10 +3539,10 @@ main {
   align-items: center;
   gap: 2px;
   padding: var(--tb-size-3) var(--tb-size-5);
-  border: 2px solid var(--tb-accent);
+  border: 2px solid var(--tb-primary);
   border-radius: var(--tb-radius-md);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tb-accent) 40%, transparent);
-  color: var(--tb-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tb-primary) 40%, transparent);
+  color: var(--tb-primary);
   font-family: var(--font-mono);
   font-size: var(--tb-text-2xs);
   font-weight: 700;
@@ -3455,7 +3568,7 @@ main {
 }
 .final__ring path {
   fill: none;
-  stroke: var(--tb-accent);
+  stroke: var(--tb-primary);
   stroke-width: 3px;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
@@ -3530,21 +3643,12 @@ main {
   .vision__card:nth-child(3) {
     margin-left: 0;
   }
-  .stage--split {
-    grid-template-columns: 1fr;
-  }
-  .stage__visual {
-    display: none;
-  }
-  .kb__axis {
-    display: none;
-  }
   .rail__scroll {
     display: none;
   }
-  .stage__items {
-    grid-template-columns: 1fr;
-    gap: var(--tb-size-4);
+  /* FAQ 气泡流天然单列，窄屏只收窄气泡可用宽度 */
+  .qa__bubble {
+    max-width: 100%;
   }
 }
 
@@ -3586,9 +3690,8 @@ main {
   .receipt__total b {
     font-size: 1.2rem;
   }
-  /* 页眉与幽灵序号在窄屏让位 */
-  .stage__run,
-  .stage__ghost {
+  /* 页眉在窄屏让位 */
+  .stage__run {
     display: none;
   }
   .strip__row span {
@@ -3657,10 +3760,6 @@ main {
     margin-top: var(--tb-size-5);
     transform: none;
   }
-  .stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--tb-size-4);
-  }
   .stage__title {
     font-size: clamp(1.9rem, 7.2vw, 2.6rem);
   }
@@ -3689,13 +3788,16 @@ main {
    常驻装饰动画静止（内容仍可见），交互过渡取消；
    滚动编排动效由 GSAP 承担，见 composables/useSmoothScroll.js 与 09-样式规范.md §6.2 */
 @media (prefers-reduced-motion: reduce) {
-  .mq__row,
   .docgen__status.is-scanning i {
     animation: none;
   }
   .btn,
   .vision__card,
-  .stage__items li,
+  .qa__answer,
+  .qa__answer .qa__icon,
+  .qa__answer .qa__ch,
+  .qa__bubble--q::after,
+  .qa__text,
   .docgen__mark { transition: none; }
   .docgen__prose :deep(.docgen__w) { transition: none; }
 }

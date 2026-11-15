@@ -6,6 +6,11 @@
  */
 export const userRoutes = [
   {
+    // 默认路由：根路径直接进引导页
+    path: "/",
+    redirect: "/guides",
+  },
+  {
     path: "/guides",
     name: "guides",
     component: () => import("../views/guides/HomeView.vue"),
