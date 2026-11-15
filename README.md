@@ -10,7 +10,7 @@
 
 ---
 
-> 面向一线教师的**本地 / 内网 Web 应用**:备课、批改、上课与资料整理,一站式完成 **Word 教案(模板复刻)、作业批改、PPT 讲稿与放映、可检索知识库、模拟会议实时播报**。
+> 面向一线教师的**本地 / 内网 Web 应用**:备课、批改、上课与资料整理,一站式完成 **Word 教案(模板复刻)、作业批改、PPT 智能课堂、可检索知识库**。
 
 ## ✨ 核心特性
 
@@ -18,9 +18,8 @@
 | --- | --- |
 | 📝 **教案模板复刻** | 上传学校模板 docx,AI 规划内容、MCP 工具逐段替换校验,产出与模板版式完全一致的 Word 教案;知识库 RAG 自动注入备课上下文 |
 | ✅ **作业批改** | 作业文件上传与 AI 辅助批改,批改产物统一经对象存储管理 |
-| 🖥️ **PPT 讲稿与放映** | 课件上传后分批生成讲稿;放映页逐页流式播报(CosyVoice TTS + 口型驱动),声音随屏幕共享轨直达学生端,无需任何额外进程 |
+| 🖥️ **PPT 智能课堂** | 课件上传后分批生成讲稿;放映页逐页流式播报(CosyVoice TTS + 口型驱动),声音随屏幕共享轨直达学生端,无需任何额外进程;自托管 LiveKit 实时会议,媒体与聊天 DataChannel 全程不经过后端,学生"禁止发言"由令牌在服务端强制 |
 | 📚 **知识库 RAG** | 阿里云 DocMind 解析 → AI 语义分片 → `text-embedding-v3` 向量化 → pgvector HNSW 余弦检索 |
-| 🎓 **模拟会议** | 自托管 LiveKit 实时课堂;媒体与聊天 DataChannel 全程不经过后端,学生"禁止发言"由令牌在服务端强制 |
 | 🧩 **可视化工作流** | 拖拽式流程编排,LLM 节点接入 DeepSeek,SSE 实时回传执行过程 |
 
 架构上的几个特点:
@@ -115,7 +114,7 @@ TrueBuddy/
 | Python + uv | Python ≥3.12 | 拉起 docx-mcp 工具服务 |
 | PostgreSQL | + pgvector 扩展 | 业务数据与向量检索(`127.0.0.1:5432/tb`) |
 | MinIO | 任意近期版本 | 对象存储(`localhost:9000`) |
-| Docker | 可选 | 自托管 LiveKit(模拟会议功能需要) |
+| Docker | 可选 | 自托管 LiveKit(PPT 智能课堂实时会议需要) |
 
 ### 1️⃣ 初始化数据库
 
@@ -136,7 +135,7 @@ cp .env.example backend/.env
 | `DOCMIND_ACCESS_KEY_ID` / `_SECRET` | ✅ | 文档智能解析,**缺失时启动即失败** |
 | `MINIO_SECRET_KEY` | ✅ | MinIO 凭据 |
 | `SPRING_DATASOURCE_USERNAME` / `_PASSWORD` | ✅ | PostgreSQL 凭据 |
-| `LIVEKIT_API_KEY` / `_SECRET` | 会议功能 | 与 LiveKit 服务端 `.env` 同一对值 |
+| `LIVEKIT_API_KEY` / `_SECRET` | 智能课堂(实时会议) | 与 LiveKit 服务端 `.env` 同一对值 |
 | `DASHSCOPE_API_KEY` | 讲稿播报 | CosyVoice 流式语音合成 |
 | `SPRING_MAIL_USERNAME` / `_PASSWORD` | 邮件功能 | 注册 / 验证码 / 找回密码 |
 
@@ -164,7 +163,7 @@ npm run dev        # http://localhost:5173,/api 代理到 8086
 
 ### 6️⃣(可选)启动 LiveKit
 
-模拟会议功能需要自托管 LiveKit(信令 7880 / TCP 兜底 7881 / UDP 50000-50100),部署要点见 [docs/doc-devops.md §7](./docs/doc-devops.md)。不启动时其余功能完全可用。
+PPT 智能课堂的实时会议功能需要自托管 LiveKit(信令 7880 / TCP 兜底 7881 / UDP 50000-50100),部署要点见 [docs/doc-devops.md §7](./docs/doc-devops.md)。不启动时其余功能完全可用。
 
 ### 🐳 Docker 部署(前端)
 
