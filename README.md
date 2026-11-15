@@ -22,13 +22,6 @@
 | 📚 **知识库 RAG** | 阿里云 DocMind 解析 → AI 语义分片 → `text-embedding-v3` 向量化 → pgvector HNSW 余弦检索 |
 | 🧩 **可视化工作流** | 拖拽式流程编排,LLM 节点接入 DeepSeek,SSE 实时回传执行过程 |
 
-架构上的几个特点:
-
-- **统一返回 `CommonResult<T>`**,长任务一律走 SSE(`fetch` + `ReadableStream`),前端拦截器自动解包
-- **后端多模块 Maven**(`tb-module-*` 按业务拆分,`tb-server` 启动器),业务 Mapper 用 MyBatis 注解 SQL
-- **docx 编辑能力通过 MCP 提供**:Python 工具服务由后端以 stdio 子进程拉起,前后端零侵入
-- **密钥外迁**:真实配置只存 `backend/.env`(gitignored),`application.yml` 仅保留占位符(ADR 0005)
-
 ## 🏗️ 系统架构
 
 ```mermaid
