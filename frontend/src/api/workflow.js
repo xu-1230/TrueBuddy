@@ -37,6 +37,12 @@ export const WORKFLOW_REST_API = {
   detail: '/workflow/detail',
   /** 定义列表（不含 schemaJson，按更新时间倒序） */
   list: '/workflow/list',
+  /** 切换公有 / 私有（query 参数 `workflow_id` + `visibility`；builtin 不可改） */
+  visibility: '/workflow/visibility',
+  /** 他人公有工作流列表（只读浏览，不含 schemaJson） */
+  publicList: '/workflow/public-list',
+  /** fork 为自己的副本（query 参数 `workflow_id`），返回新副本 id */
+  fork: '/workflow/fork',
 }
 
 /** 节点上允许提交给后端的字段（Vue Flow 注入的运行时字段一律剔除） */
@@ -158,7 +164,9 @@ export function saveWorkflow(payload) {
  * 工作流详情（含画布定义 JSON 字符串）。
  *
  * @param {string} workflowId 工作流 id（雪花 ID 字符串）
- * @returns {Promise<object>} 详情：{ id, name, description, status, builtin, stepCount, schemaJson, updateTime }
+ * @returns {Promise<object>} 详情：{ id, name, description, status, builtin, visibility, mine,
+ *   stepCount, schemaJson, updateTime }；`visibility` 0=私有/1=公有，`mine` 为服务端判定的归属标识，
+ *   画布页据此呈现只读形态（`!mine && !builtin` 即只读），不在前端猜归属
  */
 export function getWorkflowDetail(workflowId) {
   return service.get(WORKFLOW_REST_API.detail, { params: { workflow_id: workflowId } })
@@ -171,6 +179,40 @@ export function getWorkflowDetail(workflowId) {
  */
 export function listWorkflows() {
   return service.get(WORKFLOW_REST_API.list)
+}
+
+/**
+ * 切换本人工作流的公有 / 私有（builtin 模板不可改，归属校验在后端）。
+ *
+ * @param {string} workflowId 工作流 id（雪花 ID 字符串）
+ * @param {number} visibility 0=私有，1=公有
+ * @returns {Promise<boolean>} 固定 true，失败由 HTTP 层表达
+ */
+export function updateWorkflowVisibility(workflowId, visibility) {
+  return service.put(WORKFLOW_REST_API.visibility, null, {
+    params: { workflow_id: workflowId, visibility },
+  })
+}
+
+/**
+ * 他人公有工作流列表（visibility=1 且非本人创建；匿名返回全部公有行）。
+ *
+ * @returns {Promise<Array>} 列表项：{ id, name, description, status, builtin: false,
+ *   stepCount, updateTime, creatorName }；不含 schemaJson，打开公有流走 /workflow/detail
+ */
+export function getPublicWorkflows() {
+  return service.get(WORKFLOW_REST_API.publicList)
+}
+
+/**
+ * fork 一份工作流为当前用户的副本：命名「原名（副本）」、草稿态、私有、归属当前用户；
+ * 副本享有自有工作流的全部权益（可编辑 / 可保存 / 可建会话执行）。
+ *
+ * @param {string} workflowId 被 fork 的工作流 id（须为本人或他人公有）
+ * @returns {Promise<string>} 副本 id（雪花 ID 字符串）
+ */
+export function forkWorkflow(workflowId) {
+  return service.post(WORKFLOW_REST_API.fork, null, { params: { workflow_id: workflowId } })
 }
 
 /**

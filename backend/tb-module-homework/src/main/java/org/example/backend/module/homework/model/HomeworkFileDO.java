@@ -26,5 +26,9 @@ public class HomeworkFileDO {
     private Long size;
     /** 创建时间 */
     private LocalDateTime createTime;
+    /** 访问地址（MinIO 预签名 URL，详情查询 LEFT JOIN infra_file 带出，仅读路径使用） */
+    private String url;
+    /** 文件类型（MIME，详情查询 LEFT JOIN infra_file 带出，仅读路径使用） */
+    private String type;
 
 }

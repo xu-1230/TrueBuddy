@@ -276,7 +276,7 @@ export const useUserStore = defineStore("user", () => {
 | `/register`                 | `register`         | `views/LoginView.vue`             | 注册页（复用登录页）     |
 | `/index`                    | `index`            | `views/IndexView.vue`             | 侧边栏布局，重定向到 home |
 | `/index/home`               | `system-home`      | `views/system/SystemHomeView.vue` | 系统首页                 |
-| `/index/doc-template`       | `doc-template`     | `views/system/DocTemplateView.vue`| 文档模板生成             |
+| `/index/doc-template/:id?`  | `doc-template`     | `views/doctemplate/DocTemplateView.vue` | 文档模板生成；`:id` 为生成记录，`?file=<docId>` 查看单份文档 |
 | `/index/homework-grading`   | `homework-grading` | `views/system/HomeworkGradingView.vue` | 作业批改             |
 | `/index/knowledge-base`     | `knowledge-base`   | `views/system/KnowledgeBaseView.vue`   | 知识库模块           |
 | `/index/ppt`                | `ppt`              | `views/ppt/index.vue`             | PPT 演示                 |

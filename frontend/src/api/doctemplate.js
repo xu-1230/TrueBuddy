@@ -21,7 +21,7 @@ import service from './index'
  * @property {number} size        文件大小（字节）
  * @property {string} tag         份数定位标签：复刻 / 优化 / 精简…
  * @property {string} summary     内容摘要
- * @property {string} src         访问地址（MinIO 预签名 URL）
+ * @property {string} src         访问地址（MinIO 预签名 URL；历史接口内联时为 null）
  */
 
 /**
@@ -42,6 +42,7 @@ import service from './index'
  * @property {string} time        生成时间（yyyy-MM-dd HH:mm）
  * @property {string} status      状态文案：成功 / 部分成功 / 失败
  * @property {number} docCount    产出文档数量
+ * @property {DocFileVO[]} docs   本次任务产出的文件摘要（src 为 null；首页「文档」tab 用 id + generationId 拼深链接）
  */
 
 /**
@@ -57,7 +58,8 @@ export function generateDoc(data) {
 /**
  * 获取生成历史记录（按时间倒序）
  * GET /doc-template/history?limit={limit}
- * @param {number} [limit]
+ * 每条记录内联 docs（文件摘要，不签发 MinIO URL）；首页据此展开文件卡。
+ * @param {number} [limit] 任务条数（不是文件条数）
  * @returns {Promise<HistoryVO[]>}
  */
 export function getGenerationHistory(limit) {

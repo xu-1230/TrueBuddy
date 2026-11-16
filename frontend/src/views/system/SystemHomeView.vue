@@ -18,7 +18,7 @@
     <section class="band" aria-labelledby="band-assets">
       <header class="band__head band__head--tabs">
         <h2 id="band-assets" class="band__title band__title--hidden">我的资产</h2>
-        <el-tabs v-model="activeTab" class="tabs">
+        <el-tabs v-model="activeTab" class="tabs" :before-leave="onBeforeTabLeave">
           <el-tab-pane v-for="tab in HOME_TABS" :key="tab.key" :label="tab.label" :name="tab.key" />
         </el-tabs>
         <el-dropdown trigger="click" @command="pickSort">
@@ -63,7 +63,7 @@
           />
         </div>
         <el-empty v-else-if="!loading" :description="emptyDescription">
-          <el-button type="primary" @click="go('/index/knowledge-base')">去创建知识库</el-button>
+          <el-button type="primary" @click="go(emptyAction.to)">{{ emptyAction.label }}</el-button>
         </el-empty>
       </div>
     </section>
@@ -71,13 +71,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { getGenerationHistory } from '@/api/doctemplate'
 import { getSpaceList } from '@/api/knowledgebase'
-import { listConversations, listWorkflows } from '@/api/workflow'
+import { listWorkflows } from '@/api/workflow'
 import AssetCard from './components/AssetCard.vue'
 import HomeHero from './components/HomeHero.vue'
 import ShowcaseCard from './components/ShowcaseCard.vue'
@@ -93,12 +93,21 @@ import {
 
 const router = useRouter()
 
-/** 四个来源的原始返回，请求失败留 null，不阻塞其余来源渲染 */
-const sources = ref({ spaces: null, workflows: null, generations: null, conversations: null })
+/** 三个来源的原始返回，请求失败留 null，不阻塞其余来源渲染 */
+const sources = ref({ spaces: null, workflows: null, generations: null })
 const loading = ref(false)
 const failedCount = ref(0)
 
-const activeTab = ref('all')
+/**
+ * 过滤态跨页保持：跳转型 tab 跳走再回来仍停在原过滤 tab（US3）。
+ * 只存 filter 型 key，兼容旧会话里残留的已下线 tab。
+ */
+const ACTIVE_TAB_STORAGE_KEY = 'tb-home-active-tab'
+const FILTER_TAB_KEYS = HOME_TABS.filter((tab) => tab.type === 'filter').map((tab) => tab.key)
+const storedTab = sessionStorage.getItem(ACTIVE_TAB_STORAGE_KEY)
+const activeTab = ref(FILTER_TAB_KEYS.includes(storedTab) ? storedTab : 'all')
+watch(activeTab, (value) => sessionStorage.setItem(ACTIVE_TAB_STORAGE_KEY, value))
+
 const sortKey = ref('recommended')
 
 /** 相对时间以「本次加载」为基准，避免每秒重算导致文案跳动 */
@@ -147,12 +156,30 @@ const activeSortLabel = computed(
   () => HOME_SORTS.find((option) => option.key === sortKey.value)?.label || '推荐',
 )
 
-const emptyDescription = computed(() =>
-  feedItems.value.length ? '该分类下还没有内容' : '还没有任何资产，先从知识库开始',
-)
+const emptyDescription = computed(() => {
+  if (activeTab.value === 'doc') return '还没有生成文档，先去生成一批吧'
+  return feedItems.value.length ? '该分类下还没有内容' : '还没有任何资产，先从知识库开始'
+})
+
+/** 空态行动入口：按当前 tab 指向真实可创建 / 可生成的位置 */
+const EMPTY_ACTIONS = {
+  all: { label: '去创建知识库', to: '/index/knowledge-base' },
+  knowledge: { label: '去创建知识库', to: '/index/knowledge-base' },
+  workflow: { label: '去创建工作流', to: '/index/workflow' },
+  doc: { label: '去生成文档', to: '/index/doc-template' },
+}
+const emptyAction = computed(() => EMPTY_ACTIONS[activeTab.value] || EMPTY_ACTIONS.all)
 
 function go(path) {
   router.push(path)
+}
+
+/** 跳转型 tab 不占用过滤态：拦截切换，直接路由跳转，activeTab 保持原值 */
+function onBeforeTabLeave(activeName) {
+  const tab = HOME_TABS.find((item) => item.key === activeName)
+  if (tab?.type !== 'jump') return true
+  router.push(tab.to)
+  return false
 }
 
 function pickSort(key) {
@@ -160,14 +187,13 @@ function pickSort(key) {
 }
 
 /**
- * 四个来源用 allSettled 并发：任一接口挂掉只影响它自己那一类卡片，
+ * 三个来源用 allSettled 并发：任一接口挂掉只影响它自己那一类卡片，
  * 首页不该因为一个模块的故障整页空白。
  */
 const FEED_SOURCES = [
   { key: 'spaces', label: '知识库空间', request: getSpaceList },
   { key: 'workflows', label: '工作流', request: listWorkflows },
-  { key: 'generations', label: '文档生成历史', request: () => getGenerationHistory(24) },
-  { key: 'conversations', label: '会话', request: listConversations },
+  { key: 'generations', label: '生成文档', request: () => getGenerationHistory(24) },
 ]
 
 async function loadFeed() {

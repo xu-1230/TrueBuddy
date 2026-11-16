@@ -113,7 +113,7 @@
 | `/login`、`/register` | `login` / `register` | `views/LoginView.vue` | 登录 / 注册（复用同组件） |
 | `/index` | `index` | `views/IndexView.vue` | 侧边栏布局，redirect → `/index/home` |
 | `/index/home` | `system-home` | `views/system/SystemHomeView.vue` | 系统首页（展示台 + 动态聚合 `utils/feed.js`） |
-| `/index/doc-template` | `doc-template` | `views/doctemplate/DocTemplateView.vue` | 文档模板生成 |
+| `/index/doc-template/:id?` | `doc-template` | `views/doctemplate/DocTemplateView.vue` | 文档模板生成；`:id` = 生成记录、`?file=<docId>` = 该次生成中的某份文档（URL 为页面状态唯一真相源，见 [specs/2026-11-16-模板生成页路由状态.md](./specs/2026-11-16-模板生成页路由状态.md)） |
 | `/index/homework-grading` | `homework-grading` | `views/homework/HomeworkGradingView.vue` | 作业批改 |
 | `/index/knowledge-base` | `knowledge-base` | `views/knowledgebase/KnowledgeBaseView.vue` | 知识库 |
 | `/index/ppt` | `ppt` | `views/ppt/index.vue` | PPT 预览 / 放映 + 讲稿 AI 优化 + **创建会议入口**（`?screen=1` 直接进放映；`?meetid=` 时订阅音频驱动口型） |
@@ -139,7 +139,7 @@
 | --- | --- |
 | `/system/auth/login`、`/system/auth/refresh` | `/login`、`/register`（refresh 由 401 拦截器自动调用，不跳路由） |
 | `/test2/read-pptx`、`/test2/file-text` | 仅测试 / 联调桩，无正式页面 |
-| `/doc-template/**` | `/index/doc-template` |
+| `/doc-template/**` | `/index/doc-template/:id?`（`?file=<docId>` 查看单份文档） |
 | `/homework/**` | `/index/homework-grading`（便于未登录态联调） |
 | `/workflow/**` | `/index/workflow` 定义类调用；**执行入口 `POST /chat` 不在白名单**（要求登录） |
 | `/meeting/**` | `/meeting/:meetingNo`（免登录入会）、`/index/meeting`（用 hostToken） |
@@ -168,6 +168,7 @@
 | `tb-ui-mode` | localStorage | 明暗态（null=跟随系统） |
 | `tb-meeting-host:{meetingNo}` | localStorage | 按会议号切分的主持人凭据（**会议凭据不是登录态**，不进 auth.js） |
 | `tb-meeting-attendee-{meetingNo}` | sessionStorage | 学生参会会话，关标签页即弃 |
+| `tb-home-active-tab` | sessionStorage | 首页 Zone C 的过滤 tab 记忆（仅 filter 型 key，非法回落 `all`；见 [doc-ui.md](./doc-ui.md) §9） |
 
 键名统一 `tb-{模块}-{用途}` 前缀；规划长期业务状态改用 Pinia 持久化插件统一处理。待整改：`views/TestView.vue` 额外写 localStorage、`views/ppt/stores/*.js` options 写法。
 
@@ -237,8 +238,8 @@
 
 | 端 | 现状 | 框架 |
 | --- | --- | --- |
-| 后端 | 3 个模块 11 个 JUnit 测试类（lecture 8 / workflow 3 / knowledgebase 1），全部是单元测试，零 `@SpringBootTest` / MockMvc | JUnit 5 + `spring-boot-starter-test`（Mockito、AssertJ） |
-| 前端 | `frontend/tests/*.test.js` 25 个测试文件，`npm test` = `node --test`，零新增依赖 | Node 内置 `node:test` + `node:assert/strict` |
+| 后端 | 4 个模块 20 个 JUnit 测试类（knowledgebase 7 / lecture 7 / workflow 5 / homework 1），全部是单元测试，零 `@SpringBootTest` / MockMvc | JUnit 5 + `spring-boot-starter-test`（Mockito、AssertJ） |
+| 前端 | `frontend/tests/*.test.js` 28 个测试文件，`npm test` = `node --test`，零新增依赖 | Node 内置 `node:test` + `node:assert/strict` |
 | docx-mcp | **零测试**（有 `.pytest_cache` 但无 test 文件） | — |
 
 > 命名陷阱：`tb-module-test` / `tb-module-test2` 是业务验证模块，不进入 `./mvnw test` 测试集。组件渲染、`src/api/` 拦截器、端到端流程仍无覆盖。

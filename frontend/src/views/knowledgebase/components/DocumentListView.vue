@@ -9,6 +9,9 @@
         <el-divider direction="vertical" />
         <el-icon class="kb-toolbar__folder-icon"><FolderOpened /></el-icon>
         <span class="kb-toolbar__title" :title="space?.name">{{ space?.name }}</span>
+        <el-tag v-if="readonly" size="small" type="info" class="kb-toolbar__readonly-tag">
+          公有 · 只读
+        </el-tag>
       </div>
     </div>
 
@@ -18,7 +21,7 @@
         <div class="doc-sidebar__header">
           <el-icon><Document /></el-icon>
           <span>文档列表</span>
-          <el-tooltip content="添加文档" placement="top">
+          <el-tooltip v-if="!readonly" content="添加文档" placement="top">
             <el-icon class="doc-sidebar__add" @click="$emit('add-document')">
               <Plus />
             </el-icon>
@@ -45,7 +48,7 @@
         <el-empty
           v-if="!loading && !documents.length"
           :image-size="72"
-          description="暂无文档，点击添加"
+          :description="readonly ? '该空间暂无文档' : '暂无文档，点击添加'"
         />
       </aside>
 
@@ -65,6 +68,7 @@
               <span class="doc-detail__divider">|</span>
               <span>分片数：{{ chunks.length }}</span>
               <el-icon
+                v-if="!readonly"
                 class="doc-detail__delete"
                 title="删除文档"
                 @click="onDelete(activeDocument)"
@@ -140,6 +144,8 @@ const props = defineProps({
   activeDocument: { type: Object, default: null },
   chunks: { type: Array, default: () => [] },
   chunkLoading: { type: Boolean, default: false },
+  /** 公有空间只读浏览：隐藏添加 / 删除入口 */
+  readonly: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['back', 'select-document', 'delete-document', 'add-document'])
@@ -210,6 +216,10 @@ function onDelete(doc) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.kb-toolbar__readonly-tag {
+  margin-left: 0.5rem;
 }
 
 /* ========== 左右分栏 ========== */
