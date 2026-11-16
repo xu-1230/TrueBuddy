@@ -2,8 +2,8 @@
 /**
  * 管理端图标（内联 SVG，线性描边）
  *
- * 与用户端 views/index/components/SidebarIcon.vue 的双色调图标是两套视觉语言：
- * 管理端信息密度更高，用 1.7px 线性图标更克制。不跨模块 import 用户端组件，
+ * 管理端信息密度更高，用 1.7px 线性图标更克制；用户端侧边栏（IndexView）
+ * 也复用本组件，保持两端一致的视觉语言。不跨模块 import 用户端组件，
  * 避免管理端与用户端布局产生依赖。
  */
 defineProps({
@@ -33,6 +33,13 @@ defineProps({
       <rect x="13.5" y="13.5" width="7" height="7" rx="1.6" />
     </template>
 
+    <!-- 首页：屋顶 + 房体 + 门 -->
+    <template v-else-if="name === 'home'">
+      <path d="M4.4 10.4 12 4.2l7.6 6.2" />
+      <path d="M6.4 8.9v9.5c0 .9.7 1.6 1.6 1.6h8c.9 0 1.6-.7 1.6-1.6V8.9" />
+      <path d="M10.2 20v-5.2h3.6V20" />
+    </template>
+
     <template v-else-if="name === 'users'">
       <circle cx="9.5" cy="8.5" r="3.2" />
       <path d="M3.8 20c.5-3.4 2.8-5.3 5.7-5.3s5.2 1.9 5.7 5.3" />
@@ -52,7 +59,8 @@ defineProps({
       <path d="m18.4 18.4 2-2" />
     </template>
 
-    <template v-else-if="name === 'book'">
+    <!-- knowledge 为用户端菜单使用的别名，与 book 同形 -->
+    <template v-else-if="name === 'book' || name === 'knowledge'">
       <path d="M12 6.6C10.3 5.4 8 4.6 5.4 4.6v12.2c2.6 0 4.9.8 6.6 2 1.7-1.2 4-2 6.6-2V4.6c-2.6 0-4.9.8-6.6 2Z" />
       <path d="M12 6.6v12.2" />
     </template>
@@ -66,6 +74,13 @@ defineProps({
     <template v-else-if="name === 'grading'">
       <path d="M7 3.6h10v16.8H7V3.6Z" />
       <path d="m9.4 12 1.7 1.7 3.5-3.7" />
+    </template>
+
+    <!-- PPT 演示：幕布 + 支架 -->
+    <template v-else-if="name === 'slide'">
+      <path d="M3.4 3.8h17.2" />
+      <path d="M20.6 3.8v9.8a1.8 1.8 0 0 1-1.8 1.8H5.2a1.8 1.8 0 0 1-1.8-1.8V3.8" />
+      <path d="m8.4 20.4 3.6-5 3.6 5" />
     </template>
 
     <template v-else-if="name === 'meeting'">

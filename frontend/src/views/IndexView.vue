@@ -87,7 +87,7 @@
                 :aria-current="isActive(item) ? 'page' : undefined"
                 @click="go(item)"
               >
-                <SidebarIcon class="menu-item__icon" :name="item.icon" />
+                <AdminIcon class="admin-menu-item__icon" :name="item.icon" :size="18" />
                 <span class="menu-item__label">{{ item.label }}</span>
               </button>
             </el-tooltip>
@@ -227,7 +227,7 @@ import {
   Sunny,
   SwitchButton,
 } from '@element-plus/icons-vue'
-import SidebarIcon from '@/views/index/components/SidebarIcon.vue'
+import AdminIcon from '@/views/admin/components/AdminIcon.vue'
 import { useAppearance } from '@/composables/useAppearance'
 import { removeToken } from '@/utils/auth'
 
@@ -258,7 +258,7 @@ const user = reactive({
 
 /**
  * 菜单按「工作台 / 创作工具 / 效率工具 / 系统设置」逻辑分组，组间以留白与标题分隔，
- * 不再把入口纵向堆砌；icon 取 SidebarIcon 的双色调图标名，action 为非路由入口
+ * 不再把入口纵向堆砌；icon 取 AdminIcon 的线性图标名，action 为非路由入口
  */
 const menuGroups = [
   {
@@ -837,34 +837,13 @@ function isActive(item) {
   font-weight: 600;
 }
 
-.menu-item__icon {
-  flex: 0 0 auto;
+/* 图标与 AdminSidebar 的 admin-menu-item__icon 同一套配色：常态三级文字色，选中随主色 */
+.menu-item .admin-menu-item__icon {
   color: var(--tb-text-tertiary);
-  transition:
-    color var(--tb-dur-2) var(--tb-motion-ease),
-    transform var(--tb-dur-2) var(--tb-ease-out);
 }
 
-/* 双色调图标的浅色底板随状态加深，强化「色块 + 图形」两层结构 */
-.menu-item :deep(.tb-icon__plate) {
-  transition: opacity var(--tb-dur-2) var(--tb-motion-ease);
-}
-
-.menu-item:hover .menu-item__icon {
-  color: var(--tb-text-primary);
-  transform: translateX(1px);
-}
-
-.menu-item:hover :deep(.tb-icon__plate) {
-  opacity: 0.26;
-}
-
-.menu-item--active .menu-item__icon {
+.menu-item--active .admin-menu-item__icon {
   color: var(--tb-primary-text);
-}
-
-.menu-item--active :deep(.tb-icon__plate) {
-  opacity: 0.24;
 }
 
 .menu-item__label {
@@ -1251,7 +1230,6 @@ function isActive(item) {
   .sidebar__group-label,
   .sidebar__pill,
   .menu-item,
-  .menu-item__icon,
   .menu-item__label,
   .storage__body,
   .storage__ring-bar,
