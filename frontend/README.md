@@ -63,7 +63,7 @@ frontend/src/
 | `/register` | 注册页（复用 LoginView） |
 | `/index` | 侧边栏布局，默认重定向到 `/index/home` |
 | `/index/home` | 系统首页 |
-| `/index/doc-template` | 文档模板生成 |
+| `/index/doc-template/:id?` | 文档模板生成；`:id` 为生成记录，`?file=<docId>` 查看该次生成的单份文档 |
 | `/index/homework-grading` | 作业批改 |
 | `/index/knowledge-base` | 知识库模块 |
 | `/guides` | 首页（含顶部导航），子路由 `/docs` |

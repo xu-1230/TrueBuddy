@@ -230,6 +230,7 @@ import {
 import AdminIcon from '@/views/admin/components/AdminIcon.vue'
 import { useAppearance } from '@/composables/useAppearance'
 import { removeToken } from '@/utils/auth'
+import { isPathActive } from '@/utils/route'
 
 const route = useRoute()
 const router = useRouter()
@@ -247,8 +248,9 @@ const isDarkMode = computed({
   set: (value) => setMode(value ? 'dark' : 'light'),
 })
 
-/** 工作流编排是全屏画布，需要去掉主区内边距与滚动 */
-const isFullBleed = computed(() => route.path === '/index/workflow')
+/** 全幅页面：工作流画布与模拟会议控制台都自己管理内边距/滚动 */
+const FULL_BLEED_PATHS = new Set(['/index/workflow', '/index/meeting'])
+const isFullBleed = computed(() => FULL_BLEED_PATHS.has(route.path))
 
 const user = reactive({
   name: '张三',
@@ -386,7 +388,8 @@ function go(item) {
 }
 
 function isActive(item) {
-  return route.path === item.path
+  // 子路径（如 /index/doc-template/12?file=5）也要点亮父菜单
+  return isPathActive(route.path, item.path)
 }
 </script>
 

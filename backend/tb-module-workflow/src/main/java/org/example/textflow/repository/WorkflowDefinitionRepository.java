@@ -1,5 +1,6 @@
 package org.example.textflow.repository;
 
+import org.example.textflow.model.WorkflowConstants;
 import org.example.textflow.model.WorkflowDO;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -31,19 +32,56 @@ public class WorkflowDefinitionRepository {
 
     /** 查询列：id 以字符串读出（雪花 ID 超出前端安全整数范围） */
     private static final String COLUMNS =
-            "id, name, description, schema_json, status, create_time, update_time";
+            "id, name, description, schema_json, status, visibility, creator, create_time, update_time";
 
     private static final String SELECT_BY_ID =
             "SELECT " + COLUMNS + " FROM workflow "
                     + "WHERE deleted = FALSE AND id = CAST(? AS BIGINT)";
 
-    private static final String SELECT_LIST =
+    /** 登录用户的可见列表：自己创建的 + builtin 模板（ADR 0006：builtin 按 id 豁免） */
+    private static final String SELECT_LIST_BY_OWNER =
             "SELECT " + COLUMNS + " FROM workflow "
-                    + "WHERE deleted = FALSE ORDER BY update_time DESC, id DESC";
+                    + "WHERE deleted = FALSE AND (creator = CAST(? AS BIGINT) OR id = CAST("
+                    + WorkflowConstants.BUILTIN_WORKFLOW_ID + " AS BIGINT)) "
+                    + "ORDER BY update_time DESC, id DESC";
+
+    /** 匿名（未登录）可见列表：/workflow/** 在免登录白名单内，只暴露 builtin 模板 */
+    private static final String SELECT_LIST_BUILTIN_ONLY =
+            "SELECT " + COLUMNS + " FROM workflow "
+                    + "WHERE deleted = FALSE AND id = CAST(" + WorkflowConstants.BUILTIN_WORKFLOW_ID + " AS BIGINT) "
+                    + "ORDER BY update_time DESC, id DESC";
+
+    /** 他人公有列表（登录用户）：visibility=1 且创建者不是当前用户；creator 为 NULL 的存量行不展示 */
+    private static final String SELECT_LIST_PUBLIC_LOGGED_IN =
+            "SELECT w.id, w.name, w.description, w.schema_json, w.status, w.visibility, w.creator, "
+                    + "w.create_time, w.update_time, "
+                    + "COALESCE(u.nickname, u.username, '未知用户') AS creator_name "
+                    + "FROM workflow w "
+                    + "LEFT JOIN system_user u ON u.id = w.creator "
+                    + "WHERE w.deleted = FALSE AND w.visibility = 1 AND w.creator <> CAST(? AS BIGINT) "
+                    + "ORDER BY w.update_time DESC, w.id DESC";
+
+    /** 他人公有列表（匿名）：免登录白名单里没有「我的」，全部公有行都算他人的 */
+    private static final String SELECT_LIST_PUBLIC_ANONYMOUS =
+            "SELECT w.id, w.name, w.description, w.schema_json, w.status, w.visibility, w.creator, "
+                    + "w.create_time, w.update_time, "
+                    + "COALESCE(u.nickname, u.username, '未知用户') AS creator_name "
+                    + "FROM workflow w "
+                    + "LEFT JOIN system_user u ON u.id = w.creator "
+                    + "WHERE w.deleted = FALSE AND w.visibility = 1 "
+                    + "ORDER BY w.update_time DESC, w.id DESC";
+
+    private static final String UPDATE_VISIBILITY =
+            "UPDATE workflow SET visibility = ?, update_time = now() "
+                    + "WHERE deleted = FALSE AND id = CAST(? AS BIGINT)";
+
+    /** 按名称查 id（fork 命名判重用）；id 在库里是 BIGINT，读侧转成字符串与 DO 口径一致 */
+    private static final String SELECT_ID_BY_NAME =
+            "SELECT CAST(id AS VARCHAR) FROM workflow WHERE deleted = FALSE AND name = ? LIMIT 1";
 
     private static final String INSERT =
-            "INSERT INTO workflow (id, name, description, schema_json, status, create_time, update_time, deleted) "
-                    + "VALUES (CAST(? AS BIGINT), ?, ?, ?, ?, now(), now(), FALSE)";
+            "INSERT INTO workflow (id, name, description, schema_json, status, visibility, creator, create_time, update_time, deleted) "
+                    + "VALUES (CAST(? AS BIGINT), ?, ?, ?, ?, ?, CAST(? AS BIGINT), now(), now(), FALSE)";
 
     private static final String UPDATE =
             "UPDATE workflow SET name = ?, description = ?, schema_json = ?, status = ?, update_time = now() "
@@ -59,8 +97,18 @@ public class WorkflowDefinitionRepository {
         workflow.setDescription(rs.getString("description"));
         workflow.setSchemaJson(rs.getString("schema_json"));
         workflow.setStatus(rs.getInt("status"));
+        workflow.setVisibility(rs.getInt("visibility"));
+        long creator = rs.getLong("creator");
+        workflow.setCreator(rs.wasNull() ? null : creator);
         workflow.setCreateTime(toLocalDateTime(rs.getTimestamp("create_time")));
         workflow.setUpdateTime(toLocalDateTime(rs.getTimestamp("update_time")));
+        return workflow;
+    };
+
+    /** 公有列表行多带一列 creator_name（COALESCE 出展示名），其余与主 ROW_MAPPER 一致 */
+    private static final RowMapper<WorkflowDO> PUBLIC_ROW_MAPPER = (rs, rowNum) -> {
+        WorkflowDO workflow = ROW_MAPPER.mapRow(rs, rowNum);
+        workflow.setCreatorName(rs.getString("creator_name"));
         return workflow;
     };
 
@@ -78,9 +126,34 @@ public class WorkflowDefinitionRepository {
         return jdbcTemplate.query(SELECT_BY_ID, ROW_MAPPER, id).stream().findFirst();
     }
 
-    /** 列表：按更新时间倒序 */
-    public List<WorkflowDO> selectListOrderByUpdateTime() {
-        return jdbcTemplate.query(SELECT_LIST, ROW_MAPPER);
+    /**
+     * 可见列表：登录用户拿到「我的 + builtin」，匿名只拿 builtin。
+     *
+     * <p>{@code /workflow/**} 在免登录白名单里（URL 模式无法按方法拆分），过滤在查询侧完成。
+     */
+    public List<WorkflowDO> selectListVisible(Long creatorId) {
+        if (creatorId == null) {
+            return jdbcTemplate.query(SELECT_LIST_BUILTIN_ONLY, ROW_MAPPER);
+        }
+        return jdbcTemplate.query(SELECT_LIST_BY_OWNER, ROW_MAPPER, creatorId);
+    }
+
+    /** 他人公有列表（visibility=1 且非本人创建；匿名时没有「本人」，返回全部公有行） */
+    public List<WorkflowDO> selectListPublic(Long creatorId) {
+        if (creatorId == null) {
+            return jdbcTemplate.query(SELECT_LIST_PUBLIC_ANONYMOUS, PUBLIC_ROW_MAPPER);
+        }
+        return jdbcTemplate.query(SELECT_LIST_PUBLIC_LOGGED_IN, PUBLIC_ROW_MAPPER, creatorId);
+    }
+
+    /** 只改可见性，返回影响行数（0 表示记录不存在） */
+    public int updateVisibility(String id, Integer visibility) {
+        return jdbcTemplate.update(UPDATE_VISIBILITY, visibility, id);
+    }
+
+    /** 按名称查一条未删除工作流的 id（fork 命名判重用）；不存在返回 empty */
+    public Optional<String> selectIdByName(String name) {
+        return jdbcTemplate.queryForList(SELECT_ID_BY_NAME, String.class, name).stream().findFirst();
     }
 
     /** 新增一条工作流，返回影响行数 */
@@ -90,7 +163,9 @@ public class WorkflowDefinitionRepository {
                 workflow.getName(),
                 workflow.getDescription(),
                 workflow.getSchemaJson(),
-                workflow.getStatus());
+                workflow.getStatus(),
+                workflow.getVisibility(),
+                workflow.getCreator());
     }
 
     /** 按主键更新一条未删除的工作流，返回影响行数（0 表示记录不存在） */

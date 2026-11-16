@@ -5,6 +5,7 @@ import com.alibaba.cloud.ai.graph.checkpoint.savers.MemorySaver;
 import com.alibaba.cloud.ai.graph.exception.GraphStateException;
 import jakarta.annotation.Resource;
 import org.example.backend.framework.common.pojo.CommonResult;
+import org.example.textflow.model.vo.PublicWorkflowVO;
 import org.example.textflow.model.vo.WorkflowDetailRespVO;
 import org.example.textflow.model.vo.WorkflowSaveReqVO;
 import org.example.textflow.model.vo.WorkflowVO;
@@ -17,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -101,6 +103,36 @@ public class WorkflowController {
     @GetMapping("/list")
     public CommonResult<List<WorkflowVO>> list() {
         return success(workflowService.listWorkflows());
+    }
+
+    /**
+     * 切换本人工作流的公有 / 私有（builtin 模板不可改，归属校验在 Service 内）。
+     *
+     * @param workflowId 工作流 id（雪花 ID 字符串）
+     * @param visibility 0=私有，1=公有
+     */
+    @PutMapping("/visibility")
+    public CommonResult<Boolean> visibility(@RequestParam("workflow_id") String workflowId,
+                                            @RequestParam("visibility") Integer visibility) {
+        workflowService.updateVisibility(workflowId, visibility);
+        return success(true);
+    }
+
+    /** 他人公有工作流列表（匿名可见全部公有行；不回传画布定义） */
+    @GetMapping("/public-list")
+    public CommonResult<List<PublicWorkflowVO>> publicList() {
+        return success(workflowService.listPublicWorkflows());
+    }
+
+    /**
+     * fork 一份工作流为当前用户的副本（他人公有流运行的唯一前置通道）。
+     *
+     * @param workflowId 被 fork 的工作流 id（雪花 ID 字符串）
+     * @return 副本 id（雪花 ID 字符串）
+     */
+    @PostMapping("/fork")
+    public CommonResult<String> fork(@RequestParam("workflow_id") String workflowId) {
+        return success(workflowService.forkWorkflow(workflowId));
     }
 
 }

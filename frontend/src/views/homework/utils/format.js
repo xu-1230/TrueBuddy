@@ -2,6 +2,17 @@
  * 作业批改模块通用格式化工具
  */
 
+const pad = (value) => String(value).padStart(2, '0')
+
+/** 日期时间 → 「2026-11-16 14:05」（空值回落空串；兼容空格分隔的常见后端格式） */
+export function formatDateTime(value) {
+  if (value == null || value === '') return ''
+  const normalized = typeof value === 'string' ? value.replace(/^(\d{4}-\d{2}-\d{2})\s+/, '$1T') : value
+  const date = normalized instanceof Date ? normalized : new Date(normalized)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 /** 字节 → 人类可读大小 */
 export function formatFileSize(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'

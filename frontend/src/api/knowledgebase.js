@@ -5,6 +5,9 @@ import service from './index'
  *
  * 对接后端 tb-module-knowledgebase 模块（Controller @RequestMapping("/knowledge-base")）：
  *     GET     /space/list                       → CommonResult<SpaceVO[]>
+ *     GET     /space/public-list                → CommonResult<PublicSpaceVO[]>（他人的公有空间，只读）
+ *     PUT     /space/visibility?id=&visibility= → CommonResult<Boolean>（仅创建者可调）
+ *     POST    /space/fork?id={id}               → CommonResult<Long>（fork 为独立副本，返回副本 id）
  *     POST    /space/create                     → CommonResult<Long>
  *     PUT     /space/update                     → CommonResult<SpaceVO>
  *     DELETE  /space/delete?id={id}             → CommonResult<Boolean>
@@ -26,8 +29,19 @@ import service from './index'
  * @property {number} id              空间 ID
  * @property {string} name            空间名称
  * @property {string} description     空间描述
+ * @property {number} visibility      可见性：0=私有，1=公有
  * @property {number} documentCount    文档数量
  * @property {string} createTime      创建时间（ISO 字符串）
+ */
+
+/**
+ * @typedef {Object} PublicSpaceVO
+ * @property {number} id              空间 ID
+ * @property {string} name            空间名称
+ * @property {string} description     空间描述
+ * @property {number} documentCount   文档数量
+ * @property {string} createTime      创建时间（ISO 字符串）
+ * @property {string} creatorName     创建者显示名
  */
 
 /**
@@ -56,6 +70,37 @@ import service from './index'
  */
 export function getSpaceList() {
   return service({ url: '/knowledge-base/space/list', method: 'get' })
+}
+
+/**
+ * 获取他人的公有空间列表（「公有库」浏览区，只读）
+ * GET /knowledge-base/space/public-list → PublicSpaceVO[]
+ */
+export function getPublicSpaceList() {
+  return service({ url: '/knowledge-base/space/public-list', method: 'get' })
+}
+
+/**
+ * 切换空间可见性（仅创建者可调）
+ * PUT /knowledge-base/space/visibility?id={id}&visibility={0|1} → Boolean
+ * @param {number} id
+ * @param {0|1} visibility 0=私有，1=公有
+ */
+export function updateSpaceVisibility(id, visibility) {
+  return service({
+    url: '/knowledge-base/space/visibility',
+    method: 'put',
+    params: { id, visibility },
+  })
+}
+
+/**
+ * fork 空间为「添加为自己的」独立副本（含文档/分片/向量的单事务深拷贝）
+ * POST /knowledge-base/space/fork?id={id} → Long 副本空间 id
+ * @param {number} id 源空间 id（他人的公有空间或自己的空间）
+ */
+export function forkSpace(id) {
+  return service({ url: '/knowledge-base/space/fork', method: 'post', params: { id } })
 }
 
 /**

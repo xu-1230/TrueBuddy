@@ -1,13 +1,23 @@
 package org.example.backend.module.homework.service.Impl;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.backend.module.homework.mapper.HomeworkFileMapper;
+import org.example.backend.module.homework.mapper.HomeworkGradingResultMapper;
 import org.example.backend.module.homework.mapper.HomeworkTaskMapper;
 import org.example.backend.module.homework.model.HomeworkFileDO;
+import org.example.backend.module.homework.model.HomeworkGradingResultDO;
 import org.example.backend.module.homework.model.HomeworkTaskDO;
 import org.example.backend.module.homework.model.vo.HomeworkFileItemVO;
 import org.example.backend.module.homework.model.vo.HomeworkGradeReqVO;
+import org.example.backend.module.homework.model.vo.HomeworkResultRecordVO;
+import org.example.backend.module.homework.model.vo.HomeworkResultWriteReqVO;
+import org.example.backend.module.homework.model.vo.HomeworkResultWriteRespVO;
+import org.example.backend.module.homework.model.vo.HomeworkTaskDetailRespVO;
+import org.example.backend.module.homework.model.vo.HomeworkTaskItemVO;
 import org.example.backend.module.homework.model.vo.HomeworkUploadRespVO;
 import org.example.backend.module.homework.service.HomeworkService;
 import org.example.backend.module.infra.mapper.InfraFileMapper;
@@ -18,7 +28,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -32,6 +44,8 @@ import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEW
 import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_FILE_TYPE_NOT_ALLOWED;
 import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_PATH_COUNT_MISMATCH;
 import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_PATH_INVALID;
+import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_TASK_NOT_EXISTS;
+import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_TASK_STATUS_INVALID;
 
 /**
  * 作业批改 Service 实现。
@@ -54,6 +68,9 @@ public class HomeworkServiceImpl implements HomeworkService {
     private static final String UPLOAD_DIR = "infra/file";
     /** 文件夹名兜底值 */
     private static final String DEFAULT_FOLDER_NAME = "本次作业";
+    /** 任务列表默认条数与上限（口径同文档生成历史 getHistory） */
+    private static final int TASK_DEFAULT_LIMIT = 20;
+    private static final int TASK_MAX_LIMIT = 100;
     /** 允许上传的扩展名（与前端 FolderUploader 保持一致；zip 由前端本地解压，不会到达后端） */
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
             "pdf", "doc", "docx", "md", "markdown", "txt",
@@ -69,7 +86,12 @@ public class HomeworkServiceImpl implements HomeworkService {
     @Resource
     private HomeworkFileMapper fileMapper;
     @Resource
+    private HomeworkGradingResultMapper resultMapper;
+    @Resource
     private TransactionTemplate transactionTemplate;
+
+    /** deductions / readFiles 的 JSON 数组文本互转（模块内小对象，独立实例即可） */
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * 上传整份作业文件夹并建任务。
@@ -166,6 +188,198 @@ public class HomeworkServiceImpl implements HomeworkService {
                     fileItems.stream().map(HomeworkFileItemVO::getPath).toList(),
                     fileItems.stream().map(HomeworkFileItemVO::getFileId).toList());
         }
+    }
+
+    /**
+     * 批改任务列表（历史抽屉）。
+     *
+     * <p>口径同文档生成历史：最近 N 条按创建时间倒序，limit 非正取默认、超上限截断。
+     */
+    @Override
+    public List<HomeworkTaskItemVO> getTaskList(Integer limit) {
+        int size = limit == null || limit <= 0 ? TASK_DEFAULT_LIMIT : Math.min(limit, TASK_MAX_LIMIT);
+        List<HomeworkTaskItemVO> result = new ArrayList<>();
+        for (HomeworkTaskDO task : taskMapper.selectRecentList(size)) {
+            HomeworkTaskItemVO vo = new HomeworkTaskItemVO();
+            fillTaskFields(vo, task);
+            result.add(vo);
+        }
+        return result;
+    }
+
+    /**
+     * 批改任务详情（只读回看）：任务信息 + 批改配置 + 文件树。
+     *
+     * <p>文件树走 LEFT JOIN infra_file 带出预签名 URL 与 MIME，
+     * 便于回看时直接打开原文件；file_id 为空的行对应字段为 null。
+     */
+    @Override
+    public HomeworkTaskDetailRespVO getTaskDetail(Long taskId) {
+        HomeworkTaskDO task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw exception(HOMEWORK_TASK_NOT_EXISTS);
+        }
+        HomeworkTaskDetailRespVO respVO = new HomeworkTaskDetailRespVO();
+        fillTaskFields(respVO, task);
+        List<HomeworkFileItemVO> files = new ArrayList<>();
+        for (HomeworkFileDO file : fileMapper.selectListWithInfraByTaskId(taskId)) {
+            HomeworkFileItemVO item = new HomeworkFileItemVO();
+            item.setId(file.getId());
+            item.setFileId(file.getFileId());
+            item.setName(file.getName());
+            item.setPath(file.getRelativePath());
+            item.setSize(file.getSize() == null ? 0L : file.getSize());
+            item.setType(file.getType());
+            item.setUrl(file.getUrl());
+            files.add(item);
+        }
+        respVO.setFiles(files);
+
+        // 评分回看：逐学生记录 + 漏批份数（历史抽屉按成绩卡形态恢复画布用）
+        List<HomeworkResultRecordVO> results = new ArrayList<>();
+        for (HomeworkGradingResultDO row : resultMapper.selectListByTaskId(taskId)) {
+            results.add(toResultVO(row));
+        }
+        respVO.setResults(results);
+        respVO.setMissedCount(missedCountOf(task.getFileCount(), results.size()));
+        return respVO;
+    }
+
+    /**
+     * 开始执行批改：状态机只允许 0→1。
+     *
+     * <p>UPDATE 带 {@code status = 0} 条件，受影响行数为 0 即说明任务已不在待批改状态
+     * （重复点开始 / 已在批改中），抛业务错误而不是静默成功。
+     */
+    @Override
+    public void startGrading(Long taskId) {
+        if (taskMapper.selectById(taskId) == null) {
+            throw exception(HOMEWORK_TASK_NOT_EXISTS);
+        }
+        if (taskMapper.updateStatusToGrading(taskId) == 0) {
+            throw exception(HOMEWORK_TASK_STATUS_INVALID);
+        }
+    }
+
+    /**
+     * 覆盖式回写批改结果（执行终态后由前端调用）。
+     *
+     * <p>同一任务重复回写以最后一次为准：短事务里先物理删除旧行、再整批插入、最后推进状态。
+     * 终态与漏批份数由服务端从 records 数量对比任务 fileCount 推导（单一真相，不信任请求体）：
+     * 有记录且无漏批 → 2 成功；有漏批 → 3 部分成功；没有记录 → 4 失败。
+     * 状态机只允许从批改中（1）或既有终态（2/3/4）推进，待批改（0）不可直接写终态。
+     */
+    @Override
+    public HomeworkResultWriteRespVO writeResults(Long taskId, HomeworkResultWriteReqVO reqVO) {
+        HomeworkTaskDO task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw exception(HOMEWORK_TASK_NOT_EXISTS);
+        }
+        List<HomeworkResultRecordVO> inputRecords = reqVO.getRecords() == null ? List.of() : reqVO.getRecords();
+        List<HomeworkGradingResultDO> rows = new ArrayList<>(inputRecords.size());
+        for (HomeworkResultRecordVO record : inputRecords) {
+            rows.add(toResultDO(taskId, record, reqVO.getConversationId()));
+        }
+        int total = rows.size();
+        int missed = missedCountOf(task.getFileCount(), total);
+        int finalStatus = total == 0 ? 4 : (missed > 0 ? 3 : 2);
+        log.info("批改结果回写: taskId={}, records={}, fileCount={}, 终态={}, 漏批={}, statistics={}",
+                taskId, total, task.getFileCount(), finalStatus, missed, reqVO.getStatistics());
+
+        transactionTemplate.executeWithoutResult(txStatus -> {
+            resultMapper.deleteByTaskId(taskId);
+            if (!rows.isEmpty()) {
+                resultMapper.insertBatch(rows);
+            }
+            if (taskMapper.updateStatusToFinal(taskId, finalStatus) == 0) {
+                throw exception(HOMEWORK_TASK_STATUS_INVALID);
+            }
+        });
+
+        HomeworkResultWriteRespVO respVO = new HomeworkResultWriteRespVO();
+        respVO.setTaskId(taskId);
+        respVO.setStatus(finalStatus);
+        respVO.setTotal(total);
+        respVO.setMissed(missed);
+        return respVO;
+    }
+
+    /** 漏批份数：fileCount - 记录数，负值归 0（fileCount 未知按 0，即不判漏批） */
+    private int missedCountOf(Integer fileCount, int recordCount) {
+        if (fileCount == null || fileCount <= 0) {
+            return 0;
+        }
+        return Math.max(0, fileCount - recordCount);
+    }
+
+    /** 回写记录 VO → DO（student 空值兜底、JSON 数组文本化、score 归一为 BigDecimal） */
+    private HomeworkGradingResultDO toResultDO(Long taskId, HomeworkResultRecordVO record, String conversationId) {
+        HomeworkGradingResultDO row = new HomeworkGradingResultDO();
+        row.setTaskId(taskId);
+        String student = record.getStudent() == null ? "" : record.getStudent().trim();
+        row.setStudent(student.isEmpty() ? "未署名" : student);
+        row.setScore(record.getScore() == null ? null : BigDecimal.valueOf(record.getScore()));
+        row.setGrade(record.getGrade());
+        row.setComment(record.getComment());
+        row.setDeductions(toJson(record.getDeductions()));
+        row.setReadFiles(toJson(record.getReadFiles()));
+        row.setConversationId(conversationId);
+        return row;
+    }
+
+    /** 评分结果 DO → VO（JSON 数组文本还原成字符串列表，供历史回看） */
+    private HomeworkResultRecordVO toResultVO(HomeworkGradingResultDO row) {
+        HomeworkResultRecordVO vo = new HomeworkResultRecordVO();
+        vo.setStudent(row.getStudent());
+        vo.setScore(row.getScore() == null ? null : row.getScore().doubleValue());
+        vo.setGrade(row.getGrade());
+        vo.setComment(row.getComment());
+        vo.setDeductions(fromJson(row.getDeductions()));
+        vo.setReadFiles(fromJson(row.getReadFiles()));
+        return vo;
+    }
+
+    /** 字符串列表 → JSON 数组文本（null 归一为 []，与 JSONB 列的 NOT NULL DEFAULT '[]' 对齐） */
+    private String toJson(List<String> values) {
+        try {
+            return objectMapper.writeValueAsString(values == null ? List.of() : values);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("评分记录 JSON 序列化失败", e);
+        }
+    }
+
+    /** JSON 数组文本 → 字符串列表（空文本 / 反序列化失败都归空列表，别让一行坏数据拖垮整个详情） */
+    private List<String> fromJson(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+        } catch (JsonProcessingException e) {
+            log.warn("评分记录 JSON 解析失败，按空列表处理: {}", json, e);
+            return List.of();
+        }
+    }
+
+    /** 任务 DO → 列表项 VO（详情 VO 为其子类，共用同一填充） */
+    private void fillTaskFields(HomeworkTaskItemVO vo, HomeworkTaskDO task) {
+        vo.setId(task.getId());
+        vo.setFolderName(task.getFolderName());
+        vo.setStatus(task.getStatus());
+        vo.setFileCount(task.getFileCount());
+        vo.setTotalSize(task.getTotalSize());
+        vo.setDescription(task.getDescription());
+        vo.setSpaceIds(splitSpaceIds(task.getSpaceIds()));
+        vo.setResultCount(task.getResultCount());
+        vo.setCreateTime(task.getCreateTime());
+    }
+
+    /** 逗号分隔 CSV → 列表（落库前未写批改配置时为 null，归一为空列表） */
+    private List<String> splitSpaceIds(String spaceIds) {
+        if (!StringUtils.hasText(spaceIds)) {
+            return List.of();
+        }
+        return Arrays.stream(spaceIds.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 
     /**

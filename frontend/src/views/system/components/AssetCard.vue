@@ -68,8 +68,6 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { coverArt, sheenDelay, sparkLayouts, trackColor } from '../utils/coverArt'
 import { formatCount } from '../utils/feed'
 
-const DAY = 86400000
-
 const props = defineProps({
   /** v-for 稳定键，同时作 SVG 渐变 id 的去重后缀 */
   uid: { type: String, default: '' },

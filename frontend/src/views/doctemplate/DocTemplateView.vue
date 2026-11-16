@@ -218,6 +218,24 @@
                 <p class="result-state__desc">后端正在生成多份候选文档，请稍候</p>
               </div>
 
+              <!-- 详情载入中（深链接 / 后退前进 / 点历史条目） -->
+              <div v-else-if="generationLoading" class="result-state">
+                <span class="result-state__spinner"></span>
+                <p class="result-state__title">正在载入生成记录…</p>
+                <p class="result-state__desc">正在获取该次生成的文档列表</p>
+              </div>
+
+              <!-- 详情载入失败（暂时性故障，保留 URL 供重试） -->
+              <div v-else-if="generationLoadError" class="result-state">
+                <el-icon class="result-state__icon"><WarningFilled /></el-icon>
+                <p class="result-state__title">载入生成记录失败</p>
+                <p class="result-state__desc">{{ generationLoadError }}</p>
+                <button type="button" class="ghost-chip" @click="retryLoad">
+                  <el-icon><Refresh /></el-icon>
+                  <span>重新载入</span>
+                </button>
+              </div>
+
               <!-- 多文档结果列表（模拟后端一次返回多个文件） -->
               <div v-else-if="resultDocs.length" class="result-grid">
                 <article
@@ -247,6 +265,13 @@
                     </button>
                   </div>
                 </article>
+              </div>
+
+              <!-- 该次生成失败 / 0 份 / 仍在生成 -->
+              <div v-else-if="activeGenerationId" class="display-box__empty">
+                <el-icon class="display-box__icon"><Picture /></el-icon>
+                <p class="display-box__title">{{ generationEmptyState.title }}</p>
+                <p class="display-box__desc">{{ generationEmptyState.desc }}</p>
               </div>
 
               <!-- 空状态 -->
@@ -329,13 +354,12 @@
             :key="record.id"
             class="history-item"
             :class="{
-              'is-active': activeHistoryId === record.id,
-              'is-loading': historyDetailLoadingId === record.id,
+              'is-active': isActiveRecord(record),
               'is-no-doc': !record.docCount,
             }"
             role="button"
             tabindex="0"
-            :title="record.docCount ? '点击查看该次生成的文档' : '该次生成没有产出文档'"
+            :title="record.docCount ? '点击查看该次生成的文档' : '点击查看该次生成记录'"
             @click="openHistory(record)"
             @keydown.enter="openHistory(record)"
             @keydown.space.prevent="openHistory(record)"
@@ -357,11 +381,7 @@
               <span>{{ record.time }}</span>
               <span class="history-item__count">{{ record.docCount || 0 }} 份</span>
               <span class="history-item__open">
-                <span
-                  v-if="historyDetailLoadingId === record.id"
-                  class="history-item__spinner"
-                ></span>
-                <el-icon v-else><ArrowRight /></el-icon>
+                <el-icon><ArrowRight /></el-icon>
               </span>
             </div>
           </li>
@@ -378,7 +398,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ArrowDown,
@@ -397,6 +418,7 @@ import {
   Tickets,
   Upload,
   View,
+  WarningFilled,
 } from '@element-plus/icons-vue'
 import { getSpaceList } from '@/api/knowledgebase'
 import { uploadFile as uploadTemplateFile } from '@/api/file'
@@ -404,6 +426,11 @@ import { generateDoc, getGenerationDetail, getGenerationHistory } from '@/api/do
 import SquircleButton from './components/SquircleButton.vue'
 import DocxPreview from './components/DocxPreview.vue'
 import AiChatPanel from './components/AiChatPanel.vue'
+import {
+  docTemplateLocation,
+  normalizePositiveId,
+  parseDocTemplateRoute,
+} from './utils/route'
 
 const COST = 50
 const DESC_MAX = 500
@@ -412,6 +439,15 @@ const LINE_WIDTHS = [92, 74, 86, 62, 80, 68, 96, 56, 84, 72]
 const TONE_CYCLE = ['indigo', 'emerald', 'amber']
 /** 历史记录拉取条数 */
 const HISTORY_LIMIT = 20
+/** 任务状态 → badge 文案（1=成功不额外展示） */
+const GENERATION_STATUS_TEXT = {
+  0: '生成中',
+  1: '',
+  2: '部分成功',
+  3: '失败',
+}
+/** 后端 GENERATION_NOT_EXISTS（见 tb-module-doctemplate ErrorCodeConstants） */
+const GENERATION_NOT_EXISTS_CODE = 1_004_000_005
 
 /* ---------- 模板文档（用户上传，作为生成基准；始终只保留一个） ---------- */
 const TEMPLATE_TYPE_MAP = {
@@ -543,19 +579,48 @@ const canGenerate = computed(
   () => Boolean(templateDoc.value && description.value.trim()) && !uploading.value,
 )
 
+/* ---------- URL 契约（URL 是页面状态的唯一真相源） ---------- */
+const route = useRoute()
+const router = useRouter()
+
 /* ---------- 生成结果（后端一次返回多份复刻文档） ---------- */
 const generating = ref(false)
 const resultDocs = ref([])
-/** 当前结果列表来自哪条历史记录（null 表示来自本次生成） */
-const activeHistoryId = ref(null)
+/** 当前已载入的生成记录 id（字符串；null 表示基础生成页） */
+const activeGenerationId = ref(null)
+/** 当前生成记录的任务状态：0=生成中，1=成功，2=部分成功，3=失败 */
+const activeGenerationStatus = ref(null)
+/** 当前生成记录的错误摘要 */
+const activeGenerationError = ref('')
+/** 详情拉取中（区别于“正在生成”） */
+const generationLoading = ref(false)
+/** 详情拉取失败（暂时性故障，保留 URL 并允许重试） */
+const generationLoadError = ref('')
+/** 详情请求令牌：快速切换记录时丢弃过期响应 */
+let loadToken = 0
 
 const displayBadge = computed(() => {
-  if (resultDocs.value.length) {
-    return activeHistoryId.value
-      ? `历史记录 · 已载入 ${resultDocs.value.length} 份文档`
-      : `已生成 ${resultDocs.value.length} 份文档`
+  if (generationLoading.value) return '正在载入生成记录…'
+  if (generationLoadError.value) return '生成记录 · 载入失败'
+  if (activeGenerationId.value) {
+    const state = GENERATION_STATUS_TEXT[activeGenerationStatus.value] ?? ''
+    const parts = ['生成记录']
+    if (state) parts.push(state)
+    if (resultDocs.value.length) parts.push(`已载入 ${resultDocs.value.length} 份文档`)
+    return parts.join(' · ')
   }
   return templateDoc.value ? templateDoc.value.name : '未选择模板'
+})
+
+/** 失败 / 生成中记录的空白结果区文案 */
+const generationEmptyState = computed(() => {
+  if (activeGenerationStatus.value === 0) {
+    return { title: '该次生成仍在进行中', desc: '请稍后刷新页面查看结果' }
+  }
+  return {
+    title: '该次生成没有产出文档',
+    desc: activeGenerationError.value || '可以回到生成页调整模板或描述后重试',
+  }
 })
 
 function lineWidth(index) {
@@ -605,19 +670,37 @@ async function handleGenerate() {
       description: description.value.trim(),
       quality: quality.value,
     })
-    resultDocs.value = (res?.docs ?? []).map(mapDoc)
-    // 本次生成的结果不再属于任何历史记录
-    activeHistoryId.value = null
-    if (!resultDocs.value.length) {
+    const docs = (res?.docs ?? []).map(mapDoc)
+    if (!docs.length) {
+      // 生成失败不改 URL 与当前结果：保持地址与画面一致，只提示错误
       ElMessage.error(res?.errorMsg || '生成失败，请稍后重试')
       return
     }
+
+    const generationId = normalizePositiveId(res?.generationId)
+    if (generationId) {
+      // 先落状态再改地址：watcher 会因“该 id 已载入”跳过重复 detail 请求
+      applyLoadedGeneration({
+        generationId,
+        docs,
+        status: res?.status ?? null,
+        errorMsg: res?.errorMsg ?? '',
+      })
+      await navigate(docTemplateLocation(generationId), { replace: true })
+    } else {
+      // 后端未返回任务 id（理论上不会发生）：保底仍展示本次结果
+      resultDocs.value = docs
+      activeGenerationId.value = null
+      activeGenerationStatus.value = res?.status ?? null
+      activeGenerationError.value = res?.errorMsg ?? ''
+    }
+
     if (res?.status === 2) {
       ElMessage.warning(`部分文档生成失败：${res?.errorMsg || ''}`)
     } else {
       const kbText = selectedKnowledgeBase.value ? `，知识库「${selectedKnowledgeBase.value.name}」` : ''
       ElMessage.success(
-        `已基于模板「${templateDoc.value.name}」${kbText}返回 ${resultDocs.value.length} 份文档`,
+        `已基于模板「${templateDoc.value.name}」${kbText}返回 ${docs.length} 份文档`,
       )
     }
     // 生成后刷新历史记录
@@ -637,18 +720,38 @@ const activeDoc = ref(null)
 const picking = ref(false)
 const pickedElement = ref(null)
 
-function openDoc(doc) {
+/** 仅改本地视图状态；对外入口一律走 URL（openDoc / closeViewer） */
+function openDocState(doc) {
   activeDoc.value = doc
   viewing.value = true
   picking.value = false
   pickedElement.value = null
 }
 
-function closeViewer() {
+function closeViewerState() {
   viewing.value = false
   activeDoc.value = null
   picking.value = false
   pickedElement.value = null
+}
+
+function findDocById(fileId) {
+  return resultDocs.value.find((doc) => String(doc.id) === String(fileId)) ?? null
+}
+
+/** 点结果卡：push ?file=，由 URL watcher 打开查看模式 */
+function openDoc(doc) {
+  if (!activeGenerationId.value || !doc?.id) return
+  navigate(docTemplateLocation(activeGenerationId.value, doc.id))
+}
+
+/** 返回结果列表：push 去掉 file 的地址（不用 back，保证深链接刷新后可用） */
+function closeViewer() {
+  if (!activeGenerationId.value) {
+    closeViewerState()
+    return
+  }
+  navigate(docTemplateLocation(activeGenerationId.value))
 }
 
 function togglePicking() {
@@ -664,8 +767,6 @@ function handlePick(payload) {
 const historyOpen = ref(false)
 const historyRecords = ref([])
 const historyLoading = ref(false)
-/** 正在拉取详情的历史记录 id（条目内联 loading + 防重复点击） */
-const historyDetailLoadingId = ref(null)
 
 async function loadHistory() {
   historyLoading.value = true
@@ -679,40 +780,163 @@ async function loadHistory() {
   }
 }
 
+/** 当前载入的记录是否就是这条历史 */
+function isActiveRecord(record) {
+  return Boolean(activeGenerationId.value) && String(record?.id) === activeGenerationId.value
+}
+
 /**
- * 点击历史记录 → 把该次生成的文件列表载入结果区（展示结果卡片列表，不进入文档预览）。
- * 后端 /doc-template/detail 会为每个文件重新签发预签名地址，旧记录的文档同样可打开。
- * 进入预览留给用户在结果列表里点具体卡片时触发。
+ * 点击历史条目：立即关闭抽屉并 push 到 /:id；详情载入交给 URL watcher。
+ * 0 份 / 失败记录同样进入 URL —— 深链接与点击走同一条路径。
  */
-async function openHistory(record) {
-  if (!record?.id || historyDetailLoadingId.value) return
-  historyDetailLoadingId.value = record.id
-  try {
-    const res = await getGenerationDetail(record.id)
-    const docs = (res?.docs ?? []).map(mapDoc)
-    if (!docs.length) {
-      ElMessage.warning(res?.errorMsg || '该次生成没有可查看的文档')
-      return
-    }
-    resultDocs.value = docs
-    activeHistoryId.value = record.id
-    historyOpen.value = false
-    // 若当前正处于文档预览，先退回结果列表，保证载入的记录可见
-    if (viewing.value) closeViewer()
-    if (res?.status === 2) {
-      ElMessage.warning(`该次生成部分失败：${res?.errorMsg || ''}`)
-    } else {
-      ElMessage.success(`已载入历史记录「${record.title}」的 ${docs.length} 份文档`)
-    }
-  } catch (e) {
-    ElMessage.error(e?.message || '加载历史详情失败')
-  } finally {
-    historyDetailLoadingId.value = null
-  }
+function openHistory(record) {
+  if (!record?.id) return
+  historyOpen.value = false
+  navigate(docTemplateLocation(record.id))
 }
 
 watch(historyOpen, (open) => {
   if (open) loadHistory()
+})
+
+/* ---------- URL → 页面状态 ---------- */
+
+/** 规范化跳转：同地址不发请求，避免 redundant navigation */
+function navigate(location, { replace = false } = {}) {
+  const target = router.resolve(location).fullPath
+  if (target === route.fullPath) return Promise.resolve()
+  return replace ? router.replace(location) : router.push(location)
+}
+
+function isGenerationNotExists(error) {
+  return error?.code === GENERATION_NOT_EXISTS_CODE
+}
+
+/** 按 ?file= 切换查看模式；文件不存在时剔除 query 回到结果列表 */
+function applyGenerationFile(fileId) {
+  const doc = fileId ? findDocById(fileId) : null
+  if (fileId && !doc) {
+    ElMessage.warning('文档不存在或不属于该次生成，已返回结果列表')
+    navigate(docTemplateLocation(activeGenerationId.value), { replace: true })
+    return
+  }
+  if (doc) openDocState(doc)
+  else closeViewerState()
+}
+
+/** 一次生成的结果落库（本次生成 / URL 载入共用） */
+function applyLoadedGeneration({ generationId, docs, status, errorMsg }) {
+  // 作废可能仍在途的 detail 请求
+  loadToken++
+  generationLoading.value = false
+  generationLoadError.value = ''
+  resultDocs.value = docs
+  activeGenerationId.value = generationId
+  activeGenerationStatus.value = status ?? null
+  activeGenerationError.value = errorMsg || ''
+  closeViewerState()
+}
+
+/** 回到基础生成页：清空结果与查看态，保留表单输入 */
+function resetLoadedGeneration() {
+  loadToken++
+  generationLoading.value = false
+  generationLoadError.value = ''
+  resultDocs.value = []
+  activeGenerationId.value = null
+  activeGenerationStatus.value = null
+  activeGenerationError.value = ''
+  closeViewerState()
+}
+
+/** 拉取某次生成的详情并落状态；失败按确定性 / 暂时性分层处理 */
+async function loadGeneration(generationId, fileId, hasInvalidFile) {
+  const token = ++loadToken
+  generationLoading.value = true
+  generationLoadError.value = ''
+  // 先清空上一份记录，避免地址与画面错配
+  resultDocs.value = []
+  activeGenerationId.value = null
+  activeGenerationStatus.value = null
+  activeGenerationError.value = ''
+  closeViewerState()
+  try {
+    const res = await getGenerationDetail(generationId)
+    if (token !== loadToken) return
+    resultDocs.value = (res?.docs ?? []).map(mapDoc)
+    activeGenerationId.value = generationId
+    activeGenerationStatus.value = res?.status ?? null
+    activeGenerationError.value = res?.errorMsg ?? ''
+    if (hasInvalidFile) {
+      ElMessage.warning('文档参数无效，已返回结果列表')
+      navigate(docTemplateLocation(generationId), { replace: true })
+      return
+    }
+    applyGenerationFile(fileId)
+  } catch (e) {
+    if (token !== loadToken) return
+    if (isGenerationNotExists(e)) {
+      // 确定性坏地址：回基础页
+      ElMessage.error(e?.message || '生成记录不存在')
+      navigate(docTemplateLocation(), { replace: true })
+      return
+    }
+    // 暂时性故障：保留 URL，交由结果区提供「重新载入」
+    generationLoadError.value = e?.message || '载入生成记录失败'
+  } finally {
+    if (token === loadToken) generationLoading.value = false
+  }
+}
+
+/** 路由变化 → 载入 / 复位；同一条记录只切换查看状态，不重复请求详情 */
+async function syncFromRoute(rawId, rawFile) {
+  const { generationId, fileId, hasInvalidId, hasInvalidFile, hasFileParam } =
+    parseDocTemplateRoute({ id: rawId }, { file: rawFile })
+
+  if (!generationId) {
+    resetLoadedGeneration()
+    if (hasInvalidId) {
+      ElMessage.warning('生成记录地址无效，已返回生成页')
+      await navigate(docTemplateLocation(), { replace: true })
+      return
+    }
+    if (hasFileParam) {
+      // 有 file 无 id：畸形地址，静默剔除
+      await navigate(docTemplateLocation(), { replace: true })
+    }
+    return
+  }
+
+  if (generationId === activeGenerationId.value) {
+    if (hasInvalidFile) {
+      ElMessage.warning('文档参数无效，已返回结果列表')
+      await navigate(docTemplateLocation(generationId), { replace: true })
+      return
+    }
+    applyGenerationFile(fileId)
+    return
+  }
+
+  await loadGeneration(generationId, fileId, hasInvalidFile)
+}
+
+/** 暂时性失败后的「重新载入」 */
+function retryLoad() {
+  const { generationId, fileId, hasInvalidFile } = parseDocTemplateRoute(route.params, route.query)
+  if (generationId) loadGeneration(generationId, fileId, hasInvalidFile)
+}
+
+watch(
+  [() => route.params.id, () => route.query.file],
+  ([rawId, rawFile]) => {
+    syncFromRoute(rawId, rawFile)
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  // 页面卸载后丢弃在途响应
+  loadToken++
 })
 </script>
 
@@ -1485,6 +1709,16 @@ watch(historyOpen, (open) => {
   animation: doc-studio-spin 0.8s linear infinite;
 }
 
+.result-state__icon {
+  margin-bottom: 0.35rem;
+  font-size: 34px;
+  color: var(--tb-danger);
+}
+
+.result-state .ghost-chip {
+  margin-top: 0.35rem;
+}
+
 .result-state__title {
   margin: 0;
   font-size: 0.92rem;
@@ -1807,20 +2041,9 @@ watch(historyOpen, (open) => {
   background: var(--tb-primary-soft);
 }
 
-.history-item.is-loading {
-  border-color: var(--tb-primary-border);
-  background: var(--primary-soft);
-}
-
-/* 该次生成没有产出文档：仅提示，不做跳转 */
+/* 该次生成没有产出文档：弱化展示，但仍可点进 URL 查看失败记录 */
 .history-item.is-no-doc {
-  cursor: default;
   opacity: 0.75;
-}
-
-.history-item.is-no-doc:hover {
-  border-color: var(--tb-border);
-  background: var(--tb-bg-sunken);
 }
 
 .history-drawer__loading {

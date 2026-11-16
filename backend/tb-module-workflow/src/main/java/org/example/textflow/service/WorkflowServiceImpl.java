@@ -5,10 +5,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.backend.framework.common.exception.ServiceException;
 import org.example.backend.framework.common.exception.enums.GlobalErrorCodeConstants;
+import org.example.backend.framework.security.LoginUser;
+import org.example.backend.framework.security.util.SecurityFrameworkUtils;
 import org.example.textflow.entity.WorkflowProcessLoader;
 import org.example.textflow.entity.WorkflowProcessRespVO;
 import org.example.textflow.model.WorkflowConstants;
 import org.example.textflow.model.WorkflowDO;
+import org.example.textflow.model.vo.PublicWorkflowVO;
 import org.example.textflow.model.vo.WorkflowDetailRespVO;
 import org.example.textflow.model.vo.WorkflowSaveReqVO;
 import org.example.textflow.model.vo.WorkflowVO;
@@ -33,6 +36,15 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     /** 说明长度上限（与 workflow 表的 varchar(500) 对齐） */
     private static final int DESCRIPTION_MAX_LENGTH = 500;
+
+    /** 可见性：私有（ADR 0006：新建一律私有，公有能力在共享链路打开） */
+    private static final int VISIBILITY_PRIVATE = 0;
+
+    /** 可见性：公有 */
+    private static final int VISIBILITY_PUBLIC = 1;
+
+    /** fork 命名判重的最大尝试次数（防极端重名兜底，正常几轮内必然命中） */
+    private static final int FORK_NAME_MAX_RETRY = 99;
 
     /** 详情 / 列表里的时间展示格式 */
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -69,6 +81,11 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     @Override
     public String saveWorkflow(WorkflowSaveReqVO reqVO) {
+        // /workflow/** 在免登录白名单内（URL 模式无法按方法拆分），写操作在服务层强制登录
+        Long userId = currentUserId();
+        if (userId == null) {
+            throw unauthorized();
+        }
         String name = trimToNull(reqVO.getName());
         if (name == null) {
             throw badRequest("工作流名称不能为空");
@@ -94,16 +111,23 @@ public class WorkflowServiceImpl implements WorkflowService {
             workflow.setDescription(description);
             workflow.setSchemaJson(schemaJson);
             workflow.setStatus(WorkflowConstants.STATUS_DRAFT);
+            workflow.setVisibility(VISIBILITY_PRIVATE);
+            workflow.setCreator(userId);
             workflowRepository.insert(workflow);
             log.info("[saveWorkflow] 新建工作流成功，id={}", workflow.getId());
             return workflow.getId();
         }
 
+        if (isBuiltin(id)) {
+            // 内置模板是种子数据，任何账号（含其归属者）都不可通过画布保存改写
+            throw forbidden("内置模板不可修改");
+        }
         if (!isNumeric(id)) {
             throw badRequest("工作流 id 非法: " + id);
         }
         WorkflowDO existing = workflowRepository.selectById(id)
                 .orElseThrow(() -> badRequest("工作流不存在: " + id));
+        assertWorkflowOwner(existing, userId, "无权修改该工作流");
         existing.setName(name);
         existing.setDescription(description);
         existing.setSchemaJson(schemaJson);
@@ -123,11 +147,20 @@ public class WorkflowServiceImpl implements WorkflowService {
         }
         WorkflowDO workflow = workflowRepository.selectById(id)
                 .orElseThrow(() -> badRequest("工作流不存在: " + id));
+        // 可读口径：builtin / 本人 / 他人公有（US19，只读形态由前端呈现，写操作仍有归属校验）
+        Long userId = currentUserId();
+        boolean owner = userId != null && userId.equals(workflow.getCreator());
+        boolean publicVisible = workflow.getVisibility() != null && workflow.getVisibility() == VISIBILITY_PUBLIC;
+        if (!owner && !isBuiltin(workflow.getId()) && !publicVisible) {
+            throw forbidden("无权查看该工作流");
+        }
         WorkflowDetailRespVO respVO = new WorkflowDetailRespVO();
         respVO.setId(workflow.getId());
         respVO.setName(workflow.getName());
         respVO.setDescription(workflow.getDescription());
         respVO.setStatus(workflow.getStatus());
+        respVO.setVisibility(workflow.getVisibility());
+        respVO.setMine(owner);
         respVO.setBuiltin(isBuiltin(workflow.getId()));
         respVO.setStepCount(countTopLevelNodes(workflow.getSchemaJson()));
         respVO.setSchemaJson(workflow.getSchemaJson());
@@ -136,8 +169,99 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
+    public void updateVisibility(String workflowId, Integer visibility) {
+        // /workflow/** 在免登录白名单内，写操作在服务层强制登录
+        Long userId = currentUserId();
+        if (userId == null) {
+            throw unauthorized();
+        }
+        if (visibility == null || (visibility != VISIBILITY_PRIVATE && visibility != VISIBILITY_PUBLIC)) {
+            throw badRequest("可见性取值无效，只能是 0（私有）或 1（公有）");
+        }
+        String id = trimToNull(workflowId);
+        if (id == null) {
+            throw badRequest("工作流 id 不能为空");
+        }
+        if (isBuiltin(id)) {
+            throw forbidden("内置模板不可修改");
+        }
+        WorkflowDO workflow = workflowRepository.selectById(id)
+                .orElseThrow(() -> badRequest("工作流不存在: " + id));
+        assertWorkflowOwner(workflow, userId, "无权修改该工作流");
+        workflowRepository.updateVisibility(id, visibility);
+        log.info("[updateVisibility] 工作流可见性已切换，id={}，visibility={}", id, visibility);
+    }
+
+    @Override
+    public List<PublicWorkflowVO> listPublicWorkflows() {
+        return workflowRepository.selectListPublic(currentUserId()).stream()
+                .map(workflow -> {
+                    PublicWorkflowVO vo = new PublicWorkflowVO();
+                    vo.setId(workflow.getId());
+                    vo.setName(workflow.getName());
+                    vo.setDescription(workflow.getDescription());
+                    vo.setStatus(workflow.getStatus());
+                    vo.setBuiltin(false);
+                    vo.setStepCount(countTopLevelNodes(workflow.getSchemaJson()));
+                    vo.setUpdateTime(formatTime(workflow.getUpdateTime()));
+                    vo.setCreatorName(workflow.getCreatorName());
+                    return vo;
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public String forkWorkflow(String workflowId) {
+        Long userId = currentUserId();
+        if (userId == null) {
+            throw unauthorized();
+        }
+        String id = trimToNull(workflowId);
+        if (id == null) {
+            throw badRequest("工作流 id 不能为空");
+        }
+        WorkflowDO workflow = workflowRepository.selectById(id)
+                .orElseThrow(() -> badRequest("工作流不存在: " + id));
+        if (isBuiltin(id)) {
+            throw forbidden("内置模板不可 fork");
+        }
+        // fork 口径与详情可读一致：本人或他人公有
+        boolean owner = userId.equals(workflow.getCreator());
+        boolean publicVisible = workflow.getVisibility() != null && workflow.getVisibility() == VISIBILITY_PUBLIC;
+        if (!owner && !publicVisible) {
+            throw forbidden("无权 fork 该工作流");
+        }
+
+        WorkflowDO copy = new WorkflowDO();
+        copy.setId(String.valueOf(IdUtil.getSnowflakeNextId()));
+        copy.setName(uniqueForkNameOf(workflow.getName()));
+        copy.setDescription(workflow.getDescription());
+        copy.setSchemaJson(workflow.getSchemaJson());
+        copy.setStatus(WorkflowConstants.STATUS_DRAFT);
+        copy.setVisibility(VISIBILITY_PRIVATE);
+        copy.setCreator(userId);
+        workflowRepository.insert(copy);
+        log.info("[forkWorkflow] 工作流已 fork，originId={}，copyId={}，creator={}", id, copy.getId(), userId);
+        return copy.getId();
+    }
+
+    /** fork 副本命名：「原名（副本）」，重名时叠加序号（副本 2 / 副本 3 …），统一截到列宽内 */
+    private String uniqueForkNameOf(String originName) {
+        String base = originName == null || originName.isBlank() ? "未命名工作流" : originName.trim();
+        for (int seq = 1; seq <= FORK_NAME_MAX_RETRY; seq++) {
+            String suffix = seq == 1 ? "（副本）" : "（副本 " + seq + "）";
+            int allowed = NAME_MAX_LENGTH - suffix.length();
+            String candidate = (base.length() > allowed ? base.substring(0, allowed) : base) + suffix;
+            if (workflowRepository.selectIdByName(candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("fork 命名重试次数耗尽: " + base);
+    }
+
+    @Override
     public List<WorkflowVO> listWorkflows() {
-        return workflowRepository.selectListOrderByUpdateTime().stream()
+        return workflowRepository.selectListVisible(currentUserId()).stream()
                 .map(workflow -> {
                     WorkflowVO vo = new WorkflowVO();
                     vo.setId(workflow.getId());
@@ -191,6 +315,19 @@ public class WorkflowServiceImpl implements WorkflowService {
         return WorkflowConstants.BUILTIN_WORKFLOW_ID.equals(id);
     }
 
+    /** 当前登录用户 id；/workflow/** 是免登录白名单，匿名请求返回 null */
+    private Long currentUserId() {
+        LoginUser loginUser = SecurityFrameworkUtils.getLoginUser();
+        return loginUser == null ? null : loginUser.getId();
+    }
+
+    /** 归属校验：非创建者按 403 拒绝（ADR 0006：creator 为归属唯一真相源） */
+    private void assertWorkflowOwner(WorkflowDO workflow, Long userId, String message) {
+        if (userId == null || !userId.equals(workflow.getCreator())) {
+            throw forbidden(message);
+        }
+    }
+
     private String formatTime(LocalDateTime time) {
         return time == null ? null : TIME_FORMATTER.format(time);
     }
@@ -214,6 +351,15 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     private static ServiceException badRequest(String message) {
         return new ServiceException(GlobalErrorCodeConstants.BAD_REQUEST.getCode(), message);
+    }
+
+    private static ServiceException unauthorized() {
+        return new ServiceException(GlobalErrorCodeConstants.UNAUTHORIZED.getCode(),
+                GlobalErrorCodeConstants.UNAUTHORIZED.getMsg());
+    }
+
+    private static ServiceException forbidden(String message) {
+        return new ServiceException(GlobalErrorCodeConstants.FORBIDDEN.getCode(), message);
     }
 
     private WorkflowProcessRespVO loadProcess() {

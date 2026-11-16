@@ -2,6 +2,8 @@ package org.example.backend.module.knowledgebase.service.Impl;
 
 import org.example.backend.module.infra.mapper.InfraFileMapper;
 import org.example.backend.module.infra.service.MinioFileStorageService;
+import org.example.backend.framework.security.LoginUser;
+import org.example.backend.framework.security.util.SecurityFrameworkUtils;
 import org.example.backend.module.knowledgebase.mapper.KbDocumentChunkMapper;
 import org.example.backend.module.knowledgebase.mapper.KbDocumentMapper;
 import org.example.backend.module.knowledgebase.mapper.KbDocumentParseBlockMapper;
@@ -11,12 +13,15 @@ import org.example.backend.module.knowledgebase.model.KbSpaceDO;
 import org.example.backend.module.knowledgebase.service.chunk.DocumentChunkService;
 import org.example.backend.module.knowledgebase.service.parse.DocumentParseGateway;
 import org.example.backend.module.knowledgebase.service.parse.ParseTaskStatus;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.InOrder;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -34,6 +39,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -57,6 +63,7 @@ class KbDocumentServiceImplTransactionBoundaryTest {
 
     private static final Long DOCUMENT_ID = 1L;
     private static final Long SPACE_ID = 7L;
+    private static final Long OWNER_ID = 9L;
 
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 
@@ -85,6 +92,28 @@ class KbDocumentServiceImplTransactionBoundaryTest {
     @InjectMocks
     private KbDocumentServiceImpl documentService;
 
+    private MockedStatic<SecurityFrameworkUtils> security;
+
+    @BeforeEach
+    void setUpSecurityContext() {
+        security = mockStatic(SecurityFrameworkUtils.class);
+        security.when(SecurityFrameworkUtils::getLoginUser)
+                .thenReturn(new LoginUser().setId(OWNER_ID));
+    }
+
+    @AfterEach
+    void tearDownSecurityContext() {
+        security.close();
+    }
+
+    /** 归属守卫要求空间存在且创建者是当前登录用户 */
+    private KbSpaceDO ownedSpace() {
+        KbSpaceDO space = new KbSpaceDO();
+        space.setId(SPACE_ID);
+        space.setCreator(OWNER_ID);
+        return space;
+    }
+
     /** 一篇「分片待确认」（status=4）的文档，向量化入口用的就是它 */
     private KbDocumentDO pendingConfirmDocument() {
         KbDocumentDO document = new KbDocumentDO();
@@ -105,7 +134,7 @@ class KbDocumentServiceImplTransactionBoundaryTest {
     @DisplayName("向量化：分片先提交，之后才写向量库")
     void vectorWriteHappensAfterChunksAreCommitted() {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(pendingConfirmDocument());
-        when(spaceMapper.selectById(SPACE_ID)).thenReturn(new KbSpaceDO());
+        when(spaceMapper.selectById(SPACE_ID)).thenReturn(ownedSpace());
 
         documentService.vectorize(DOCUMENT_ID, SPACE_ID, "[{\"content\":\"第一段\"},{\"content\":\"第二段\"}]");
 
@@ -121,7 +150,7 @@ class KbDocumentServiceImplTransactionBoundaryTest {
     @DisplayName("向量库写失败：清掉半成品向量，且不把文档判成已完成")
     void failedVectorWriteIsCompensated() {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(pendingConfirmDocument());
-        when(spaceMapper.selectById(SPACE_ID)).thenReturn(new KbSpaceDO());
+        when(spaceMapper.selectById(SPACE_ID)).thenReturn(ownedSpace());
         doThrow(new IllegalStateException("向量库不可用")).when(vectorStore).add(anyList());
 
         assertThatThrownBy(() -> documentService.vectorize(DOCUMENT_ID, SPACE_ID, "[{\"content\":\"第一段\"}]"))
@@ -137,6 +166,7 @@ class KbDocumentServiceImplTransactionBoundaryTest {
     @DisplayName("AI 分片跑在落块事务提交之后，不被事务圈住")
     void chunkingRunsAfterTheBlockTransactionCommits() {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(parsingDocument());
+        when(spaceMapper.selectById(SPACE_ID)).thenReturn(ownedSpace());
         when(documentParseGateway.query("job-1")).thenReturn(ParseTaskStatus.success());
         List<Map<?, ?>> layouts = List.of(Map.<String, Object>of("text", "正文一段"));
         when(documentParseGateway.fetchMarkdown("job-1")).thenReturn(layouts);

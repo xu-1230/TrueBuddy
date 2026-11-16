@@ -17,6 +17,8 @@ defineProps({
   running: { type: Boolean, default: false },
   /** 是否正在保存：保存中禁用按钮并改文案 */
   saving: { type: Boolean, default: false },
+  /** 只读画布（他人公有流）：两个按钮都禁用；原因在顶部「只读」标签与公有库抽屉里说明 */
+  readonly: { type: Boolean, default: false },
 })
 
 defineEmits(['run', 'save'])
@@ -27,7 +29,8 @@ defineEmits(['run', 'save'])
     <button
       class="tools-wrap__btn tools-wrap__btn--run"
       type="button"
-      :disabled="running"
+      :disabled="running || readonly"
+      :title="readonly ? '他人公开的工作流为只读，不能运行' : undefined"
       :aria-label="running ? '执行中' : '运行'"
       @click="$emit('run')"
     >
@@ -35,11 +38,12 @@ defineEmits(['run', 'save'])
       <span class="tools-wrap__btn-text">{{ running ? '执行中' : '运行' }}</span>
     </button>
 
-    <!-- 保存：把当前画布定义落库；执行中不允许保存，避免存到运行中的中间态 -->
+    <!-- 保存：把当前画布定义落库；执行中 / 只读画布不允许保存，避免存到运行中的中间态或改写他人定义 -->
     <button
       class="tools-wrap__btn tools-wrap__btn--save"
       type="button"
-      :disabled="saving || running"
+      :disabled="saving || running || readonly"
+      :title="readonly ? '他人公开的工作流为只读，不能保存' : undefined"
       :aria-label="saving ? '保存中' : '保存'"
       @click="$emit('save')"
     >

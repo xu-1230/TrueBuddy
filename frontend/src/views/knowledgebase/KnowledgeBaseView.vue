@@ -4,10 +4,16 @@
       v-if="currentLevel === 'space'"
       :spaces="spaces"
       :loading="loading"
+      :public-spaces="publicSpaces"
+      :public-loading="publicLoading"
+      :forking-id="forkingId"
       @open-space="handleOpenSpace"
+      @open-public-space="handleOpenPublicSpace"
       @create-space="handleCreateSpace"
       @update-space="handleUpdateSpace"
       @delete-space="handleDeleteSpace"
+      @toggle-visibility="handleToggleVisibility"
+      @fork-space="handleForkSpace"
     />
     <DocumentListView
       v-else-if="currentLevel === 'document'"
@@ -17,6 +23,7 @@
       :active-document="currentDocument"
       :chunks="chunks"
       :chunk-loading="chunkLoading"
+      :readonly="isPublicReadonly"
       @back="handleBackToSpace"
       @select-document="handleSelectDocument"
       @add-document="handleOpenUpload"
@@ -38,10 +45,13 @@ import {
   createSpace,
   deleteDocument,
   deleteSpace,
+  forkSpace,
   getChunkList,
   getDocumentList,
+  getPublicSpaceList,
   getSpaceList,
   updateSpace,
+  updateSpaceVisibility,
 } from '@/api/knowledgebase'
 import DocumentListView from './components/DocumentListView.vue'
 import DocumentUploadView from './components/DocumentUploadView.vue'
@@ -51,12 +61,18 @@ const currentLevel = ref('space')
 const currentSpace = ref(null)
 // 当前选中的文档（右栏展示其分片）
 const currentDocument = ref(null)
+// 公有库浏览：打开的是他人的公有空间时，文档区整个切只读形态
+const isPublicReadonly = ref(false)
 
 const spaces = ref([])
+const publicSpaces = ref([])
 const documents = ref([])
 const chunks = ref([])
 const loading = ref(false)
+const publicLoading = ref(false)
 const chunkLoading = ref(false)
+// 正在 fork 的空间 id（卡片按钮 loading；单请求进行中，无并发去重需求）
+const forkingId = ref(null)
 
 async function loadSpaces() {
   loading.value = true
@@ -66,6 +82,18 @@ async function loadSpaces() {
     ElMessage.error('加载空间列表失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadPublicSpaces() {
+  publicLoading.value = true
+  try {
+    publicSpaces.value = await getPublicSpaceList()
+  } catch {
+    // 公有区加载失败不拖垮页面主体，静默留空
+    publicSpaces.value = []
+  } finally {
+    publicLoading.value = false
   }
 }
 
@@ -121,7 +149,34 @@ async function handleDeleteSpace(space) {
   }
 }
 
+// 公有 / 私有切换：目标取值由卡片算好（1=公开 0=私有），成功后刷新列表
+async function handleToggleVisibility(space, target) {
+  try {
+    await updateSpaceVisibility(space.id, target)
+    ElMessage.success(target === 1 ? '空间已公开，他人可在「公有库」中浏览' : '空间已设为私有')
+    await loadSpaces()
+  } catch {
+    ElMessage.error('切换可见性失败')
+  }
+}
+
+// 「添加为自己的」：fork 成独立副本（后端单事务复制文档/分片/向量），完成后出现在我的空间列表
+async function handleForkSpace(space) {
+  if (forkingId.value != null) return
+  forkingId.value = space.id
+  try {
+    await forkSpace(space.id)
+    ElMessage.success(`已把「${space.name}」添加为自己的空间`)
+    await loadSpaces()
+  } catch {
+    ElMessage.error('添加为自己的空间失败')
+  } finally {
+    forkingId.value = null
+  }
+}
+
 async function handleOpenSpace(space) {
+  isPublicReadonly.value = false
   currentSpace.value = space
   currentLevel.value = 'document'
   currentDocument.value = null
@@ -133,14 +188,29 @@ async function handleOpenSpace(space) {
   }
 }
 
+// 打开他人的公有空间：只读浏览，不提供任何写入口
+async function handleOpenPublicSpace(space) {
+  isPublicReadonly.value = true
+  currentSpace.value = space
+  currentLevel.value = 'document'
+  currentDocument.value = null
+  chunks.value = []
+  await loadDocuments(space.id)
+  if (documents.value.length) {
+    handleSelectDocument(documents.value[0])
+  }
+}
+
 function handleBackToSpace() {
   currentLevel.value = 'space'
   currentSpace.value = null
   currentDocument.value = null
+  isPublicReadonly.value = false
   documents.value = []
   chunks.value = []
-  // 空间内文档数量可能已变化，刷新空间列表
+  // 空间内文档数量可能已变化，刷新空间列表（自己的 + 公有区的）
   loadSpaces()
+  loadPublicSpaces()
 }
 
 function handleSelectDocument(doc) {
@@ -202,6 +272,7 @@ async function handleDeleteDocument(doc) {
 
 onMounted(() => {
   loadSpaces()
+  loadPublicSpaces()
 })
 </script>
 

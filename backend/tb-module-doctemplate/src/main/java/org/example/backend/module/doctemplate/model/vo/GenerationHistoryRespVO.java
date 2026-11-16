@@ -2,8 +2,10 @@ package org.example.backend.module.doctemplate.model.vo;
 
 import lombok.Data;
 
+import java.util.List;
+
 /**
- * 生成历史记录 VO（对应前端历史记录抽屉）
+ * 生成历史记录 VO（对应前端历史记录抽屉；首页「文档」tab 复用其 docs 展开文件卡）
  */
 @Data
 public class GenerationHistoryRespVO {
@@ -22,5 +24,11 @@ public class GenerationHistoryRespVO {
     private String status;
     /** 产出文档数量 */
     private Integer docCount;
+
+    /**
+     * 本次任务产出的文件摘要（不含预签名 URL）。
+     * 首页「文档」tab 用 id + generationId 拼深链接，不需要 src。
+     */
+    private List<DocFileRespVO> docs;
 
 }
