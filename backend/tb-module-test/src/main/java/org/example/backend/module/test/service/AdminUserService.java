@@ -1,18 +1,31 @@
 package org.example.backend.module.test.service;
 
-import cn.hutool.core.collection.CollUtil;
+import org.example.backend.framework.common.pojo.PageResult;
 import org.example.backend.module.test.model.AdminUserDO;
+import org.example.backend.module.test.model.vo.AdminUserPageReqVO;
+import org.example.backend.module.test.model.vo.AdminUserRespVO;
 import org.example.backend.module.test.model.vo.UserSaveReqVO;
-import org.springframework.lang.Nullable;
 
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public interface AdminUserService {
 
     Long createUser(UserSaveReqVO createReqVO);
+
+    /**
+     * 管理端用户分页：keyword（账号/昵称/邮箱模糊）、status、role 筛选。
+     */
+    PageResult<AdminUserRespVO> getUserPage(AdminUserPageReqVO pageReqVO);
+
+    /**
+     * 管理端编辑用户：账号不可改，昵称/邮箱/状态按传值更新；roles 非空时全量重绑。
+     */
+    void updateUser(UserSaveReqVO reqVO);
+
+    /**
+     * 物理删除用户，并同事务清理角色绑定。
+     */
+    void deleteUser(Long id);
 
     AdminUserDO getUserByUsername(String username);
 

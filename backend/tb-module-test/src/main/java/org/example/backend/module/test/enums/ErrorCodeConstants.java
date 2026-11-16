@@ -12,6 +12,8 @@ public interface ErrorCodeConstants {
     ErrorCode USER_USERNAME_EXISTS = new ErrorCode(1_002_000_001, "用户账号已经存在");
     ErrorCode USER_EMAIL_EXISTS = new ErrorCode(1_002_000_002, "该邮箱已注册");
     ErrorCode USER_EMAIL_NOT_EXISTS = new ErrorCode(1_002_000_003, "该邮箱未注册");
+    ErrorCode USER_DELETE_SELF = new ErrorCode(1_002_000_004, "不能删除当前登录账号");
+    ErrorCode USER_ROLE_INVALID = new ErrorCode(1_002_000_005, "角色不存在或已禁用");
 
     // ========== 认证模块 1-002-002-000 ==========
     ErrorCode AUTH_LOGIN_BAD_CREDENTIALS = new ErrorCode(1_002_002_000, "登录失败，账号密码不正确");
