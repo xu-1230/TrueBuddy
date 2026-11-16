@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS workflow (
     description VARCHAR(500),                        -- 流程说明
     schema_json TEXT         NOT NULL,               -- 流程定义 JSON：{nodes, edges}
     status      SMALLINT     NOT NULL DEFAULT 0,     -- 状态：0=草稿，1=已发布
+    visibility  SMALLINT     NOT NULL DEFAULT 0,     -- 可见性：0=私有，1=公有
     create_time TIMESTAMP    NOT NULL DEFAULT now(), -- 创建时间
     update_time TIMESTAMP    NOT NULL DEFAULT now(), -- 更新时间
     creator     BIGINT,                              -- 创建人 id（system_user.id）

@@ -20,6 +20,12 @@ public class WorkflowDetailRespVO {
     /** 状态：0=草稿，1=已发布 */
     private Integer status;
 
+    /** 可见性：0=私有，1=公有（画布页据此呈现「公有/私有」切换） */
+    private Integer visibility;
+
+    /** 当前登录用户是否为创建者（false 且非 builtin 时画布呈只读形态） */
+    private Boolean mine;
+
     /** 是否为内置模板（前端据此分组「批改工作流 / 用户自定义工作流」） */
     private Boolean builtin;
 

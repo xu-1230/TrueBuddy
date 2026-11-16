@@ -1,7 +1,7 @@
 # doc-ui · 样式设计
 
-> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-13（主题 Ink，2026-10-25 由 Harbor 换入）
-> 适用范围：前端全部样式与主题、动效实现，以及展示页模块（`/guides`、`/docs`）全流程（§8）
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-16（主题 Ink，2026-10-25 由 Harbor 换入）
+> 适用范围：前端全部样式与主题、动效实现，以及展示页模块（`/guides`、`/docs`）全流程（§8）与系统首页 Zone C 的 tab 双行为模型（§9）
 > 相关：[doc-conventions.md](./doc-conventions.md)（编码与组件规范）、[ui.html](./ui.html)（视觉样张）
 
 ---
@@ -248,6 +248,28 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 3. `LoginView.vue` 登录成功 `router.push('/')`，路由表无 `/` 路由，会落空视图（应改 `/index/home` 或补 `/` 重定向）。
 4. 本页与 `views/LoginView.vue` 的登录能力重复：改登录逻辑应优先改 `components/LoginForm.vue`，两页同时生效。
 5. 规划：用户端路由守卫（`meta.requiresAuth`，见 doc-conventions.md §5.3）；Live2D 数字人独立组件（`public/live2d/` 资源已就位、未接入）。
+
+---
+
+## 9. 系统首页 Zone C 的 tab 双行为模型（2026-11-16 已实现）
+
+> 系统首页（`views/system/SystemHomeView.vue`，路由 `/index/home`）Zone C 的 tab 不是单纯的过滤器：六个 tab 分两类行为，配置在 `views/system/constants.js` 的 `HOME_TABS`。
+
+### 9.1 双行为
+
+| 类型 | tab | 点击行为 | 是否占用过滤态 |
+| --- | --- | --- | --- |
+| `filter` 过滤型 | 综合 / 知识库 / 工作流 | 过滤 Zone D 资产卡（行为与旧版一致） | 是（`activeTab` 更新） |
+| `jump` 跳转型 | 文档 / 批改 / 会议 | `router.push` 直达 `/index/doc-template`、`/index/homework-grading`、`/index/meeting` | **否**（返回首页仍停留在原过滤 tab） |
+
+跳转型 tab 承担模块入口，且刻意不写进 `activeTab`——避免「点完跳转回来，过滤态被换页」。会话 tab 已下线：信息流来源只剩知识库空间、工作流、文档生成历史三类（`chat` kind 相关元数据一并清退，见 `utils/feed.js`）。
+
+### 9.2 实现约定
+
+- **tab 配置单一来源**：`HOME_TABS`（`{ key, label, type, to? }`）同时驱动 el-tabs 渲染与点击分流（`handleTabClick` 对 `type === 'jump'` 返回 `false` 阻止默认选中，改走路由）；`FILTER_TAB_KEYS` 由配置派生，不重复手写。
+- **过滤态记忆**：`sessionStorage` 键 `tb-home-active-tab`（`ACTIVE_TAB_STORAGE_KEY`，键名遵守 doc-conventions §6 的 `tb-` 前缀约定）；仅接受 filter 型 key，非法值回落 `all`。
+- **信息流与资产卡**：`utils/feed.js` 的 `buildFeed` 归一三类来源；知识库 / 工作流卡只展示当前登录用户自己的资产（后端列表按 `creator` 过滤，见 [adr/0006](./adr/0006-知识库与工作流归属与共享模型.md)）。
+- **交互反馈**：hover 只用阴影 / 描边 / 底色 / 透明度表达（§6.2 要求 5）；资产卡与 tab 不做位移型 hover。
 
 ---
 

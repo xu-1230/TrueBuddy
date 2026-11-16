@@ -16,5 +16,7 @@ public interface ErrorCodeConstants {
     ErrorCode HOMEWORK_FILE_SIZE_EXCEED = new ErrorCode(1_004_000_004, "文件大小超过上限（50MB）：{}");
     /** 错误信息带出错文件的相对路径，便于批量上传时定位 */
     ErrorCode HOMEWORK_FILE_TYPE_NOT_ALLOWED = new ErrorCode(1_004_000_005, "不支持的文件类型：{}");
+    ErrorCode HOMEWORK_TASK_NOT_EXISTS = new ErrorCode(1_004_000_006, "批改任务不存在");
+    ErrorCode HOMEWORK_TASK_STATUS_INVALID = new ErrorCode(1_004_000_007, "任务不是待批改状态，无法开始批改");
 
 }

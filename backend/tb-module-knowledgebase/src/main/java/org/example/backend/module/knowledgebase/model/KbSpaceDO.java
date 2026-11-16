@@ -16,6 +16,8 @@ public class KbSpaceDO {
     private String name;
     /** 空间描述 */
     private String description;
+    /** 可见性：0=私有，1=公有 */
+    private Integer visibility;
     /** 创建时间 */
     private LocalDateTime createTime;
     /** 更新时间 */

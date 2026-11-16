@@ -12,13 +12,6 @@ const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
-/** 生成历史的状态文案 → 语义色档位（后端 `HistoryVO.status` 给的就是中文文案） */
-export const DOC_STATE_TONE = {
-  成功: 'success',
-  部分成功: 'warning',
-  失败: 'danger',
-}
-
 /**
  * 宽容的时间解析。
  *
@@ -90,8 +83,8 @@ const text = (...values) => {
   return hit ? hit.trim() : ''
 }
 
-/** 组装成统一卡片模型；`now` 仅为保留的归一化入参（时间字段原样透传） */
-function toItem(partial, now) {
+/** 组装成统一卡片模型 */
+function toItem(partial) {
   const { createdAt, updatedAt } = partial
   return {
     createdAt,
@@ -101,19 +94,21 @@ function toItem(partial, now) {
 }
 
 /**
- * 把四个接口的返回合并为一条统一信息流。
+ * 把三个接口的返回合并为一条统一信息流。
  *
+ * 生成历史按 `docs` 展开为文件级卡片（一条历史可能贡献多张卡）；
  * 任一来源请求失败时传 null 即可，其余来源照常渲染。
  *
  * @param {{
- *   spaces?: Array, workflows?: Array, generations?: Array, conversations?: Array
+ *   spaces?: Array, workflows?: Array,
+ *   generations?: Array<{ id: number, title?: string, docCount?: number, time?: string,
+ *                         docs?: Array<{ id: number, name?: string, tag?: string, summary?: string,
+ *                                        createTime?: string }> }>
  * }} payload
- * @param {{ now?: number }} [options]
  * @returns {Array<object>} 按 `updatedAt` 倒序的统一卡片模型
  */
-export function buildFeed(payload = {}, options = {}) {
-  const { spaces, workflows, generations, conversations } = payload
-  const now = options.now ?? Date.now()
+export function buildFeed(payload = {}) {
+  const { spaces, workflows, generations } = payload
 
   const items = [
     ...asArray(spaces).map((space) =>
@@ -130,7 +125,6 @@ export function buildFeed(payload = {}, options = {}) {
           createdAt: parseTime(space?.createTime),
           updatedAt: parseTime(space?.createTime),
         },
-        now,
       ),
     ),
     ...asArray(workflows).map((flow) =>
@@ -147,45 +141,38 @@ export function buildFeed(payload = {}, options = {}) {
           createdAt: parseTime(flow?.updateTime),
           updatedAt: parseTime(flow?.updateTime),
         },
-        now,
       ),
     ),
-    ...asArray(generations).map((record) =>
-      toItem(
-        {
-          key: `doc-${record?.id}`,
-          id: record?.id,
+    // 生成历史内联 docs：一份文件一张卡，点击直达该次生成里的这份文档。
+    // 失败 / 0 份任务没有 docs，自然不在首页出卡（诊断仍在模板页历史抽屉）。
+    ...asArray(generations).flatMap((record, recordIndex) => {
+      const generationId = record?.id
+      const taskTitle = text(record?.title)
+      const taskTime = parseTime(record?.time)
+      return asArray(record?.docs).map((doc, docIndex) => {
+        const fileId = doc?.id
+        const updatedAt = parseTime(doc?.createTime) ?? taskTime
+        return toItem({
+          key: `doc-file-${fileId ?? `${generationId ?? `g${recordIndex}`}-${docIndex}`}`,
+          id: fileId,
+          generationId,
           kind: 'doc',
-          name: text(record?.title) || '未命名生成任务',
-          description: text(record?.kb) ? `知识库：${record.kb}` : '暂无来源知识库',
+          name: text(doc?.name) || '未命名文档',
+          description: text(doc?.summary)
+            || (taskTitle ? `来自「${taskTitle}」` : '暂无文档摘要'),
+          // 数值条展示「本批 N」：同一任务产出的文件共用一个批次规模
           metric: typeof record?.docCount === 'number' ? record.docCount : null,
-          metricLabel: '产出',
-          to: '/index/doc-template',
-          state: text(record?.status),
-          stateTone: DOC_STATE_TONE[text(record?.status)] || 'neutral',
-          createdAt: parseTime(record?.time),
-          updatedAt: parseTime(record?.time),
-        },
-        now,
-      ),
-    ),
-    ...asArray(conversations).map((chat) =>
-      toItem(
-        {
-          key: `chat-${chat?.conversationId ?? chat?.id}`,
-          id: chat?.conversationId ?? chat?.id,
-          kind: 'chat',
-          name: text(chat?.title, chat?.workflowName) || '未命名会话',
-          description: text(chat?.workflowName) ? `工作流：${chat.workflowName}` : '暂无绑定工作流',
-          metric: null,
-          metricLabel: '',
-          to: '/index/workflow',
-          createdAt: parseTime(chat?.createTime),
-          updatedAt: parseTime(chat?.updateTime ?? chat?.createTime),
-        },
-        now,
-      ),
-    ),
+          metricLabel: '本批',
+          to: generationId != null && fileId != null
+            ? `/index/doc-template/${generationId}?file=${fileId}`
+            : '/index/doc-template',
+          state: text(doc?.tag),
+          stateTone: 'neutral',
+          createdAt: updatedAt,
+          updatedAt,
+        })
+      })
+    }),
   ]
 
   return items.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))

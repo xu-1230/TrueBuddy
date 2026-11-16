@@ -26,6 +26,7 @@
             @click="$emit('open-space', space)"
             @edit="openEdit(space)"
             @delete="onDelete(space)"
+            @toggle-visibility="(target) => $emit('toggle-visibility', space, target)"
           />
         </el-col>
       </el-row>
@@ -33,6 +34,40 @@
         v-if="!loading && !spaces.length"
         description="暂无知识库空间，点击创建"
       />
+    </div>
+
+    <!-- 公有库浏览区：他人的公有空间，只读（fork 入口在共享链路打通） -->
+    <div class="kb-public">
+      <div class="kb-public__header">
+        <div class="kb-public__title">
+          <el-icon><User /></el-icon>
+          <span>公有库</span>
+        </div>
+        <span class="kb-public__desc">他人公开的空间，只读可浏览</span>
+      </div>
+      <div v-loading="publicLoading" class="kb-public__body">
+        <el-row :gutter="16">
+          <el-col
+            v-for="space in publicSpaces"
+            :key="space.id"
+            :xs="24"
+            :sm="12"
+            :md="8"
+            :lg="6"
+          >
+            <SpaceCard
+              :space="space"
+              readonly
+              :forking="space.id === forkingId"
+              @click="$emit('open-public-space', space)"
+              @fork="$emit('fork-space', space)"
+            />
+          </el-col>
+        </el-row>
+        <p v-if="!publicLoading && !publicSpaces.length" class="kb-public__empty">
+          暂无他人公开的知识库空间
+        </p>
+      </div>
     </div>
 
     <!-- 创建 / 编辑空间对话框 -->
@@ -69,16 +104,28 @@
 
 <script setup>
 import { nextTick, reactive, ref } from 'vue'
-import { Collection, Plus } from '@element-plus/icons-vue'
+import { Collection, Plus, User } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import SpaceCard from './SpaceCard.vue'
 
 defineProps({
   spaces: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
+  publicSpaces: { type: Array, default: () => [] },
+  publicLoading: { type: Boolean, default: false },
+  /** 正在执行 fork 的空间 id（卡片按钮转 loading） */
+  forkingId: { type: Number, default: null },
 })
 
-const emit = defineEmits(['open-space', 'create-space', 'update-space', 'delete-space'])
+const emit = defineEmits([
+  'open-space',
+  'open-public-space',
+  'create-space',
+  'update-space',
+  'delete-space',
+  'toggle-visibility',
+  'fork-space',
+])
 
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
@@ -181,6 +228,48 @@ function onDelete(space) {
 
 .space-grid-view__body {
   min-height: 200px;
+}
+
+/* ========== 公有库浏览区 ========== */
+.kb-public {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--tb-bg-surface);
+  border-radius: var(--tb-radius-lg);
+  box-shadow: var(--tb-shadow-1);
+}
+
+.kb-public__header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.kb-public__title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--tb-text-primary);
+}
+
+.kb-public__desc {
+  font-size: 0.78rem;
+  color: var(--tb-text-tertiary);
+}
+
+.kb-public__body {
+  min-height: 64px;
+}
+
+.kb-public__empty {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.8rem;
+  color: var(--tb-text-tertiary);
+  text-align: center;
 }
 
 .el-col {

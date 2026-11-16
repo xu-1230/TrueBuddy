@@ -116,6 +116,7 @@ const evaluateFunction = (source, declaration, deps) => {
  * @param {object} [options] 选项
  * @param {boolean} [options.streaming] 是否正在执行中
  * @param {string} [options.workflowId] 当前工作流 id；传 `''` 模拟「未保存的画布」
+ * @param {boolean} [options.readonly] 是否只读画布（他人公有流，US21 直跑闸）
  */
 const loadHandleRun = (store, options = {}) => {
   const calls = {
@@ -131,6 +132,7 @@ const loadHandleRun = (store, options = {}) => {
   const handleRun = evaluateFunction(readFileSync(VIEW_PATH, 'utf8'), 'const handleRun = async () => {', {
     runState: { value: { streaming: Boolean(options.streaming) } },
     currentWorkflowId: { value: options.workflowId === undefined ? WORKFLOW_ID : options.workflowId },
+    isPublicReadonly: { value: Boolean(options.readonly) },
     START_NODE_TYPE: '1',
     startInputsVisible,
     startInputsOutputs,
@@ -398,6 +400,18 @@ test('链路：正在执行中点运行 → 只提示，不清理、不校验、
   assert.equal(calls.popup.length + calls.execute.length, 0)
 })
 
+/* ===== 链路：只读画布（他人公有流，US21 直跑闸的前端拦截） ===== */
+
+test('链路：他人公有流的只读画布点运行 → 提示 fork，不清理、不校验、不执行', async () => {
+  const { handleRun, calls } = loadHandleRun(canvasOfDefaultFlow(), { readonly: true })
+
+  await handleRun()
+
+  assert.deepEqual(calls.warning, ['他人发布的工作流不能直接运行，请先 fork 为自己的副本'])
+  assert.equal(calls.cleanOrphan, 0, '只读闸在最前面，连悬空子块清理都不做')
+  assert.equal(calls.popup.length + calls.execute.length + calls.startRun.length, 0, '不进入校验与执行')
+})
+
 test('链路：建会话失败 → 提示原因，不提交执行', async () => {
   const { startRun, calls } = loadStartRun({ conversationError: new Error('工作流不存在: 1') })
 
@@ -445,7 +459,7 @@ test('链路：运行按钮只有一条路径（ToolsWrap 点击 → run 事件 
   const view = readFileSync(VIEW_PATH, 'utf8')
 
   assert.match(tools, /@click="\$emit\('run'\)"/, '按钮点击必须派发 run')
-  assert.match(tools, /:disabled="running"/, '执行中禁用按钮')
+  assert.match(tools, /:disabled="running \|\| readonly"/, '执行中 / 只读画布都禁用运行按钮')
   // 模板里属性是跨行写的，断言不能要求单行形态
   assert.match(
     view,

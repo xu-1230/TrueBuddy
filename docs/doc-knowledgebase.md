@@ -1,10 +1,10 @@
 # doc-knowledgebase · 知识库业务逻辑
 
-> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-13
-> 适用范围：知识库模块的**已实现链路**（§2 现状盘点）与三项能力的**规划方案**（§3 起）
-> 相关：[doc-api.md](./doc-api.md)（接口清单）、[doc-database.md](./doc-database.md)（kb_* 表）、[doc-conventions.md](./doc-conventions.md)、[doc-doctemplate.md](./doc-doctemplate.md)（检索增强的唯一消费方）、[../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md)
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-16
+> 适用范围：知识库模块的**已实现链路**（§2 现状盘点，含 §2.4 归属与共享）与后续能力的**规划方案**（§3 起）
+> 相关：[doc-api.md](./doc-api.md)（接口清单）、[doc-database.md](./doc-database.md)（kb_* 表）、[doc-conventions.md](./doc-conventions.md)、[doc-doctemplate.md](./doc-doctemplate.md)（检索增强的唯一消费方）、[adr/0006-知识库与工作流归属与共享模型.md](./adr/0006-知识库与工作流归属与共享模型.md)（归属与共享模型的决策依据）、[../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md)
 
-> ⚠️ **落地状态（2026-11-13 逐项核对）**：**§2 现状盘点**描述的入库-检索底座链路已实现——空间 / 文档 / 分块 / 分片管理 + DocMind 解析 + AI 语义分片（失败回退逐块）+ DashScope 向量化 + pgvector 单路向量检索（`searchBySpace`，唯一消费方是 doc-template 的 RAG 上下文）。**§3 起的规划全部未实现**——代码中不存在：关键词检索通道、多路召回融合去重、重排降级、父子分块、引用回填、问答会话与消息表（无 `kb_qa_*` 表）、问答接口与 SSE 流式回答、联网搜索与 SSRF 出口控制。规划内容落地前不得被其它模块依赖。
+> ⚠️ **落地状态（2026-11-16 逐项核对）**：**§2 现状盘点**描述的入库-检索底座链路已实现——空间 / 文档 / 分块 / 分片管理 + DocMind 解析 + AI 语义分片（失败回退逐块）+ DashScope 向量化 + pgvector 单路向量检索（`searchBySpace`，唯一消费方是 doc-template 的 RAG 上下文）；**§2.4 归属与共享（creator 过滤 / 公有私有 / fork 深拷贝 / 公有库浏览区）已实现**（ADR 0006）。**§3 起的规划全部未实现**——代码中不存在：关键词检索通道、多路召回融合去重、重排降级、父子分块、引用回填、问答会话与消息表（无 `kb_qa_*` 表）、问答接口与 SSE 流式回答、联网搜索与 SSRF 出口控制。规划内容落地前不得被其它模块依赖。
 
 ---
 
@@ -105,6 +105,24 @@
 | 4 | Mapper 口径 | 业务模块用原生 `@Mapper` 接口 + `@Select` / `@Insert` / `@Delete` / `@Options` 注解 SQL，**无 XML**（`KbDocumentChunkMapper` 即此写法） | [doc.md](./doc.md) §3 要求「使用 `Wrappers` 条件构造器」 | 修订规范措辞（框架的 `BaseMapperX` 能力保留但业务模块未接入）；**新增表沿用现状注解口径**，不引入 XML |
 | 5 | `kb_document_chunk.enabled` / `hit_count` | 两列已在建表脚本中定义，但代码只有 select / insert / delete，**没有任何写入或使用** | 未定义 | 本方案约定：关键词通道过滤 `enabled = TRUE`；向量通道无法过滤（metadata 不含 `enabled`），需在 §9 记录该不一致 |
 | 6 | `application.yml` 明文密钥 | 对话 / 向量化 `api-key` 与 `minio.secret-key` 仍为明文或带明文默认值 | [doc.md](./doc.md) §1.1 要求只写 `${VAR}` 占位符 | 既有待整改项，本方案不复述明文、不新增明文 |
+
+### 2.4 归属与共享模型（2026-11-16 已实现，ADR 0006）
+
+> 知识库从「全局池」改为「按人归属 + 公有共享」：决策依据与取舍见 [adr/0006](./adr/0006-知识库与工作流归属与共享模型.md)。
+
+| # | 能力 | 现状实现 |
+| --- | --- | --- |
+| 1 | 归属真相源 | 复用审计列 `creator`；`selectRespList(creator)` 在**后端**按创建者过滤（首页资产卡「我的资产」同名口径）；前端不自行过滤 |
+| 2 | 可见性 | `kb_space.visibility` 0=私有/1=公有；新建默认私有；存量经 `visibility_creator_backfill_20261116.sql` 一律刷 0 并把 `creator IS NULL` 行归入 admin 种子账号 |
+| 3 | 读写两把闸 | 静态策略类 `service/KbSpaceAccess.java`（唯一实现，防多份判定漂移）：`requireExisting`（不存在→`1_003_000_000`）、`requireReadable`（创建者本人**或**公有，否则 `1_003_000_003`）、`requireOwned`（仅创建者）。**写路径**（改可见性/删文档/上传/向量化/fork 校验前的写意图）全走 `requireOwned`；**纯读路径**（文档列表、分片列表）走 `requireReadable` |
+| 4 | 公有/私有切换 | `PUT /knowledge-base/space/visibility`：非创建者即使面对公有空间也拒绝（归属写操作）；非法值按 `1_003_000_004` 拒绝 |
+| 5 | 公有库浏览区 | `GET /knowledge-base/space/public-list`：**只列他人的**公有空间（`visibility=1 AND creator <> 当前用户`，JOIN system_user 取创建者显示名）；创建者为 NULL 的存量行宁可少展示 |
+| 6 | fork 深拷贝 | `POST /knowledge-base/space/fork`：与公有只读同一把闸（本人空间或他人公有可 fork）；单事务复制 空间→文档（**只带 `status=2 已向量化` 的文档**，`file_id` 共享引用 MinIO 对象不动）→版面块→分片→pgvector 向量（`INSERT…SELECT` 改写 metadata），并做**行数对账**（分片/向量复制不完整即抛出整笔回滚）；副本私有、归属当前用户、与原库此后无任何同步 |
+| 7 | 副本命名 | 「原名（副本）」起，重名追加序号「（副本 2）」；`uk_kb_space_name` 唯一索引防撞，原名超长先截断基底再接后缀（列宽 100）；重试 99 次仍冲突按 500 拒绝 |
+| 8 | 分片读取守卫 | `KbDocumentChunkServiceImpl.getChunkList`：文档不存在→`1_003_000_001`；经 `document.spaceId` 反查空间后过 `requireReadable`——公有库浏览区暴露他人 documentId，分片路径必须锁死 |
+| 9 | 检索增强豁免 | `searchBySpace` 是 doc-template 复用的**内部接缝**，不做归属校验（消费方是服务端自身，非用户面接口） |
+
+**接受的不一致**：批改选库等下游选择器「只列我的空间」由各自的列表接口按 creator 过滤保证（本模块 `getSpaceList` 已过滤）；fork 事务里 `IllegalStateException` 用通用 500 而非模块错误码（对账失败是极小概率数据异常，可读堆栈优先）。
 
 ---
 

@@ -24,4 +24,11 @@ public interface HomeworkFileMapper {
     @Select("SELECT * FROM homework_file WHERE task_id = #{taskId} ORDER BY relative_path ASC")
     List<HomeworkFileDO> selectListByTaskId(Long taskId);
 
+    /** 详情查询：LEFT JOIN infra_file 带出预签名 URL 与 MIME（file_id 为空或文件已删时字段为 null） */
+    @Select("SELECT f.id, f.task_id, f.file_id, f.relative_path, f.name, f.size, f.create_time, "
+            + "i.url, i.type "
+            + "FROM homework_file f LEFT JOIN infra_file i ON f.file_id = i.id "
+            + "WHERE f.task_id = #{taskId} ORDER BY f.relative_path ASC")
+    List<HomeworkFileDO> selectListWithInfraByTaskId(Long taskId);
+
 }

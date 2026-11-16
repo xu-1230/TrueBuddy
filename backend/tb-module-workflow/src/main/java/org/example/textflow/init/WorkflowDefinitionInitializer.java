@@ -58,6 +58,7 @@ public class WorkflowDefinitionInitializer implements ApplicationRunner {
             workflow.setDescription(BUILTIN_DESCRIPTION);
             workflow.setSchemaJson(schemaJson);
             workflow.setStatus(WorkflowConstants.STATUS_DRAFT);
+            workflow.setVisibility(0);
             workflowRepository.insert(workflow);
             log.info("[WorkflowDefinitionInitializer] 已写入内置工作流模板，id={}", WorkflowConstants.BUILTIN_WORKFLOW_ID);
         } catch (Exception e) {

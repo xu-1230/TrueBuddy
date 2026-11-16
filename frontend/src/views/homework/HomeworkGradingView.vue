@@ -118,6 +118,48 @@
                   : (stageLabel || '正在逐份批改，每完成一份会立刻出现一张成绩卡；请勿关闭页面') }}
               </p>
             </template>
+            <template v-else-if="historyDetail">
+              <!-- 历史回看：批改配置已回显到左侧面板，画布只读展示该次的文件清单；
+                   文件名带预签名 URL 时可直接点开原文件（7 天有效）。 -->
+              <div class="stage__review">
+                <p class="stage__blank-title">
+                  {{ historyDetail.folderName }} · {{ historyDetail.fileCount }} 份作业
+                </p>
+                <p class="stage__review-desc">
+                  {{ historyDetail.description || '该次批改未存档批改要求' }}
+                </p>
+                <div class="stage__review-tree">
+                  <el-tree
+                    class="stage__review-el-tree"
+                    :data="historyTreeData"
+                    default-expand-all
+                    node-key="id"
+                    :props="{ children: 'children', label: 'label' }"
+                  >
+                    <template #default="{ data }">
+                      <span class="review-node">
+                        <el-icon
+                          class="review-node__icon"
+                          :class="{ 'review-node__icon--dir': !data.file }"
+                        >
+                          <component :is="data.file ? Document : FolderOpened" />
+                        </el-icon>
+                        <a
+                          v-if="data.file && data.url"
+                          class="review-node__label review-node__label--link"
+                          :href="data.url"
+                          target="_blank"
+                          rel="noopener"
+                          :title="`打开 ${data.label}`"
+                        >{{ data.label }}</a>
+                        <span v-else class="review-node__label" :title="data.label">{{ data.label }}</span>
+                        <span v-if="data.file" class="review-node__size">{{ formatFileSize(data.size) }}</span>
+                      </span>
+                    </template>
+                  </el-tree>
+                </div>
+              </div>
+            </template>
             <template v-else>
               <!-- 空卡堆剪影：先把「会堆成什么」画出来，再讲怎么开始 -->
               <div class="stage__ghost" aria-hidden="true">
@@ -211,15 +253,26 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Check, Clock, Download, Refresh } from '@element-plus/icons-vue'
+import { Check, Clock, Document, Download, FolderOpened, Refresh } from '@element-plus/icons-vue'
 import { getSpaceList } from '@/api/knowledgebase'
-import { submitGrading, uploadHomeworkFiles } from '@/api/homework'
+import {
+  getHomeworkTaskDetail,
+  listHomeworkTasks,
+  startHomeworkGrading,
+  submitGrading,
+  uploadHomeworkFiles,
+  writeHomeworkResults,
+} from '@/api/homework'
 import { listWorkflows } from '@/api/workflow'
 import ConfigPanel from './components/ConfigPanel.vue'
 import HistoryDrawer from './components/HistoryDrawer.vue'
 import ScoreCard from './components/ScoreCard.vue'
 import HumanCardDialog from '@/views/workflow2/components/HumanCardDialog.vue'
 import { runGradingWorkflow } from './utils/grading-run'
+import { buildFileTree } from './utils/file-tree'
+import { buildResultWritePayload } from './utils/result-payload'
+import { statusTextOf, statusToneOf } from './utils/status'
+import { formatDateTime, formatFileSize } from './utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -409,6 +462,7 @@ const displayBadge = computed(() => {
       ? `历史记录 · 已载入 ${records.value.length} 份`
       : `已上传 ${records.value.length} 份`
   }
+  if (historyDetail.value) return '历史记录回看'
   return '待上传'
 })
 
@@ -418,6 +472,9 @@ const headerMeta = computed(() => {
     return uploading.value
       ? `正在上传作业文件 ${uploadPercent.value}%`
       : stageLabel.value || '正在逐份存储作业文件…'
+  }
+  if (historyDetail.value) {
+    return `回看「${historyDetail.value.folderName}」 · ${selectedKbNames.value} · 重新选择文件夹即可再发起批改`
   }
   if (!folder.value) return '选择作业文件夹后点击「开始批改」即可上传'
   return [
@@ -505,6 +562,7 @@ async function handleGrade() {
   records.value = []
   resetCardDeck()
   activeHistoryId.value = null
+  historyDetail.value = null
 
   try {
     const data = await uploadHomeworkFiles(files, paths, folder.value.name, (event) => {
@@ -531,7 +589,8 @@ async function handleGrade() {
     ElMessage.success(`上传完成：共 ${data.fileCount} 份作业`)
 
     // 第二步：先把本次批改的配置交给后端落库存档（批改要求与知识库写进该任务）。
-    // 第三步：跑批改工作流。业务输入**直传**（docs/12 §4.4）：文件清单用上传返回的 files、
+    // 第三步：开始执行 —— 任务状态置为「批改中」，历史抽屉与详情接口从此看到这一状态。
+    // 第四步：跑批改工作流。业务输入**直传**（docs/12 §4.4）：文件清单用上传返回的 files、
     // 批改要求与知识库用左侧面板的配置 —— /homework/grade 仅作存档，执行以 inputs 为准。
     //
     // 两处交互约定：
@@ -548,6 +607,8 @@ async function handleGrade() {
         exportFormat: config.exportFormat,
         workflowId: config.workflow,
       })
+
+      await startHomeworkGrading(data.taskId)
 
       const result = await runGradingWorkflow({
         workflowId: config.workflow,
@@ -576,6 +637,21 @@ async function handleGrade() {
         resetCardDeck()
       }
 
+      // 终态回写：逐学生评分落库 + 任务状态收敛（覆盖式，以最后一次为准）。
+      // 落库失败不打断已上牌的结果，只把差异说出来 —— 历史抽屉缺这一批。
+      try {
+        const written = await writeHomeworkResults(data.taskId, buildResultWritePayload({
+          records: result.records,
+          statistics: result.statistics,
+          conversationId: result.conversationId,
+        }))
+        if (written?.missed > 0) {
+          ElMessage.warning(`本次有 ${written.missed} 份作业没有产出结果`)
+        }
+      } catch (writeError) {
+        ElMessage.error(writeError?.message || '评分结果落库失败：历史记录将缺少本次结果')
+      }
+
       if (records.value.length) {
         // 流式上牌比最终记录少，说明有轮次没产出（模型没返回可解析的结果 / 轮次超时被跳过）：
         // 逐份上牌时那一份根本不会出现，这里至少把差异说出来，别让它静默消失
@@ -592,6 +668,15 @@ async function handleGrade() {
         ElMessage.info('已取消本次批改')
       } else {
         ElMessage.error(gradeError?.message || '批改失败，请重试')
+        // 执行失败也是终态：把任务收敛到「失败」，别让它在历史里永远停在「批改中」。
+        // 落库失败保持现状（可能是还没 start 的 0 态，后端会拒绝），页面的错误提示已经足够。
+        try {
+          await writeHomeworkResults(data.taskId, buildResultWritePayload({
+            records: [],
+            statistics: null,
+            conversationId: '',
+          }))
+        } catch { /* 终态收敛尽力而为 */ }
       }
     }
   } catch (e) {
@@ -817,17 +902,43 @@ const activeWorkflowLabel = computed(
   () => workflowName(taskMeta.value?.workflow || config.workflow),
 )
 
-/* ---------- 历史记录（待接入后端，当前仅保留抽屉 UI） ---------- */
+/* ---------- 历史记录：最近任务列表 + 只读回看（配置 + 文件树） ---------- */
 const historyOpen = ref(false)
 const historyRecords = ref([])
 const historyLoading = ref(false)
 const activeHistoryId = ref(null)
 const historyDetailLoadingId = ref(null)
+/** 回看中的任务详情（配置回显到左侧面板，文件树在画布区只读展示）；新一轮批改开始时清掉 */
+const historyDetail = ref(null)
+/** 回看文件树（由详情 files 按 relative_path 构建） */
+const historyTreeData = computed(() => buildFileTree(historyDetail.value?.files))
+
+/** 任务存档的知识库 id → 名称串（空间已删除的 id 跳过；未存档批改配置时为空串） */
+function kbNamesOf(spaceIds) {
+  const names = (spaceIds ?? [])
+    .map((id) => kbOptions.value.find((kb) => kb.id === id)?.name)
+    .filter(Boolean)
+  return names.join('、')
+}
 
 async function refreshHistory() {
   historyLoading.value = true
   try {
-    historyRecords.value = []
+    const list = await listHomeworkTasks()
+    historyRecords.value = (list ?? []).map((task) => ({
+      id: task.id,
+      title: task.folderName,
+      status: statusTextOf(task.status),
+      statusTone: statusToneOf(task.status),
+      kb: kbNamesOf(task.spaceIds),
+      // 工作流选择本轮未落库存档，列表先不展示
+      workflow: '',
+      time: formatDateTime(task.createTime),
+      // 已回写终态的任务带出评分份数；没有记录的任务不显示份数角标
+      recordCount: task.resultCount == null ? null : Number(task.resultCount),
+    }))
+  } catch (e) {
+    ElMessage.error(e?.message || '历史记录加载失败')
   } finally {
     historyLoading.value = false
   }
@@ -838,36 +949,56 @@ function openHistoryDrawer() {
   refreshHistory()
 }
 
-function handleOpenHistoryRecord(record) {
+async function handleOpenHistoryRecord(record) {
   if (!record?.id || historyDetailLoadingId.value) return
+  if (grading.value) {
+    ElMessage.warning('批改进行中，暂不能回看历史记录')
+    return
+  }
   historyDetailLoadingId.value = record.id
   try {
-    if (!record.records?.length) {
-      ElMessage.warning('该次批改没有可查看的记录')
-      return
+    const detail = await getHomeworkTaskDetail(record.id)
+    // 配置回显：批改要求与知识库写回左侧面板，教师可对照，也可直接续选文件夹再发起同配置批改
+    config.description = detail.description || ''
+    const ids = (detail.spaceIds ?? []).filter((id) => kbOptions.value.some((kb) => kb.id === id))
+    config.spaceIds = ids.length ? ids : [DEFAULT_KB.id]
+
+    const results = detail.results ?? []
+    if (results.length) {
+      // 评分回看：按成绩卡形态恢复画布（与服务端流式上牌同一映射，一个学生一张卡）
+      records.value = results.map((result, index) => (
+        toRecordFromGrading(result, detail.files ?? [], index)
+      ))
+      resetCardDeck()
+      taskMeta.value = {
+        taskId: detail.id,
+        description: detail.description || '',
+        workflow: config.workflow,
+        exportFormat: config.exportFormat,
+      }
+      historyDetail.value = null
+    } else {
+      // 没有落库评分（未回写终态 / 空跑）：画布退回只读的配置 + 文件树回看
+      records.value = []
+      resetCardDeck()
+      historyDetail.value = detail
     }
-    records.value = record.records
-    taskMeta.value = {
-      taskId: record.id,
-      description: record.description || record.title,
-      workflow: record.workflowId || resolveWorkflowKey(record.workflow),
-      exportFormat: record.exportFormat || config.exportFormat,
-    }
-    resetCardDeck()
     activeHistoryId.value = record.id
     historyOpen.value = false
-    ElMessage.success(`已载入历史记录，共 ${record.records.length} 份`)
+    if (results.length) {
+      if (detail.missedCount > 0) {
+        ElMessage.warning(`已载入「${detail.folderName}」的批改结果，${detail.missedCount} 份作业漏批`)
+      } else {
+        ElMessage.success(`已载入「${detail.folderName}」的批改结果，共 ${results.length} 名学生`)
+      }
+    } else {
+      ElMessage.success(`已载入「${detail.folderName}」的批改配置与文件清单`)
+    }
   } catch (e) {
     ElMessage.error(e?.message || '加载批改详情失败')
   } finally {
     historyDetailLoadingId.value = null
   }
-}
-
-/** 历史记录中的工作流文案 → 工作流 id（找不到时回落到默认项） */
-function resolveWorkflowKey(label) {
-  const matched = workflows.value.find((item) => item.name === label)
-  return matched ? matched.id : preferredWorkflowId()
 }
 
 onMounted(() => {
@@ -1364,6 +1495,99 @@ onMounted(() => {
   max-width: 26rem;
   font-size: 0.78rem;
   line-height: 1.7;
+  color: var(--tb-text-tertiary);
+}
+
+/* ---------- 历史回看：画布只读展示该次任务的文件清单 ---------- */
+.stage__review {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.stage__review-desc {
+  margin: 0;
+  max-width: 30rem;
+  font-size: 0.76rem;
+  line-height: 1.6;
+  color: var(--tb-text-tertiary);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.stage__review-tree {
+  width: min(100%, 30rem);
+  max-height: 15rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--tb-radius-sm);
+  background: color-mix(in oklab, var(--tb-bg-surface) 70%, transparent);
+  border: var(--tb-border-width) solid var(--tb-border);
+  overflow-y: auto;
+  text-align: left;
+}
+
+.stage__review-el-tree {
+  background: transparent;
+  --el-tree-node-hover-bg-color: var(--tb-primary-soft);
+}
+
+.stage__review-el-tree :deep(.el-tree-node__content) {
+  height: 26px;
+  margin: 1px 0;
+  border-radius: var(--tb-radius-sm);
+}
+
+.stage__review-el-tree :deep(.el-tree-node__expand-icon) {
+  padding: 4px 2px 4px 0;
+  font-size: 11px;
+  color: var(--tb-text-tertiary);
+}
+
+.review-node {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding-right: 4px;
+}
+
+.review-node__icon {
+  flex: 0 0 auto;
+  font-size: 15px;
+  color: var(--tb-primary-text);
+}
+
+.review-node__icon--dir {
+  color: var(--tb-accent);
+}
+
+.review-node__label {
+  min-width: 0;
+  font-size: 0.76rem;
+  color: var(--tb-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-node__label--link {
+  color: var(--tb-primary);
+  text-decoration: none;
+}
+
+.review-node__label--link:hover {
+  color: var(--tb-primary-text);
+  text-decoration: underline;
+}
+
+.review-node__size {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 0.62rem;
   color: var(--tb-text-tertiary);
 }
 

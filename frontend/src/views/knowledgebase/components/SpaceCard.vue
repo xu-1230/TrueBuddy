@@ -1,17 +1,42 @@
 <template>
   <div class="space-card" @click="$emit('click')">
     <div class="space-card__actions">
-      <el-icon class="space-card__action" title="编辑" @click.stop="$emit('edit')">
-        <Edit />
-      </el-icon>
-      <el-icon
-        class="space-card__action space-card__action--danger"
-        title="删除"
-        @click.stop="$emit('delete')"
-      >
-        <Delete />
-      </el-icon>
+      <template v-if="readonly">
+        <el-button
+          size="small"
+          type="primary"
+          plain
+          class="space-card__fork-btn"
+          :loading="forking"
+          @click.stop="$emit('fork')"
+        >
+          添加为自己的
+        </el-button>
+      </template>
+      <template v-else>
+        <el-tooltip :content="space.visibility === 1 ? '设为私有' : '设为公有'" placement="top">
+          <el-icon
+            class="space-card__action"
+            :title="space.visibility === 1 ? '设为私有' : '设为公有'"
+            @click.stop="$emit('toggle-visibility', space.visibility === 1 ? 0 : 1)"
+          >
+            <Hide v-if="space.visibility === 1" />
+            <View v-else />
+          </el-icon>
+        </el-tooltip>
+        <el-icon class="space-card__action" title="编辑" @click.stop="$emit('edit')">
+          <Edit />
+        </el-icon>
+        <el-icon
+          class="space-card__action space-card__action--danger"
+          title="删除"
+          @click.stop="$emit('delete')"
+        >
+          <Delete />
+        </el-icon>
+      </template>
     </div>
+    <span v-if="!readonly && space.visibility === 1" class="space-card__public-chip">公有</span>
     <div class="space-card__visual">
       <!-- 叠加文档组（3 层堆叠，探出文件夹顶部）-->
       <div v-if="space.documentCount > 0" class="stack-docs">
@@ -40,21 +65,35 @@
     <div class="space-card__meta">
       <el-icon><Document /></el-icon>
       <span>{{ space.documentCount }} 个文档</span>
+      <template v-if="readonly">
+        <span class="space-card__meta-divider">·</span>
+        <span :title="space.creatorName">{{ space.creatorName }}</span>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup>
-import { Delete, Document, Edit, FolderOpened } from '@element-plus/icons-vue'
+import { Delete, Document, Edit, FolderOpened, Hide, View } from '@element-plus/icons-vue'
 
 defineProps({
   space: {
     type: Object,
     required: true,
   },
+  /** 公有库浏览区的只读形态：无编辑/删除/可见性切换，提供 fork 入口 */
+  readonly: {
+    type: Boolean,
+    default: false,
+  },
+  /** 该卡的 fork 请求进行中（按钮转 loading） */
+  forking: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-defineEmits(['click', 'edit', 'delete'])
+defineEmits(['click', 'edit', 'delete', 'toggle-visibility', 'fork'])
 </script>
 
 <style scoped>
@@ -109,6 +148,29 @@ defineEmits(['click', 'edit', 'delete'])
 .space-card__action--danger:hover {
   color: var(--tb-danger);
   background: var(--tb-danger-soft);
+}
+
+/* 公有库只读形态：「添加为自己的」按钮（fork 入口） */
+.space-card__fork-btn {
+  margin: 0;
+}
+
+/* 我的空间已公开的常驻小徽标 */
+.space-card__public-chip {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tb-primary-text);
+  background: var(--tb-primary-soft);
+  border-radius: var(--tb-radius-full);
+}
+
+.space-card__meta-divider {
+  color: var(--tb-text-tertiary);
 }
 
 .space-card__visual {

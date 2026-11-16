@@ -35,5 +35,7 @@ public class HomeworkTaskDO {
     private Long updater;
     /** 是否删除：false=否，true=是 */
     private Boolean deleted;
+    /** 评分记录数（历史列表查询以子查询带出，其它路径为 null） */
+    private Integer resultCount;
 
 }
