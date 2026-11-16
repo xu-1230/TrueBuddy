@@ -31,6 +31,15 @@ public class WorkflowDO {
     /** 状态：0=草稿，1=已发布 */
     private Integer status;
 
+    /** 可见性：0=私有，1=公有（ADR 0006） */
+    private Integer visibility;
+
+    /** 创建人 id（system_user.id；builtin 模板靠 id 豁免，不依赖此列） */
+    private Long creator;
+
+    /** 创建人展示名（仅公有列表查询携带，JOIN system_user 得出；其余查询为 null） */
+    private String creatorName;
+
     /** 创建时间 */
     private LocalDateTime createTime;
 

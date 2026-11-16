@@ -8,6 +8,8 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 import org.example.backend.module.homework.model.HomeworkTaskDO;
 
+import java.util.List;
+
 @Mapper
 public interface HomeworkTaskMapper {
 
@@ -27,5 +29,21 @@ public interface HomeworkTaskMapper {
     int updateGradeConfig(@Param("id") Long id,
                           @Param("description") String description,
                           @Param("spaceIds") String spaceIds);
+
+    /** 最近 N 条任务（历史抽屉列表，口径同文档生成历史：按创建时间倒序；附带评分记录数） */
+    @Select("SELECT t.*, (SELECT COUNT(*) FROM homework_grading_result r WHERE r.task_id = t.id) AS result_count "
+            + "FROM homework_task t WHERE t.deleted = FALSE "
+            + "ORDER BY t.create_time DESC, t.id DESC LIMIT #{limit}")
+    List<HomeworkTaskDO> selectRecentList(@Param("limit") int limit);
+
+    /** 开始执行：仅在待批改（0）时置为批改中（1），返回受影响行数供状态机判断 */
+    @Update("UPDATE homework_task SET status = 1, update_time = now() "
+            + "WHERE id = #{id} AND status = 0")
+    int updateStatusToGrading(@Param("id") Long id);
+
+    /** 终态回写：从批改中（1）或既有终态（2/3/4）推进；待批改（0）不可直接写终态 */
+    @Update("UPDATE homework_task SET status = #{status}, update_time = now() "
+            + "WHERE id = #{id} AND status IN (1, 2, 3, 4)")
+    int updateStatusToFinal(@Param("id") Long id, @Param("status") Integer status);
 
 }

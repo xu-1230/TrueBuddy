@@ -40,31 +40,40 @@ test('parseTime 吃下 yudao 的空格分隔格式，ISO 与非法值都不炸',
   assert.equal(parseTime('不是时间'), null)
 })
 
-test('四个来源合成一条流，按更新时间倒序', () => {
+test('三个来源合成一条流，按更新时间倒序', () => {
   const items = buildFeed(
     {
       spaces: [{ id: 1, name: '课件库', documentCount: 2, createTime: daysAgo(20) }],
       workflows: [{ id: 2, name: '批改流', stepCount: 6, updateTime: daysAgo(1) }],
       generations: [{ id: 3, title: '教案复刻', kb: '课件库', docCount: 4, status: '成功', time: daysAgo(2) }],
-      conversations: [{ conversationId: 4, title: '会话 A', workflowName: '批改流', createTime: daysAgo(5), updateTime: daysAgo(3) }],
     },
-    { now: NOW },
   )
 
   assert.deepEqual(
     items.map((item) => item.key),
-    ['workflow-2', 'doc-3', 'chat-4', 'knowledge-1'],
+    ['workflow-2', 'doc-3', 'knowledge-1'],
   )
   assert.deepEqual(
     items.map((item) => item.kind),
-    ['workflow', 'doc', 'chat', 'knowledge'],
+    ['workflow', 'doc', 'knowledge'],
   )
 })
 
+test('会话来源已彻底移除：误传 conversations 也不产生任何卡片', () => {
+  const items = buildFeed(
+    {
+      conversations: [{ conversationId: 4, title: '会话 A', workflowName: '批改流', createTime: daysAgo(5) }],
+    },
+  )
+
+  assert.deepEqual(items, [], '会话卡片与 chat kind 已下线，不该有任何兜底残留')
+  assert.ok(items.every((item) => item.kind !== 'chat'))
+})
+
 test('来源缺失时不编造数字：null 与 undefined 都出空流', () => {
-  assert.deepEqual(buildFeed({}, { now: NOW }), [])
-  assert.deepEqual(buildFeed({ spaces: null, workflows: undefined }, { now: NOW }), [])
-  assert.deepEqual(buildFeed({ spaces: [{ id: 1, name: '空空间', createTime: daysAgo(1) }] }, { now: NOW })
+  assert.deepEqual(buildFeed({}), [])
+  assert.deepEqual(buildFeed({ spaces: null, workflows: undefined }), [])
+  assert.deepEqual(buildFeed({ spaces: [{ id: 1, name: '空空间', createTime: daysAgo(1) }] })
     .map((item) => item.metric), [null], 'documentCount 缺失时不能补 0，0 会被读成「确实没有文档」')
 })
 
@@ -76,7 +85,6 @@ test('生成历史把状态文案带成语义色档位', () => {
       { id: 3, title: '失败任务', status: '失败', docCount: 1, time: daysAgo(1) },
       { id: 4, title: '没状态', docCount: 1, time: daysAgo(1) },
     ] },
-    { now: NOW },
   )
 
   assert.deepEqual(
@@ -92,7 +100,6 @@ test('过滤与推荐排序：规模优先，同规模按更新时间倒序', ()
       { id: 1, name: '老流程', updateTime: daysAgo(30) },
       { id: 2, name: '新流程', updateTime: daysAgo(1) },
     ], spaces: [{ id: 3, name: '老空间', documentCount: 9, createTime: daysAgo(30) }] },
-    { now: NOW },
   )
 
   assert.deepEqual(filterFeed(items, 'workflow').map((item) => item.id), [2, 1])
@@ -113,7 +120,6 @@ test('能力目录卡：没有来源的模块不给统计', () => {
       { id: 3, name: 'C', updateTime: daysAgo(9) },
       { id: 4, name: 'D', updateTime: daysAgo(9) },
     ] },
-    { now: NOW },
   )
   const stats = buildModuleStats(items)
 

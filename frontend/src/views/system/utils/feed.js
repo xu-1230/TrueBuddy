@@ -90,8 +90,8 @@ const text = (...values) => {
   return hit ? hit.trim() : ''
 }
 
-/** 组装成统一卡片模型；`now` 仅为保留的归一化入参（时间字段原样透传） */
-function toItem(partial, now) {
+/** 组装成统一卡片模型 */
+function toItem(partial) {
   const { createdAt, updatedAt } = partial
   return {
     createdAt,
@@ -101,19 +101,17 @@ function toItem(partial, now) {
 }
 
 /**
- * 把四个接口的返回合并为一条统一信息流。
+ * 把三个接口的返回合并为一条统一信息流。
  *
  * 任一来源请求失败时传 null 即可，其余来源照常渲染。
  *
  * @param {{
- *   spaces?: Array, workflows?: Array, generations?: Array, conversations?: Array
+ *   spaces?: Array, workflows?: Array, generations?: Array
  * }} payload
- * @param {{ now?: number }} [options]
  * @returns {Array<object>} 按 `updatedAt` 倒序的统一卡片模型
  */
-export function buildFeed(payload = {}, options = {}) {
-  const { spaces, workflows, generations, conversations } = payload
-  const now = options.now ?? Date.now()
+export function buildFeed(payload = {}) {
+  const { spaces, workflows, generations } = payload
 
   const items = [
     ...asArray(spaces).map((space) =>
@@ -130,7 +128,6 @@ export function buildFeed(payload = {}, options = {}) {
           createdAt: parseTime(space?.createTime),
           updatedAt: parseTime(space?.createTime),
         },
-        now,
       ),
     ),
     ...asArray(workflows).map((flow) =>
@@ -147,7 +144,6 @@ export function buildFeed(payload = {}, options = {}) {
           createdAt: parseTime(flow?.updateTime),
           updatedAt: parseTime(flow?.updateTime),
         },
-        now,
       ),
     ),
     ...asArray(generations).map((record) =>
@@ -166,24 +162,6 @@ export function buildFeed(payload = {}, options = {}) {
           createdAt: parseTime(record?.time),
           updatedAt: parseTime(record?.time),
         },
-        now,
-      ),
-    ),
-    ...asArray(conversations).map((chat) =>
-      toItem(
-        {
-          key: `chat-${chat?.conversationId ?? chat?.id}`,
-          id: chat?.conversationId ?? chat?.id,
-          kind: 'chat',
-          name: text(chat?.title, chat?.workflowName) || '未命名会话',
-          description: text(chat?.workflowName) ? `工作流：${chat.workflowName}` : '暂无绑定工作流',
-          metric: null,
-          metricLabel: '',
-          to: '/index/workflow',
-          createdAt: parseTime(chat?.createTime),
-          updatedAt: parseTime(chat?.updateTime ?? chat?.createTime),
-        },
-        now,
       ),
     ),
   ]

@@ -27,11 +27,11 @@
           :class="{
             'is-active': activeId === record.id,
             'is-loading': detailLoadingId === record.id,
-            'is-no-record': !record.recordCount,
+            'is-no-record': record.recordCount === 0,
           }"
           role="button"
           tabindex="0"
-          :title="record.recordCount ? '点击载入该次批改结果' : '该次批改没有产出记录'"
+          :title="record.recordCount === 0 ? '该次批改没有产出记录' : '点击查看该次批改'"
           @click="handleClick(record)"
           @keydown.enter="handleClick(record)"
           @keydown.space.prevent="handleClick(record)"
@@ -40,18 +40,24 @@
             <span class="history-item__title">{{ record.title }}</span>
             <span
               class="history-item__status"
-              :class="record.status === '失败' ? 'is-failed' : 'is-success'"
+              :class="`is-${record.statusTone ?? 'pending'}`"
             >
               {{ record.status }}
             </span>
           </div>
           <div class="history-item__meta">
-            <span>{{ record.kb }}</span>
-            <span class="history-item__dot">·</span>
-            <span>{{ record.workflow }}</span>
-            <span class="history-item__dot">·</span>
+            <template v-if="record.kb">
+              <span>{{ record.kb }}</span>
+              <span class="history-item__dot">·</span>
+            </template>
+            <template v-if="record.workflow">
+              <span>{{ record.workflow }}</span>
+              <span class="history-item__dot">·</span>
+            </template>
             <span>{{ record.time }}</span>
-            <span class="history-item__count">{{ record.recordCount || 0 }} 份</span>
+            <span v-if="record.recordCount != null" class="history-item__count">
+              {{ record.recordCount }} 份
+            </span>
             <span class="history-item__open">
               <span v-if="detailLoadingId === record.id" class="history-item__spinner"></span>
               <el-icon v-else><ArrowRight /></el-icon>
@@ -260,6 +266,11 @@ function handleClick(record) {
 .history-item__status.is-failed {
   color: var(--tb-danger);
   background: var(--tb-danger-soft);
+}
+
+.history-item__status.is-pending {
+  color: var(--tb-text-secondary);
+  background: var(--tb-bg-sunken);
 }
 
 .history-item__meta {

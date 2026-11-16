@@ -168,6 +168,7 @@
 | `tb-ui-mode` | localStorage | 明暗态（null=跟随系统） |
 | `tb-meeting-host:{meetingNo}` | localStorage | 按会议号切分的主持人凭据（**会议凭据不是登录态**，不进 auth.js） |
 | `tb-meeting-attendee-{meetingNo}` | sessionStorage | 学生参会会话，关标签页即弃 |
+| `tb-home-active-tab` | sessionStorage | 首页 Zone C 的过滤 tab 记忆（仅 filter 型 key，非法回落 `all`；见 [doc-ui.md](./doc-ui.md) §9） |
 
 键名统一 `tb-{模块}-{用途}` 前缀；规划长期业务状态改用 Pinia 持久化插件统一处理。待整改：`views/TestView.vue` 额外写 localStorage、`views/ppt/stores/*.js` options 写法。
 
@@ -237,8 +238,8 @@
 
 | 端 | 现状 | 框架 |
 | --- | --- | --- |
-| 后端 | 3 个模块 11 个 JUnit 测试类（lecture 8 / workflow 3 / knowledgebase 1），全部是单元测试，零 `@SpringBootTest` / MockMvc | JUnit 5 + `spring-boot-starter-test`（Mockito、AssertJ） |
-| 前端 | `frontend/tests/*.test.js` 25 个测试文件，`npm test` = `node --test`，零新增依赖 | Node 内置 `node:test` + `node:assert/strict` |
+| 后端 | 4 个模块 20 个 JUnit 测试类（knowledgebase 7 / lecture 7 / workflow 5 / homework 1），全部是单元测试，零 `@SpringBootTest` / MockMvc | JUnit 5 + `spring-boot-starter-test`（Mockito、AssertJ） |
+| 前端 | `frontend/tests/*.test.js` 28 个测试文件，`npm test` = `node --test`，零新增依赖 | Node 内置 `node:test` + `node:assert/strict` |
 | docx-mcp | **零测试**（有 `.pytest_cache` 但无 test 文件） | — |
 
 > 命名陷阱：`tb-module-test` / `tb-module-test2` 是业务验证模块，不进入 `./mvnw test` 测试集。组件渲染、`src/api/` 拦截器、端到端流程仍无覆盖。
