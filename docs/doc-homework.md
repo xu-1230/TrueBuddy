@@ -67,4 +67,6 @@
 | 批改结果导出 | 前端 `handleExport` 标注「待接入后端」，导出格式选择已入库 | 后端导出接口 |
 | 批改历史 | **已落地**（2026-11-16）：`/task/list` + `/task/detail` + 历史抽屉回看；管理端 `/admin/homework/{resources,records}` 页面仍为前端 mock | 管理端打通 |
 | 状态回写 | **已落地**（2026-11-16）：`/task/start` 置 1、`/{taskId}/results` 覆盖式落库并收敛 2/3/4 | 用户取消的执行任务停在 `1`（接受：终态只认前端回写，无服务端兜底超时） |
+| 结果表 0 行（2026-11-16 诊断） | **现状**：业务库 36 条 `homework_task`、`homework_grading_result` 0 行；最近两条任务 `status=4`，对应 `workflow_run.status=3`（失败）。最小测试证明：内置标准工作流非空 records 时 payload 非空、Service + 真实 PostgreSQL 均写入 2 行；空 records 时只删不插、状态收敛 4、结果表 0 行 | **规范要求**：历史结果缺失应能追溯到失败阶段，不能只表现为「没有写入」 |
+| 结果表 0 行·待整改 | **根因**：上游工作流执行失败（`workflow_run.status=3`）→ 前端 `handleGrade` 失败兜底回写空 records → `writeResults` 只删不插并置 4，结果表保持 0 行；**写入链路本身无故障** | **待整改**：① 在工作流失败时保留可见的失败原因（当前 `workflow_run` 无错误字段，SSE `last_error` 未落库）；② 区分「失败收敛」与「没有产出」两类空记录，避免历史抽屉只看到空画布；③ 补 E2E 断言 `completed` 后查表有行 |
 | 认证归属 | 现状：`/homework/**` 整体在 permit-all 白名单（application.yml，为未登录态联调而设的历史口径），新加的 `/task/*`、`/{taskId}/results` 因此**匿名可达**；`writeResults` 可覆盖任意 taskId 的结果、`/task/list` 可看全部任务 | 规范要求：结果回写、任务列表/详情应校验登录并按 `creator` 过滤（同 ADR 0006 归属模型）。**待整改**：收口 `/homework/**` 白名单或对写路径加归属校验，属独立变更，未纳入本次批次 |
