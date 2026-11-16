@@ -38,7 +38,8 @@ export const userRoutes = [
     redirect: "/index/home",
     children: [
       { path: "home", name: "system-home", component: () => import("../views/system/SystemHomeView.vue") },
-      { path: "doc-template", name: "doc-template", component: () => import("../views/doctemplate/DocTemplateView.vue") },
+      // 文档模板生成：:id? 对应「某次生成」，?file= 对应「该次生成中的某份文档」（见 views/doctemplate/utils/route.js）
+      { path: "doc-template/:id?", name: "doc-template", component: () => import("../views/doctemplate/DocTemplateView.vue") },
       { path: "homework-grading", name: "homework-grading", component: () => import("../views/homework/HomeworkGradingView.vue") },
       { path: "knowledge-base", name: "knowledge-base", component: () => import("../views/knowledgebase/KnowledgeBaseView.vue") },
       { path: "ppt", name: "ppt", component: () => import("../views/ppt/index.vue") },

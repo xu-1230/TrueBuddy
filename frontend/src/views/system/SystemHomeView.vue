@@ -63,7 +63,7 @@
           />
         </div>
         <el-empty v-else-if="!loading" :description="emptyDescription">
-          <el-button type="primary" @click="go('/index/knowledge-base')">去创建知识库</el-button>
+          <el-button type="primary" @click="go(emptyAction.to)">{{ emptyAction.label }}</el-button>
         </el-empty>
       </div>
     </section>
@@ -156,9 +156,19 @@ const activeSortLabel = computed(
   () => HOME_SORTS.find((option) => option.key === sortKey.value)?.label || '推荐',
 )
 
-const emptyDescription = computed(() =>
-  feedItems.value.length ? '该分类下还没有内容' : '还没有任何资产，先从知识库开始',
-)
+const emptyDescription = computed(() => {
+  if (activeTab.value === 'doc') return '还没有生成文档，先去生成一批吧'
+  return feedItems.value.length ? '该分类下还没有内容' : '还没有任何资产，先从知识库开始'
+})
+
+/** 空态行动入口：按当前 tab 指向真实可创建 / 可生成的位置 */
+const EMPTY_ACTIONS = {
+  all: { label: '去创建知识库', to: '/index/knowledge-base' },
+  knowledge: { label: '去创建知识库', to: '/index/knowledge-base' },
+  workflow: { label: '去创建工作流', to: '/index/workflow' },
+  doc: { label: '去生成文档', to: '/index/doc-template' },
+}
+const emptyAction = computed(() => EMPTY_ACTIONS[activeTab.value] || EMPTY_ACTIONS.all)
 
 function go(path) {
   router.push(path)
@@ -183,7 +193,7 @@ function pickSort(key) {
 const FEED_SOURCES = [
   { key: 'spaces', label: '知识库空间', request: getSpaceList },
   { key: 'workflows', label: '工作流', request: listWorkflows },
-  { key: 'generations', label: '文档生成历史', request: () => getGenerationHistory(24) },
+  { key: 'generations', label: '生成文档', request: () => getGenerationHistory(24) },
 ]
 
 async function loadFeed() {

@@ -81,7 +81,7 @@
 | 4 | `Test2Controller` | GET | `/test2/read-pptx` | 读取本地 pptx 做解析验证（白名单放行） | `CommonResult<List<PptxPage>>` |
 | 5 | `FileController` | POST | `/infra/file/upload` | 文件上传（multipart） | `CommonResult<FileUploadRespVO>` |
 | 6 | `DocTemplateController` | POST | `/doc-template/generate` | 发起模板复刻生成 | `CommonResult<GenerationRespVO>` |
-| 7 | `DocTemplateController` | GET | `/doc-template/history` | 生成历史（可选 `limit`） | `CommonResult<List<GenerationHistoryRespVO>>` |
+| 7 | `DocTemplateController` | GET | `/doc-template/history` | 生成历史（可选 `limit`，按任务条数；每条内联 `docs` 文件摘要，`src` 为空、不签发 MinIO URL；首页「文档」tab 据此展开文件卡） | `CommonResult<List<GenerationHistoryRespVO>>` |
 | 8 | `DocTemplateController` | GET | `/doc-template/detail` | 生成详情（`id`） | `CommonResult<GenerationRespVO>` |
 | 9 | `KbSpaceController` | GET | `/knowledge-base/space/list` | 空间列表（**按 creator 过滤**，只返回当前登录用户自己的空间，ADR 0006） | `CommonResult<List<SpaceRespVO>>` |
 | 10 | `KbSpaceController` | POST | `/knowledge-base/space/create` | 新建空间（默认私有） | `CommonResult<Long>` |

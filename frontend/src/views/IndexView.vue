@@ -230,6 +230,7 @@ import {
 import AdminIcon from '@/views/admin/components/AdminIcon.vue'
 import { useAppearance } from '@/composables/useAppearance'
 import { removeToken } from '@/utils/auth'
+import { isPathActive } from '@/utils/route'
 
 const route = useRoute()
 const router = useRouter()
@@ -386,7 +387,8 @@ function go(item) {
 }
 
 function isActive(item) {
-  return route.path === item.path
+  // 子路径（如 /index/doc-template/12?file=5）也要点亮父菜单
+  return isPathActive(route.path, item.path)
 }
 </script>
 

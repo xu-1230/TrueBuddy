@@ -229,11 +229,31 @@ public class DocTemplateServiceImpl implements DocTemplateService {
     public List<GenerationHistoryRespVO> getHistory(int limit) {
         int size = limit <= 0 ? HISTORY_DEFAULT_LIMIT : Math.min(limit, HISTORY_MAX_LIMIT);
         List<DocTemplateGenerationDO> generations = generationMapper.selectList(size);
+        Map<Long, List<DocTemplateFileDO>> filesByGeneration = loadFilesByGeneration(generations);
         List<GenerationHistoryRespVO> result = new ArrayList<>();
         for (DocTemplateGenerationDO generation : generations) {
-            result.add(buildHistoryVO(generation));
+            result.add(buildHistoryVO(generation, filesByGeneration.get(generation.getId())));
         }
         return result;
+    }
+
+    /**
+     * 一次批量取出本次历史涉及的所有产出文件，按 generationId 分组。
+     * 首页「文档」tab 依赖历史记录内联的 docs 展开文件卡，不能逐任务查（N+1）。
+     */
+    private Map<Long, List<DocTemplateFileDO>> loadFilesByGeneration(List<DocTemplateGenerationDO> generations) {
+        if (generations == null || generations.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> generationIds = generations.stream()
+                .map(DocTemplateGenerationDO::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (generationIds.isEmpty()) {
+            return Map.of();
+        }
+        return fileMapper.selectListByGenerationIds(generationIds).stream()
+                .collect(Collectors.groupingBy(DocTemplateFileDO::getGenerationId));
     }
 
     @Override
@@ -729,7 +749,8 @@ public class DocTemplateServiceImpl implements DocTemplateService {
         }
     }
 
-    private GenerationHistoryRespVO buildHistoryVO(DocTemplateGenerationDO generation) {
+    private GenerationHistoryRespVO buildHistoryVO(DocTemplateGenerationDO generation,
+                                                   List<DocTemplateFileDO> files) {
         GenerationHistoryRespVO vo = new GenerationHistoryRespVO();
         vo.setId(generation.getId());
         vo.setTitle(truncate(collapse(generation.getDescription()), 20));
@@ -738,7 +759,20 @@ public class DocTemplateServiceImpl implements DocTemplateService {
         vo.setTime(generation.getCreateTime() == null ? "" : generation.getCreateTime().format(TIME_FORMATTER));
         vo.setStatus(statusText(generation.getStatus()));
         vo.setDocCount(generation.getDocCount());
+        vo.setDocs(buildDocSummaryList(files));
         return vo;
+    }
+
+    /** 历史记录内的文件摘要：只保留卡片字段，不签发预签名 URL */
+    private List<DocFileRespVO> buildDocSummaryList(List<DocTemplateFileDO> files) {
+        if (files == null || files.isEmpty()) {
+            return List.of();
+        }
+        List<DocFileRespVO> docs = new ArrayList<>(files.size());
+        for (DocTemplateFileDO file : files) {
+            docs.add(buildDocSummaryVO(file));
+        }
+        return docs;
     }
 
     private String spaceName(Long spaceId) {
@@ -760,7 +794,8 @@ public class DocTemplateServiceImpl implements DocTemplateService {
         };
     }
 
-    private DocFileRespVO buildDocVO(DocTemplateFileDO file) {
+    /** 文件摘要字段（详情与历史共用；详情额外签发 src） */
+    private DocFileRespVO buildDocSummaryVO(DocTemplateFileDO file) {
         DocFileRespVO vo = new DocFileRespVO();
         vo.setId(file.getId());
         vo.setFileId(file.getFileId());
@@ -770,6 +805,11 @@ public class DocTemplateServiceImpl implements DocTemplateService {
         vo.setTag(file.getTag());
         vo.setSummary(file.getSummary());
         vo.setCreateTime(file.getCreateTime());
+        return vo;
+    }
+
+    private DocFileRespVO buildDocVO(DocTemplateFileDO file) {
+        DocFileRespVO vo = buildDocSummaryVO(file);
         InfraFileDO infraFile = file.getFileId() == null ? null : infraFileMapper.selectById(file.getFileId());
         if (infraFile != null) {
             vo.setSrc(freshUrl(infraFile));

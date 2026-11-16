@@ -12,13 +12,6 @@ const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
-/** 生成历史的状态文案 → 语义色档位（后端 `HistoryVO.status` 给的就是中文文案） */
-export const DOC_STATE_TONE = {
-  成功: 'success',
-  部分成功: 'warning',
-  失败: 'danger',
-}
-
 /**
  * 宽容的时间解析。
  *
@@ -103,10 +96,14 @@ function toItem(partial) {
 /**
  * 把三个接口的返回合并为一条统一信息流。
  *
+ * 生成历史按 `docs` 展开为文件级卡片（一条历史可能贡献多张卡）；
  * 任一来源请求失败时传 null 即可，其余来源照常渲染。
  *
  * @param {{
- *   spaces?: Array, workflows?: Array, generations?: Array
+ *   spaces?: Array, workflows?: Array,
+ *   generations?: Array<{ id: number, title?: string, docCount?: number, time?: string,
+ *                         docs?: Array<{ id: number, name?: string, tag?: string, summary?: string,
+ *                                        createTime?: string }> }>
  * }} payload
  * @returns {Array<object>} 按 `updatedAt` 倒序的统一卡片模型
  */
@@ -146,24 +143,36 @@ export function buildFeed(payload = {}) {
         },
       ),
     ),
-    ...asArray(generations).map((record) =>
-      toItem(
-        {
-          key: `doc-${record?.id}`,
-          id: record?.id,
+    // 生成历史内联 docs：一份文件一张卡，点击直达该次生成里的这份文档。
+    // 失败 / 0 份任务没有 docs，自然不在首页出卡（诊断仍在模板页历史抽屉）。
+    ...asArray(generations).flatMap((record, recordIndex) => {
+      const generationId = record?.id
+      const taskTitle = text(record?.title)
+      const taskTime = parseTime(record?.time)
+      return asArray(record?.docs).map((doc, docIndex) => {
+        const fileId = doc?.id
+        const updatedAt = parseTime(doc?.createTime) ?? taskTime
+        return toItem({
+          key: `doc-file-${fileId ?? `${generationId ?? `g${recordIndex}`}-${docIndex}`}`,
+          id: fileId,
+          generationId,
           kind: 'doc',
-          name: text(record?.title) || '未命名生成任务',
-          description: text(record?.kb) ? `知识库：${record.kb}` : '暂无来源知识库',
+          name: text(doc?.name) || '未命名文档',
+          description: text(doc?.summary)
+            || (taskTitle ? `来自「${taskTitle}」` : '暂无文档摘要'),
+          // 数值条展示「本批 N」：同一任务产出的文件共用一个批次规模
           metric: typeof record?.docCount === 'number' ? record.docCount : null,
-          metricLabel: '产出',
-          to: '/index/doc-template',
-          state: text(record?.status),
-          stateTone: DOC_STATE_TONE[text(record?.status)] || 'neutral',
-          createdAt: parseTime(record?.time),
-          updatedAt: parseTime(record?.time),
-        },
-      ),
-    ),
+          metricLabel: '本批',
+          to: generationId != null && fileId != null
+            ? `/index/doc-template/${generationId}?file=${fileId}`
+            : '/index/doc-template',
+          state: text(doc?.tag),
+          stateTone: 'neutral',
+          createdAt: updatedAt,
+          updatedAt,
+        })
+      })
+    }),
   ]
 
   return items.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))

@@ -40,18 +40,26 @@ test('parseTime 吃下 yudao 的空格分隔格式，ISO 与非法值都不炸',
   assert.equal(parseTime('不是时间'), null)
 })
 
-test('三个来源合成一条流，按更新时间倒序', () => {
+test('三个来源合成一条流：生成历史按 docs 展开，按更新时间倒序', () => {
   const items = buildFeed(
     {
       spaces: [{ id: 1, name: '课件库', documentCount: 2, createTime: daysAgo(20) }],
       workflows: [{ id: 2, name: '批改流', stepCount: 6, updateTime: daysAgo(1) }],
-      generations: [{ id: 3, title: '教案复刻', kb: '课件库', docCount: 4, status: '成功', time: daysAgo(2) }],
+      generations: [{
+        id: 3,
+        title: '教案复刻',
+        kb: '课件库',
+        docCount: 1,
+        status: '成功',
+        time: daysAgo(2),
+        docs: [{ id: 31, name: '教案A.docx', summary: '复刻版教案', tag: '复刻', createTime: daysAgo(2) }],
+      }],
     },
   )
 
   assert.deepEqual(
     items.map((item) => item.key),
-    ['workflow-2', 'doc-3', 'knowledge-1'],
+    ['workflow-2', 'doc-file-31', 'knowledge-1'],
   )
   assert.deepEqual(
     items.map((item) => item.kind),
@@ -77,21 +85,44 @@ test('来源缺失时不编造数字：null 与 undefined 都出空流', () => {
     .map((item) => item.metric), [null], 'documentCount 缺失时不能补 0，0 会被读成「确实没有文档」')
 })
 
-test('生成历史把状态文案带成语义色档位', () => {
-  const items = buildFeed(
-    { generations: [
-      { id: 1, title: '成功任务', status: '成功', docCount: 1, time: daysAgo(1) },
-      { id: 2, title: '部分成功任务', status: '部分成功', docCount: 1, time: daysAgo(1) },
-      { id: 3, title: '失败任务', status: '失败', docCount: 1, time: daysAgo(1) },
-      { id: 4, title: '没状态', docCount: 1, time: daysAgo(1) },
-    ] },
-  )
+test('生成历史按 docs 展开：一份文件一张卡，深链接带 generationId 与 file', () => {
+  const items = buildFeed({
+    generations: [{
+      id: 7,
+      title: '第3章复刻',
+      docCount: 2,
+      time: daysAgo(3),
+      docs: [
+        { id: 71, name: '复刻版.docx', summary: '完整复刻', tag: '复刻', createTime: daysAgo(3) },
+        { id: 72, name: '精简版.docx', tag: '精简' },
+      ],
+    }],
+  })
 
-  assert.deepEqual(
-    items.map((item) => item.stateTone),
-    ['success', 'warning', 'danger', 'neutral'],
-    '四条时间相同，倒序后由稳定排序保持原顺序',
-  )
+  assert.deepEqual(items.map((item) => item.key), ['doc-file-71', 'doc-file-72'])
+  assert.deepEqual(items.map((item) => item.generationId), [7, 7])
+  assert.deepEqual(items.map((item) => item.to), [
+    '/index/doc-template/7?file=71',
+    '/index/doc-template/7?file=72',
+  ])
+  assert.equal(items[0].state, '复刻')
+  assert.equal(items[0].stateTone, 'neutral')
+  assert.equal(items[0].metric, 2)
+  assert.equal(items[0].metricLabel, '本批')
+  // 第二份没有 createTime / summary：时间回退任务 time，描述回退任务标题
+  assert.equal(items[1].updatedAt, parseTime(daysAgo(3)))
+  assert.equal(items[1].description, '来自「第3章复刻」')
+})
+
+test('失败 / 0 份 / 旧后端未带 docs 的任务不在首页出卡', () => {
+  const items = buildFeed({
+    generations: [
+      { id: 1, title: '失败任务', docCount: 0, status: '失败', time: daysAgo(1), docs: [] },
+      { id: 2, title: '旧后端未带 docs', docCount: 1, time: daysAgo(1) },
+    ],
+  })
+
+  assert.deepEqual(items, [], '没有文件就没有首页文档卡，失败诊断留在模板页历史抽屉')
 })
 
 test('过滤与推荐排序：规模优先，同规模按更新时间倒序', () => {

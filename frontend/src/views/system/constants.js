@@ -114,10 +114,11 @@ export const MODULE_CARDS = [
 /**
  * Zone C 标签页（双行为模型）：
  * `filter` 型过滤 Zone D 资产卡；`jump` 型点击直接路由跳转、不占用过滤态。
+ * 「文档」过滤已生成的产出文件（history 内联 docs），不再是模块入口。
  */
 export const HOME_TABS = [
   { key: 'all', label: '综合', type: 'filter' },
-  { key: 'doc', label: '文档', type: 'jump', to: '/index/doc-template' },
+  { key: 'doc', label: '文档', type: 'filter' },
   { key: 'grading', label: '批改', type: 'jump', to: '/index/homework-grading' },
   { key: 'meeting', label: '会议', type: 'jump', to: '/index/meeting' },
   { key: 'knowledge', label: '知识库', type: 'filter' },
@@ -135,5 +136,5 @@ export const HOME_SORTS = [
 export const KIND_META = {
   knowledge: { label: '知识库空间', pattern: 'stack', icon: Reading },
   workflow: { label: '工作流', pattern: 'node', icon: Connection },
-  doc: { label: '文档生成', pattern: 'page', icon: Document },
+  doc: { label: '生成文档', pattern: 'page', icon: Document },
 }

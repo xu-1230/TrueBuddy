@@ -113,7 +113,7 @@
 | `/login`、`/register` | `login` / `register` | `views/LoginView.vue` | 登录 / 注册（复用同组件） |
 | `/index` | `index` | `views/IndexView.vue` | 侧边栏布局，redirect → `/index/home` |
 | `/index/home` | `system-home` | `views/system/SystemHomeView.vue` | 系统首页（展示台 + 动态聚合 `utils/feed.js`） |
-| `/index/doc-template` | `doc-template` | `views/doctemplate/DocTemplateView.vue` | 文档模板生成 |
+| `/index/doc-template/:id?` | `doc-template` | `views/doctemplate/DocTemplateView.vue` | 文档模板生成；`:id` = 生成记录、`?file=<docId>` = 该次生成中的某份文档（URL 为页面状态唯一真相源，见 [specs/2026-11-16-模板生成页路由状态.md](./specs/2026-11-16-模板生成页路由状态.md)） |
 | `/index/homework-grading` | `homework-grading` | `views/homework/HomeworkGradingView.vue` | 作业批改 |
 | `/index/knowledge-base` | `knowledge-base` | `views/knowledgebase/KnowledgeBaseView.vue` | 知识库 |
 | `/index/ppt` | `ppt` | `views/ppt/index.vue` | PPT 预览 / 放映 + 讲稿 AI 优化 + **创建会议入口**（`?screen=1` 直接进放映；`?meetid=` 时订阅音频驱动口型） |
@@ -139,7 +139,7 @@
 | --- | --- |
 | `/system/auth/login`、`/system/auth/refresh` | `/login`、`/register`（refresh 由 401 拦截器自动调用，不跳路由） |
 | `/test2/read-pptx`、`/test2/file-text` | 仅测试 / 联调桩，无正式页面 |
-| `/doc-template/**` | `/index/doc-template` |
+| `/doc-template/**` | `/index/doc-template/:id?`（`?file=<docId>` 查看单份文档） |
 | `/homework/**` | `/index/homework-grading`（便于未登录态联调） |
 | `/workflow/**` | `/index/workflow` 定义类调用；**执行入口 `POST /chat` 不在白名单**（要求登录） |
 | `/meeting/**` | `/meeting/:meetingNo`（免登录入会）、`/index/meeting`（用 hostToken） |

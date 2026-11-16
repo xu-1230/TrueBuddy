@@ -6,6 +6,9 @@
  * ②filter 型 tab 只过滤资产、必须没有 to（防止误配成可跳转）；
  * ③jump 型 tab 必须带落点路由（防止点击后静默无效）。
  *
+ * 「文档」自 2026-11-16 起改为 filter 型：过滤 history 内联 docs 展开的文件卡，
+ * 不再直接跳 /index/doc-template（见 specs/2026-11-16-首页文档tab列出生成文档.md）。
+ *
  * 运行：cd frontend && node --test tests/home-tabs.test.js
  */
 import test from 'node:test'
@@ -24,7 +27,7 @@ test('filter 型 tab 只过滤资产，不携带跳转落点', () => {
 
   assert.deepEqual(
     filterTabs.map((tab) => tab.key),
-    ['all', 'knowledge', 'workflow'],
+    ['all', 'doc', 'knowledge', 'workflow'],
   )
   filterTabs.forEach((tab) => {
     assert.equal(tab.to, undefined, `过滤型 tab「${tab.label}」不该配置 to`)
@@ -36,14 +39,14 @@ test('jump 型 tab 必须带落点路由，点击直接跳页不占过滤态', (
 
   assert.deepEqual(
     jumpTabs.map((tab) => tab.key),
-    ['doc', 'grading', 'meeting'],
+    ['grading', 'meeting'],
   )
   jumpTabs.forEach((tab) => {
     assert.match(tab.to, /^\/index\//, `跳转型 tab「${tab.label}」的落点应是站内路由`)
   })
   assert.deepEqual(
     jumpTabs.map((tab) => tab.to),
-    ['/index/doc-template', '/index/homework-grading', '/index/meeting'],
+    ['/index/homework-grading', '/index/meeting'],
   )
 })
 
