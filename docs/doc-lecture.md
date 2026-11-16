@@ -333,7 +333,7 @@ PPT 页(放映态) --POST /ppt/speech/speak--> tb-module-lecture
 
 | 落点 | 说明 |
 | --- | --- |
-| `views/ppt/index.vue` | PPT 编辑器 / 放映页，**也是会议入口**：工具栏「创建会议」（弹标题）→ 建会 → 地址写成 `?screen=1&meetid={会议号}` → **本页进入放映**（`document.title` 改成「PPT 放映页」）→ 控制台另开标签页（`handleCreateMeeting` / `consoleUrl`，详见 §5.6）。放映态下用 `usePresenterRoom` 进房间、把 `mouthLevel` 写进本页 Live2D（`writeMouthOpen`，见 §5.7）。同页还有 `?screen=1` 的一次性进放映入口与 AI 备注优化 |
+| `views/ppt/index.vue` | PPT 编辑器 / 放映页，**也是会议入口**：工具栏「创建会议」（弹标题）→ 建会 → 地址写成 `?screen=1&meetid={会议号}` → **本页进入放映**（`document.title` 改成「PPT 放映页」）→ 控制台另开标签页（`handleCreateMeeting` / `consoleUrl`，详见 §5.6）。放映态下不单独进房间：控制台通过 `BroadcastChannel` 下发播报指令，本页用 `utils/speech-player.js` 本页播放，并把响度写进本页 Live2D（`writeMouthOpen`，见 §5.7）。同页还有 `?screen=1` 的一次性进放映入口与 AI 备注优化。放映时数字人 canvas 固定为**全屏舞台**（位于视口 0,0，Pixi resolution 跟随 `devicePixelRatio`），模型在 Pixi 内部移动；canvas 本身不做任何 CSS 位移，因此拖动不会再触发合成层重采样。编辑时 canvas 仍为右侧面板的 400×800 取景；窗口缩放 / 全屏变化会同步舞台尺寸与分辨率 |
 | `views/meeting/MeetingConsoleView.vue` | 老师控制台（`/index/meeting?meetid={会议号}`）：复制链接、成员、聊天、共享、数字人播报、结束会议。**它是「创建会议才有的」页面**：不带 `?meetid=` 是空态（提示去 PPT 页创建 + 列出本机还留着凭据的会议），**自己不建会、也不开放映页**。刷新 / 复制 / 另开标签页都能恢复（`watch` + `restoreFromQuery`）。代价是**同一场会议不要同时开两个控制台标签页**——LiveKit identity 相同，后连的会把前一个踢掉。2026-11-16 起为全幅导播台布局：顶栏只留身份/会议号/状态/复制链接/结束会议，演讲/共享/数字人收进底部控制坞 |
 | `src/utils/hostSession.js` | 主持人会话的本地存取（`tb-meeting-host:{会议号}`，**结束会议即删**；旧键 `sessionStorage:tb-meeting-host` 在首次进入控制台时一次性迁移）。放在 `src/utils/` 而不是某个模块目录下，因为它是 **PPT 页（建会时写）与控制台（打开时读）共用**的 |
 | `views/meeting/MeetingRoomView.vue` | 学生会议室（`/meeting/:meetingNo`，独立路由、无布局、免登录）：全屏入会大厅输名字 → stage-first 看画面 + 右侧聊天；10s 轮询兜底会议结束；结束后全屏 ENDED |
