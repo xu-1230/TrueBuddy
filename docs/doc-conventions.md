@@ -11,7 +11,7 @@
 | 部分 | 说明 |
 | --- | --- |
 | `backend/` | Spring Boot 多模块 Maven：`tb-dependencies`（BOM）→ `tb-framework`（`tb-common` + web / mybatis / security starter）→ `tb-module-{test, test2, infra, knowledgebase, doctemplate, homework, workflow, lecture}` → `tb-server`（启动聚合，主类 `BackendApplication`，scanBasePackages 含 `org.example.backend` 与 `org.example.textflow`） |
-| `frontend/` | Vue 3 + Vite SPA：`src/{api, assets, components, composables, lib, router, utils, views}`；views 按业务模块一目录（内含 `components/hooks/stores/utils`，画布类另有 `node/configs/styles`） |
+| `frontend/` | Vue 3 + Vite SPA：`src/{api, assets, components, composables, lib, router, utils, views}`；views 按业务模块一目录（内含 `components/hooks/stores/utils`，模块视觉层另有 `styles/`，画布类另有 `node/configs`） |
 | `docx-mcp/` | Python MCP 服务（uv 管理），被后端以 stdio 子进程拉起 |
 | `backend/sql/` | 建表 SQL（每表一文件 + 日期命名增量补丁），表结构见 [doc-database.md](./doc-database.md) |
 
@@ -73,7 +73,7 @@
 | 模块私有组件 | `views/{模块}/components/` | 仅本模块使用 |
 | 页面内联 | 页面 `.vue` 内部 | 只服务于单个页面 |
 
-判定口诀：**先放模块内，出现第二个使用方再上提到 `src/components/`**。已存在的细分扩展层（均属「模块私有」，不得随意上提）：`views/{模块}/node/`（画布节点卡片）、`views/{模块}/{screen,element,ai,thumbnail}/`（PPT 再分层）、`views/{模块}/hooks/`（模块私有组合式）、`views/{模块}/stores/`（模块私有 Pinia store）、`views/{模块}/utils/`（模块私有纯函数，**可测函数优先写这里**）、`src/composables/`（跨模块组合式）、`src/lib/`（跨模块无 Vue 依赖纯函数）、`views/{模块}/mock/`（演示数据，须标注「演示态」）。
+判定口诀：**先放模块内，出现第二个使用方再上提到 `src/components/`**。已存在的细分扩展层（均属「模块私有」，不得随意上提）：`views/{模块}/node/`（画布节点卡片）、`views/{模块}/{screen,element,ai,thumbnail}/`（PPT 再分层）、`views/{模块}/hooks/`（模块私有组合式）、`views/{模块}/stores/`（模块私有 Pinia store）、`views/{模块}/utils/`（模块私有纯函数，**可测函数优先写这里**）、`views/{模块}/styles/`（模块私有全局样式，只由模块入口引入，如 `views/meeting/styles/meeting.css`）、`src/composables/`（跨模块组合式）、`src/lib/`（跨模块无 Vue 依赖纯函数）、`views/{模块}/mock/`（演示数据，须标注「演示态」）。
 
 ### 4.2 写法与约束
 

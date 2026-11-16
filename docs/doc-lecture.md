@@ -334,15 +334,17 @@ PPT 页(放映态) --POST /ppt/speech/speak--> tb-module-lecture
 | 落点 | 说明 |
 | --- | --- |
 | `views/ppt/index.vue` | PPT 编辑器 / 放映页，**也是会议入口**：工具栏「创建会议」（弹标题）→ 建会 → 地址写成 `?screen=1&meetid={会议号}` → **本页进入放映**（`document.title` 改成「PPT 放映页」）→ 控制台另开标签页（`handleCreateMeeting` / `consoleUrl`，详见 §5.6）。放映态下用 `usePresenterRoom` 进房间、把 `mouthLevel` 写进本页 Live2D（`writeMouthOpen`，见 §5.7）。同页还有 `?screen=1` 的一次性进放映入口与 AI 备注优化 |
-| `views/meeting/MeetingConsoleView.vue` | 老师控制台（`/index/meeting?meetid={会议号}`）：复制链接、成员、聊天、共享、数字人播报、结束会议。**它是「创建会议才有的」页面**：不带 `?meetid=` 是空态（提示去 PPT 页创建 + 列出本机还留着凭据的会议），**自己不建会、也不开放映页**。刷新 / 复制 / 另开标签页都能恢复（`watch` + `restoreFromQuery`）。代价是**同一场会议不要同时开两个控制台标签页**——LiveKit identity 相同，后连的会把前一个踢掉 |
+| `views/meeting/MeetingConsoleView.vue` | 老师控制台（`/index/meeting?meetid={会议号}`）：复制链接、成员、聊天、共享、数字人播报、结束会议。**它是「创建会议才有的」页面**：不带 `?meetid=` 是空态（提示去 PPT 页创建 + 列出本机还留着凭据的会议），**自己不建会、也不开放映页**。刷新 / 复制 / 另开标签页都能恢复（`watch` + `restoreFromQuery`）。代价是**同一场会议不要同时开两个控制台标签页**——LiveKit identity 相同，后连的会把前一个踢掉。2026-11-16 起为全幅导播台布局：顶栏只留身份/会议号/状态/复制链接/结束会议，演讲/共享/数字人收进底部控制坞 |
 | `src/utils/hostSession.js` | 主持人会话的本地存取（`tb-meeting-host:{会议号}`，**结束会议即删**；旧键 `sessionStorage:tb-meeting-host` 在首次进入控制台时一次性迁移）。放在 `src/utils/` 而不是某个模块目录下，因为它是 **PPT 页（建会时写）与控制台（打开时读）共用**的 |
-| `views/meeting/MeetingRoomView.vue` | 学生会议室（`/meeting/:meetingNo`，独立路由、无布局、免登录）：弹窗输名字入会、看画面、右侧聊天；10s 轮询兜底会议结束 |
+| `views/meeting/MeetingRoomView.vue` | 学生会议室（`/meeting/:meetingNo`，独立路由、无布局、免登录）：全屏入会大厅输名字 → stage-first 看画面 + 右侧聊天；10s 轮询兜底会议结束；结束后全屏 ENDED |
 | `views/meeting/hooks/useLiveKitRoom.js` | 房间客户端（见 §5.4） |
-| `views/meeting/hooks/usePresenterRoom.js` | 放映页的房间客户端：presenter 身份、静音订阅数字人音频轨、只暴露口型响度（见 §5.7） |
-| `views/meeting/components/` | `NicknameDialog`、`AttendeeList`、`ChatPanel`、`ScreenStage`（纯展示 + `defineExpose({videoRef})`，轨的 attach 由 hook 驱动） |
+| `views/meeting/components/` | `JoinLobby`（全屏入会大厅，替代已删除的 `NicknameDialog`）、`MeetingTopBar`（Studio 顶栏）、`ScreenStage`（program monitor + `defineExpose({videoRef})`，轨的 attach 由 hook 驱动）、`AttendeeList`、`ChatPanel`、`StatusNotice`、`StudioBackdrop`、`StudioClock`、`ControlDock` |
+| `views/meeting/styles/meeting.css` | 纯视觉模块层：`--mt-*` Token、自托管 Space Grotesk / JetBrains Mono、环境纹理、共享原语、reduced-motion；不改变接口/路由/状态 |
 | `views/meeting/stores/meeting.js` | Pinia store：会议信息、成员、消息、共享与连接状态、`applyEvent` |
 | `src/api/meeting.js` | REST 封装（含 `sendMeetingMessage`） |
 | 路由与菜单 | `src/router/index.js` 两条路由；`views/IndexView.vue` 菜单「模拟会议」；`SidebarIcon` 的 `meeting` 图标 |
+
+> **2026-11-16 视觉升级（纯表现）**：两页共用 `views/meeting/styles/meeting.css`（暗色导播台 / 日光演播室，跟随全局 `useAppearance`）；控制台改为全幅，学生入会改为全屏大厅，结束改为全屏 ENDED。接口、路由、LiveKit、10s 轮询、host/attendee 凭据与讲课 `BroadcastChannel` 协议均未改变。口径见 [specs/2026-11-16-模拟会议视觉升级.md](./specs/2026-11-16-模拟会议视觉升级.md) 与 [doc-ui.md](./doc-ui.md) §10。
 
 ---
 
