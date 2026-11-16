@@ -1,68 +1,77 @@
 <template>
-  <div class="meeting-room">
-    <MeetingTopBar
-      :title="store.meeting?.title || '模拟会议'"
-      :meeting-no="meetingNo"
-      sub-note="学生会议室"
-      :icon="Monitor"
-      :online-count="store.onlineCount"
-      :connected="store.connected"
-      :ended="store.ended"
-      :connection="store.connection"
-    />
+  <div class="meeting-studio meeting-room">
+    <StudioBackdrop />
 
-    <!-- 状态同步失败不能静默：否则表现为「聊天没更新 / 会议结束没提示」 -->
-    <el-alert
-      v-if="stateError"
-      type="warning"
-      :closable="false"
-      show-icon
-      title="会议状态同步失败"
-      :description="`${stateError}；聊天仍可继续，但「会议已结束」的兜底检测会失效，刷新页面可重试。`"
-    />
+    <div class="meeting-room__inner">
+      <MeetingTopBar
+        :title="store.meeting?.title || '模拟会议'"
+        :meeting-no="meetingNo"
+        sub-note="学生会议室"
+        :icon="Monitor"
+        :online-count="store.onlineCount"
+        :connected="store.connected"
+        :ended="store.ended"
+        :connection="store.connection"
+        :sharing="store.sharing"
+        :start-time="store.meeting?.startTime || ''"
+        :end-time="store.meeting?.endTime || ''"
+      />
 
-    <!-- 开了数字人但 worker 不在：明确说出来，不能表现为「老师在讲话却没声音」 -->
-    <el-alert
-      v-if="digitalUnavailable"
-      type="warning"
-      :closable="false"
-      show-icon
-      title="语音未配置"
-      description="老师端的语音合成未配置（DashScope Key 为空），本场开会时可能没有讲解声音。"
-    />
+      <div v-if="stateError || digitalUnavailable" class="meeting-room__notices">
+        <!-- 状态同步失败不能静默：否则表现为「聊天没更新 / 会议结束没提示」 -->
+        <StatusNotice v-if="stateError" tone="warn" title="会议状态同步失败">
+          {{ stateError }}；聊天仍可继续，但「会议已结束」的兜底检测会失效，刷新页面可重试。
+        </StatusNotice>
 
-    <main class="room-body" :data-panel="activePanel">
-      <div class="room-body__stage">
-        <ScreenStage ref="stageRef" :sharing="store.sharing" :hint="stageHint" />
-        <!-- 数字人只存在于老师共享的画面里，学生端不再单独渲染一个形象（见 docs/16 §5.7） -->
+        <!-- 开了数字人但语音合成没配好：明确说出来，不能表现为「老师没声音」 -->
+        <StatusNotice v-if="digitalUnavailable" tone="warn" title="语音未配置">
+          老师端的语音合成未配置（DashScope Key 为空），本场开会时可能没有讲解声音。
+        </StatusNotice>
       </div>
 
-      <aside class="room-body__side">
-        <AttendeeList :attendees="store.displayAttendees" :degraded="store.degraded" />
-        <ChatPanel
-          class="room-body__chat"
-          :messages="store.messages"
-          :disabled="store.ended"
-          :loading="loading"
-          @send="handleSend"
-        />
-      </aside>
-    </main>
+      <main class="room-body" :data-panel="activePanel">
+        <section class="room-body__stage">
+          <ScreenStage
+            ref="stageRef"
+            :sharing="store.sharing"
+            :hint="stageHint"
+            placeholder="等待主持人共享画面"
+          />
+          <!-- 数字人只存在于老师共享的画面里，学生端不单独渲染形象 -->
+        </section>
 
-    <!--
-      小屏只留一块面板：画面与「名单+聊天」切换。
-      以前窄屏是两块竖排（舞台 320px + 名单 220px + 聊天 200px ≈ 820px 以上），
-      而容器写死 height:100vh —— 手机真实可视区比 100vh 还矮，键盘一弹聊天输入框直接被顶出去。
-    -->
-    <nav class="room-switcher">
-      <el-segmented v-model="activePanel" :options="panelOptions" />
-    </nav>
+        <aside class="room-body__side mt-rail">
+          <AttendeeList :attendees="store.displayAttendees" :degraded="store.degraded" />
+          <ChatPanel
+            class="room-body__chat"
+            :messages="store.messages"
+            :disabled="store.ended"
+            :loading="loading"
+            @send="handleSend"
+          />
+        </aside>
+      </main>
 
-    <div v-if="store.ended" class="room-ended">
-      <el-result icon="info" title="会议已结束" :sub-title="`会议号 ${meetingNo} · 感谢参与，可以关闭本页面了`" />
+      <!-- 小屏只留一块面板：画面与「名单+聊天」切换 -->
+      <nav class="room-switcher">
+        <el-segmented v-model="activePanel" :options="panelOptions" aria-label="切换画面与成员聊天" />
+      </nav>
     </div>
 
-    <NicknameDialog
+    <Transition name="curtain">
+      <div v-if="store.ended" class="room-ended" role="status" aria-live="assertive">
+        <span class="room-ended__wash" aria-hidden="true" />
+        <div class="room-ended__inner">
+          <p class="mt-eyebrow">Off air / 会议结束</p>
+          <h2 class="room-ended__title">ENDED</h2>
+          <p class="room-ended__sub mt-mono">会议号 {{ formattedMeetingNo }}</p>
+          <p class="room-ended__hint">感谢参与，可以关闭本页面了。</p>
+          <span class="room-ended__rule" aria-hidden="true" />
+        </div>
+      </div>
+    </Transition>
+
+    <JoinLobby
       v-model="dialogVisible"
       :meeting-no="meetingNo"
       :title="store.meeting?.title"
@@ -80,11 +89,15 @@ import { ElMessage } from 'element-plus'
 import { getDigitalStatus, getMeetingState, joinMeeting, leaveMeeting } from '@/api/meeting'
 import AttendeeList from './components/AttendeeList.vue'
 import ChatPanel from './components/ChatPanel.vue'
+import JoinLobby from './components/JoinLobby.vue'
 import MeetingTopBar from './components/MeetingTopBar.vue'
-import NicknameDialog from './components/NicknameDialog.vue'
 import ScreenStage from './components/ScreenStage.vue'
+import StatusNotice from './components/StatusNotice.vue'
+import StudioBackdrop from './components/StudioBackdrop.vue'
 import { useMeetingStore } from './stores/meeting'
 import { useLiveKitRoom, describeChatSend } from './hooks/useLiveKitRoom'
+import { formatMeetingNo } from './utils/meeting-time'
+import './styles/meeting.css'
 
 /** 参会会话存 sessionStorage：刷新页面后免二次输入名字，并用于重新取令牌 */
 const STORAGE_PREFIX = 'tb-meeting-attendee-'
@@ -106,6 +119,7 @@ const panelOptions = [
 ]
 
 const meetingNo = String(route.params.meetingNo ?? '')
+const formattedMeetingNo = computed(() => formatMeetingNo(meetingNo))
 const selfId = ref(null)
 const selfNickname = ref('')
 /** 状态同步失败的原因：不能静默（它是聊天历史铺底与「会议已结束」兜底的来源） */
@@ -292,95 +306,163 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .meeting-room {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  /* dvh 而不是 vh：移动端浏览器工具栏比 100vh 高出一截，用 vh 会把聊天输入框顶到可视区外 */
   height: 100dvh;
-  padding: 1rem;
+  padding: clamp(12px, 1.6vw, 24px);
   overflow: hidden;
-  background: var(--tb-bg-page);
+  background: var(--mt-bg);
+}
+
+.meeting-room__inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: clamp(10px, 1.2vw, 16px);
+  height: 100%;
+  min-height: 0;
+}
+
+.meeting-room__notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-size-2);
 }
 
 .room-body {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 24vw, 380px);
+  gap: clamp(10px, 1.2vw, 16px);
   min-height: 0;
 }
 
 .room-body__stage {
-  position: relative;
+  display: flex;
   min-width: 0;
   min-height: 0;
 }
 
-/* 数字人贴在画面左下角：共享内容是主视图，形象只要「在」并且能看见嘴动 */
-.room-body__avatar {
-  position: absolute;
-  bottom: 0.75rem;
-  left: 0.75rem;
-  box-shadow: var(--tb-shadow-md, 0 6px 18px rgb(0 0 0 / 18%));
-}
-
 .room-body__side {
-  display: flex;
-  flex-direction: column;
-  padding: 1rem;
   min-height: 0;
-  background: var(--tb-bg-surface);
-  border: var(--tb-border-width) solid var(--tb-border);
-  border-radius: var(--tb-radius-lg);
-  box-shadow: var(--tb-shadow-2);
+  padding: 12px;
+  gap: 10px;
 }
 
-/* 名单与聊天是同一面板里的两个子区：用 1px 分隔线分区（控制台与学生端同一套语言） */
 .room-body__chat {
   flex: 1;
   min-height: 0;
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--tb-border);
+  padding-top: 10px;
+  border-top: 1px solid var(--mt-line);
 }
 
 /* 小屏切换器默认不占位（宽屏两块同时显示） */
 .room-switcher {
   display: none;
+  flex: none;
 }
 
+/* ================= 结束幕 ================= */
 .room-ended {
+  color-scheme: dark;
   position: fixed;
   inset: 0;
-  /* 只需盖住页面内容；刻意低于 Element Plus 浮层基准（2000），别把弹层压在下面 */
-  z-index: 100;
+  z-index: var(--mt-z-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--tb-overlay);
-  backdrop-filter: blur(6px);
+  overflow: hidden;
+  background: color-mix(in oklab, var(--tb-neutral-950) 88%, transparent);
+  color: var(--mt-text);
+  backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.room-ended__wash {
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(42% 46% at 36% 40%, color-mix(in oklab, var(--mt-signal) 12%, transparent), transparent 70%),
+    radial-gradient(38% 42% at 68% 64%, color-mix(in oklab, var(--mt-amber) 8%, transparent), transparent 72%);
+  filter: blur(30px);
+  pointer-events: none;
+}
+
+.room-ended__inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--tb-size-6);
+  text-align: center;
+}
+
+.room-ended__title {
+  margin: var(--tb-size-3) 0 0;
+  color: var(--mt-text);
+  font-family: var(--mt-font-display);
+  font-size: clamp(3.5rem, 12vw, 9rem);
+  font-weight: 500;
+  letter-spacing: -0.05em;
+  line-height: 0.86;
+}
+
+.room-ended__sub {
+  margin: var(--tb-size-4) 0 0;
+  color: var(--mt-text-2);
+  font-size: var(--tb-text-sm);
+  letter-spacing: 0.18em;
+}
+
+.room-ended__hint {
+  margin: var(--tb-size-2) 0 0;
+  color: var(--mt-text-3);
+  font-size: var(--tb-text-sm);
+}
+
+.room-ended__rule {
+  display: block;
+  width: 64px;
+  height: 1px;
+  margin-top: var(--tb-size-5);
+  background: var(--mt-signal);
+}
+
+.curtain-enter-active {
+  transition: opacity var(--mt-dur-5) var(--mt-ease);
+}
+
+.curtain-leave-active {
+  transition: opacity var(--mt-dur-3) var(--mt-ease);
+}
+
+.curtain-enter-from,
+.curtain-leave-to {
+  opacity: 0;
+}
+
+.curtain-enter-active .room-ended__inner {
+  animation: mt-rise-in 0.8s var(--mt-ease);
 }
 
 @media (max-width: 1080px) {
   .room-body {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 300px;
   }
 }
 
-@media (max-width: 820px) {
-  .meeting-room {
-    gap: 0.75rem;
-    padding: 0.75rem;
+@media (max-width: 1024px) {
+  .room-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .room-switcher {
     display: block;
-    flex: none;
-  }
-
-  /* 一次只显示一块面板，两块各自都能占满剩余高度 */
-  .room-body {
-    grid-template-rows: minmax(0, 1fr);
   }
 
   .room-body > * {
@@ -388,11 +470,29 @@ onBeforeUnmount(() => {
   }
 
   .room-body[data-panel='stage'] .room-body__stage {
-    display: block;
+    display: flex;
   }
 
   .room-body[data-panel='chat'] .room-body__side {
     display: flex;
+  }
+}
+
+@media (max-width: 820px) {
+  .meeting-room {
+    padding: 10px;
+  }
+
+  .meeting-room__inner {
+    gap: 10px;
+  }
+
+  .room-body__side {
+    padding: 10px;
+  }
+
+  .room-switcher :deep(.el-segmented) {
+    width: 100%;
   }
 }
 </style>
