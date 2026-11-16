@@ -1,173 +1,298 @@
 <template>
-  <div class="meeting-console">
-    <MeetingTopBar
-      :title="store.meeting?.title || '模拟会议'"
-      :meeting-no="session?.meetingNo || ''"
-      sub-note="老师控制台"
-      :icon="VideoCamera"
-      :online-count="store.onlineCount"
-      :connected="store.connected"
-      :ended="store.ended"
-      :connection="store.connection"
-    >
-      <template #actions>
-        <template v-if="session">
-          <!-- 讲课工作项运行中：页码来自放映页上行的 page 事件（页面真相在放映页） -->
-          <el-tag v-if="lessonDone" type="info" effect="plain">讲课已完成</el-tag>
-          <el-tag v-else-if="lessonActive" type="success" effect="plain" class="lesson-tag">
-            {{ lessonMode === "ai" ? "AI 演讲中" : "照读跟讲中" }}{{ presenterPage != null ? ' · 第 ' + (presenterPage + 1) + ' / ' + (presenterPageCount ?? '?') + ' 页' : '' }}
-          </el-tag>
-          <!-- 两种演讲方式：照读 = 跟随翻页念 remark；ai = 自动讲词 + 自动翻页（老师只点一次） -->
-          <el-button type="primary" :disabled="store.ended" @click="startLecture('verbatim')">
-            <el-icon class="btn-icon"><VideoPlay /></el-icon>
-            照读演讲
-          </el-button>
-          <el-button type="success" :disabled="store.ended" @click="startLecture('ai')">
-            <el-icon class="btn-icon"><VideoPlay /></el-icon>
-            AI 演讲
-          </el-button>
-          <!-- 停止真的停得下来：掐断请求即取消后端合成（旧口径要等它念完） -->
-          <el-button :disabled="store.ended" @click="stopDigital">停止演讲</el-button>
-          <el-button @click="handleCopyLink">复制入会链接</el-button>
-          <el-button v-if="!store.sharing" type="primary" @click="handleStartShare">开始共享</el-button>
-          <el-button v-else @click="handleStopShare">停止共享</el-button>
-          <!-- 手输播报：多源 / 长文本的调试入口，与「开始演讲」信号并存 -->
-          <el-button :disabled="store.ended" @click="openDigitalDialog">数字人播报</el-button>
-          <el-button type="danger" :disabled="store.ended" @click="handleClose">结束会议</el-button>
+  <div class="meeting-studio meeting-console">
+    <StudioBackdrop :poster="showEntryPoster" :animate="showEntryPoster" />
+
+    <div class="meeting-console__inner">
+      <MeetingTopBar
+        :title="store.meeting?.title || '模拟会议'"
+        :meeting-no="session?.meetingNo || ''"
+        sub-note="老师控制台"
+        :icon="VideoCamera"
+        :online-count="store.onlineCount"
+        :connected="store.connected"
+        :ended="store.ended"
+        :connection="store.connection"
+        :sharing="store.sharing"
+        :start-time="store.meeting?.startTime || ''"
+        :end-time="store.meeting?.endTime || ''"
+      >
+        <template #actions>
+          <template v-if="session">
+            <button type="button" class="mt-btn mt-btn--quiet" @click="handleCopyLink">
+              <el-icon class="mt-btn__icon"><Link /></el-icon>
+              复制入会链接
+            </button>
+            <button
+              type="button"
+              class="mt-btn mt-btn--danger"
+              :disabled="store.ended"
+              @click="handleClose"
+            >
+              <el-icon class="mt-btn__icon"><SwitchButton /></el-icon>
+              结束会议
+            </button>
+          </template>
         </template>
-      </template>
-    </MeetingTopBar>
+      </MeetingTopBar>
 
-    <!-- 讲课工作项 Attention：narrate 失败等需要老师裁决的事顶在最前（dsh 面板原则） -->
-    <el-alert v-if="lessonAttention" type="error" :closable="false" show-icon>
-      <template #title>
-        第 {{ lessonAttention.page + 1 }} 页讲词生成失败
-      </template>
-      <div class="attention-actions">
-        <span>{{ lessonAttention.message }}。学生端在等待，请裁决：</span>
-        <el-button size="small" @click="resolveAttention('retry')">重试</el-button>
-        <el-button size="small" type="primary" @click="resolveAttention('skip')">跳过本页</el-button>
+      <!-- 状态提示：结束提示、主持人凭据（只随创建成功下发一次，ADR-0003） -->
+      <div v-if="store.ended || (credentialVisible && session)" class="console-notices">
+        <StatusNotice v-if="store.ended" tone="info" title="会议已结束">
+          <p>学生端已收到结束提示，实时通道已断开。</p>
+          <template #actions>
+            <button type="button" class="mt-btn mt-btn--primary" @click="goCreateInPpt">
+              去 PPT 页创建会议
+            </button>
+          </template>
+        </StatusNotice>
+
+        <StatusNotice
+          v-if="credentialVisible && session"
+          tone="warn"
+          title="请保存主持人凭据"
+          closable
+          @close="credentialVisible = false"
+        >
+          <p>凭据只在下发会议号时返回一次，之后任何接口都不会再给。丢失无法找回，只能重新建会。</p>
+          <div class="console-credential__row">
+            <code class="console-credential__token">{{ session.hostToken }}</code>
+            <button type="button" class="mt-btn mt-btn--quiet" @click="handleCopyCredential">
+              复制凭据
+            </button>
+          </div>
+        </StatusNotice>
       </div>
-    </el-alert>
 
-    <el-alert
-      v-if="store.ended"
-      type="info"
-      :closable="false"
-      show-icon
-      title="会议已结束"
-      description="学生端已收到结束提示，实时通道已断开。"
-    >
-      <div class="console-missing__action">
-        <el-button size="small" type="primary" @click="goCreateInPpt">去 PPT 页创建会议</el-button>
-      </div>
-    </el-alert>
+      <!-- 正在按地址栏的 ?meetid= 恢复（避免先闪一下建会表单） -->
+      <section v-if="restoring" class="console-entry console-entry--loading" role="status">
+        <div class="console-entry__inner">
+          <p class="mt-eyebrow console-entry__reveal">Linking / 正在恢复</p>
+          <h1 class="console-entry__title mt-display console-entry__reveal">{{ meetId }}</h1>
+          <p class="console-entry__desc console-entry__reveal">正在按地址栏恢复这场会议…</p>
+          <span class="console-entry__spinner console-entry__reveal" aria-hidden="true" />
+        </div>
+      </section>
 
-    <!-- 主持人凭据只随「创建成功」这一次响应下发：不给复制入口，老师清一次存储就只能重开会（ADR-0003） -->
-    <el-alert
-      v-if="credentialVisible && session"
-      class="console-credential"
-      type="warning"
-      show-icon
-      :closable="true"
-      title="请保存主持人凭据"
-      @close="credentialVisible = false"
-    >
-      <p>凭据只在下发会议号时返回一次，之后任何接口都不会再给。丢失无法找回，只能重新建会。</p>
-      <div class="console-credential__row">
-        <code class="console-credential__token">{{ session.hostToken }}</code>
-        <el-button size="small" @click="handleCopyCredential">复制凭据</el-button>
-      </div>
-    </el-alert>
+      <!-- 地址栏带了会议号，但本浏览器没有这场会的主持人凭据 -->
+      <section v-else-if="missingCredential" class="console-entry">
+        <div class="console-entry__inner">
+          <p class="mt-eyebrow console-entry__reveal">Credential missing / 无法恢复</p>
+          <h1 class="console-entry__title mt-display console-entry__reveal">
+            本浏览器没有这场会的主持人凭据
+          </h1>
+          <p class="console-entry__desc console-entry__reveal">
+            会议 {{ meetId }} 的主持人凭据只存在创建这场会议的浏览器里：可能换了机器、清了存储，
+            或这场会议已经结束。
+          </p>
+          <div class="console-entry__actions console-entry__reveal">
+            <button type="button" class="mt-btn mt-btn--primary" @click="goCreateInPpt">
+              去 PPT 页创建会议
+            </button>
+          </div>
+        </div>
+      </section>
 
-    <!-- 正在按地址栏的 ?meetid= 恢复（避免先闪一下建会表单） -->
-    <section v-if="restoring" class="console-loading">
-      <el-icon class="is-loading"><Loading /></el-icon>
-      <span>正在恢复会议 {{ meetId }}…</span>
-    </section>
+      <!-- 控制台不再自己建会：它随会议一起打开（会议在 PPT 页创建） -->
+      <section v-else-if="!session" class="console-entry">
+        <div class="console-entry__inner">
+          <p class="mt-eyebrow console-entry__reveal">Director console / 待机</p>
+          <h1 class="console-entry__title mt-display console-entry__reveal">
+            没有正在进行的会议
+          </h1>
+          <p class="console-entry__desc console-entry__reveal">
+            本页是老师控制台，地址栏带 <code>?meetid={会议号}</code> 时管理这一场。
+            开会请到「PPT 演示」页：导入 PPT → 写好讲稿 → 点「创建会议」，
+            控制台会自动带着这场会的凭据开在这里。
+          </p>
+          <div class="console-entry__actions console-entry__reveal">
+            <button type="button" class="mt-btn mt-btn--primary" @click="goCreateInPpt">
+              去 PPT 页创建会议
+            </button>
+          </div>
 
-    <!-- 地址栏带了会议号，但本浏览器没有这场会的主持人凭据：给出口而不是报错 -->
-    <el-alert
-      v-else-if="missingCredential"
-      type="warning"
-      :closable="false"
-      show-icon
-      :title="`本浏览器没有会议 ${meetId} 的主持人凭据`"
-    >
-      <p>主持人凭据只存在创建这场会议的浏览器里：可能换了机器、清了存储，或这场会议已经结束。</p>
-      <div class="console-missing__action">
-        <el-button size="small" type="primary" @click="goCreateInPpt">去 PPT 页创建会议</el-button>
-      </div>
-    </el-alert>
+          <!-- 本机还留着凭据的会议：不给入口的话，摘掉地址栏会议号后就再也回不去 -->
+          <div v-if="knownMeetings.length" class="console-entry__known console-entry__reveal">
+            <p class="mt-eyebrow">本机还能回到这些会议</p>
+            <button
+              v-for="(item, index) in knownMeetings"
+              :key="item.meetingNo"
+              type="button"
+              class="console-entry__known-item"
+              @click="handleEnterMeeting(item.meetingNo)"
+            >
+              <span class="console-entry__known-index mt-mono">
+                {{ String(index + 1).padStart(2, '0') }}
+              </span>
+              <strong class="mt-mono">{{ item.meetingNo }}</strong>
+              <span class="console-entry__known-title">{{ item.title }}</span>
+              <span class="console-entry__known-arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+        </div>
+      </section>
 
-    <!-- 控制台不再自己建会：它随会议一起打开（会议在 PPT 页创建，见 docs/16 §5.6） -->
-    <section v-else-if="!session" class="console-empty">
-      <h3 class="console-empty__title">会议在 PPT 页创建</h3>
-      <p class="console-empty__tip">
-        本页是老师控制台，地址栏带 <code>?meetid={会议号}</code> 时管理这一场。
-        开会请到「PPT 演示」页：导入 PPT → 写好讲稿 → 点「创建会议」，
-        控制台会自动带着这场会的凭据开在这里。
-      </p>
-      <el-button type="primary" @click="goCreateInPpt">去 PPT 页创建会议</el-button>
+      <template v-else>
+        <div class="console-body" :data-panel="activePanel">
 
-      <!-- 本机还留着凭据的会议：不给入口的话，摘掉地址栏会议号后就再也回不去 -->
-      <div v-if="knownMeetings.length" class="console-empty__known">
-        <p class="console-empty__known-title">本机还能回到这些会议：</p>
-        <div class="console-empty__known-list">
-          <button
-            v-for="item in knownMeetings"
-            :key="item.meetingNo"
-            type="button"
-            class="console-empty__known-item"
-            @click="handleEnterMeeting(item.meetingNo)"
+          <section class="console-body__stage">
+            <ScreenStage
+              ref="stageRef"
+              :sharing="store.sharing"
+              placeholder="尚未共享画面"
+              hint="点击下方「开始共享」，在选择框里选中「PPT 放映页」标签页（就是你创建会议的那个 PPT 页）"
+            />
+          </section>
+
+          <aside class="console-body__side mt-rail">
+            <AttendeeList :attendees="store.displayAttendees" :degraded="store.degraded" />
+            <ChatPanel
+              class="console-body__chat"
+              :messages="store.messages"
+              :disabled="store.ended"
+              @send="handleSend"
+            />
+          </aside>
+        </div>
+
+        <div class="console-bottom">
+          <!-- 讲课工作项 Attention：narrate 失败等需要老师裁决的事 -->
+          <StatusNotice
+            v-if="lessonAttention"
+            tone="danger"
+            :title="`第 ${lessonAttention.page + 1} 页讲词生成失败`"
           >
-            <strong>{{ item.meetingNo }}</strong>
-            <span>{{ item.title }}</span>
+            <p>{{ lessonAttention.message }}。学生端在等待，请裁决：</p>
+            <template #actions>
+              <button type="button" class="mt-btn mt-btn--quiet" @click="resolveAttention('retry')">
+                重试
+              </button>
+              <button type="button" class="mt-btn mt-btn--primary" @click="resolveAttention('skip')">
+                跳过本页
+              </button>
+            </template>
+          </StatusNotice>
+
+          <ControlDock class="console-dock" label="演讲与共享控制">
+            <div class="mt-dock__group">
+              <!-- 讲课工作项运行中：页码来自放映页上行的 page 事件（页面真相在放映页） -->
+              <span v-if="lessonDone" class="mt-chip mt-chip--muted">讲课已完成</span>
+              <span v-else-if="lessonActive" class="mt-chip mt-chip--live">
+                {{ lessonMode === 'ai' ? 'AI 演讲中' : '照读跟讲中' }}
+                {{ presenterPage != null ? ` · 第 ${presenterPage + 1} / ${presenterPageCount ?? '?'} 页` : '' }}
+              </span>
+              <span v-else class="mt-chip mt-chip--muted">演讲待机</span>
+            </div>
+
+            <div class="mt-dock__group">
+              <!-- 两种演讲方式：照读 = 跟随翻页念 remark；ai = 自动讲词 + 自动翻页 -->
+              <button
+                type="button"
+                class="mt-btn"
+                :disabled="store.ended"
+                @click="startLecture('verbatim')"
+              >
+                <el-icon class="mt-btn__icon"><VideoPlay /></el-icon>
+                照读演讲
+              </button>
+              <button
+                type="button"
+                class="mt-btn"
+                :disabled="store.ended"
+                @click="startLecture('ai')"
+              >
+                <el-icon class="mt-btn__icon"><VideoPlay /></el-icon>
+                AI 演讲
+              </button>
+              <!-- 停止真的停得下来：掐断请求即取消后端合成 -->
+              <button
+                type="button"
+                class="mt-btn mt-btn--quiet"
+                :disabled="store.ended"
+                @click="stopDigital"
+              >
+                停止演讲
+              </button>
+            </div>
+
+            <div class="mt-dock__group">
+              <button
+                v-if="!store.sharing"
+                type="button"
+                class="mt-btn mt-btn--primary"
+                @click="handleStartShare"
+              >
+                <el-icon class="mt-btn__icon"><Monitor /></el-icon>
+                开始共享
+              </button>
+              <button
+                v-else
+                type="button"
+                class="mt-btn mt-btn--signal"
+                @click="handleStopShare"
+              >
+                <el-icon class="mt-btn__icon"><Monitor /></el-icon>
+                停止共享
+              </button>
+            </div>
+
+            <div class="mt-dock__group">
+              <!-- 手输播报：多源 / 长文本的调试入口，与「开始演讲」信号并存 -->
+              <button
+                type="button"
+                class="mt-btn"
+                :disabled="store.ended"
+                @click="openDigitalDialog"
+              >
+                <el-icon class="mt-btn__icon"><Microphone /></el-icon>
+                数字人播报
+              </button>
+            </div>
+          </ControlDock>
+
+          <nav class="console-switcher">
+            <el-segmented v-model="activePanel" :options="panelOptions" aria-label="切换画面与成员聊天" />
+          </nav>
+        </div>
+      </template>
+    </div>
+
+    <el-dialog
+      v-model="digitalVisible"
+      title="数字人播报"
+      width="560px"
+      class="mt-tokens mt-dialog mt-dialog--digital"
+    >
+      <div class="digital-dialog">
+        <div class="digital-dialog__state">
+          <span class="mt-chip" :class="`mt-chip--${digitalState.tone}`">{{ digitalState.label }}</span>
+          <span class="digital-dialog__hint">{{ digitalHint }}</span>
+          <button type="button" class="mt-btn mt-btn--quiet" @click="refreshDigitalStatus">
+            刷新状态
           </button>
         </div>
-      </div>
-    </section>
-
-    <section v-else class="console-body">
-      <div class="console-body__stage">
-        <ScreenStage
-          ref="stageRef"
-          :sharing="store.sharing"
-          placeholder="尚未共享画面"
-          hint="点击右上角「开始共享」，在选择框里选中「PPT 放映页」标签页（就是你创建会议的那个 PPT 页）"
+        <el-input
+          v-model="digitalText"
+          type="textarea"
+          aria-label="数字人播报内容"
+          :rows="5"
+          maxlength="1000"
+          show-word-limit
+          placeholder="要播报的内容（由「PPT 放映页」念出来，声音随屏幕共享到学生端）"
         />
+        <div class="digital-dialog__wave" aria-hidden="true">
+          <i v-for="n in 7" :key="n" :style="{ '--i': n }" />
+        </div>
       </div>
-
-      <aside class="console-body__side">
-        <AttendeeList :attendees="store.displayAttendees" :degraded="store.degraded" />
-        <!-- 分隔不用 el-divider：1px 分隔线由样式给（docs/09 §7「分隔线恒 1px」） -->
-        <ChatPanel class="console-body__chat" :messages="store.messages" :disabled="store.ended" @send="handleSend" />
-      </aside>
-    </section>
-    <el-dialog v-model="digitalVisible" title="数字人播报" width="520px">
-      <p class="digital-dialog__state">
-        <el-tag v-if="!digitalStatus" type="info" size="small">状态未知</el-tag>
-        <el-tag v-else-if="!digitalStatus.enabled" type="info" size="small">未启用</el-tag>
-        <el-tag v-else-if="!digitalStatus.available" type="warning" size="small">
-          已启用但语音未配置
-        </el-tag>
-        <el-tag v-else type="success" size="small">可用</el-tag>
-        <span class="digital-dialog__hint">{{ digitalHint }}</span>
-        <el-button link type="primary" size="small" @click="refreshDigitalStatus">刷新状态</el-button>
-      </p>
-      <el-input
-        v-model="digitalText"
-        type="textarea"
-        :rows="4"
-        maxlength="1000"
-        show-word-limit
-        placeholder="要播报的内容（由「PPT 放映页」念出来，声音随屏幕共享到学生端）"
-      />
       <template #footer>
-        <el-button @click="digitalVisible = false">关闭</el-button>
-        <el-button type="primary" :disabled="!digitalText.trim()" @click="handleDigitalSay">
+        <button type="button" class="mt-btn mt-btn--quiet" @click="digitalVisible = false">关闭</button>
+        <button
+          type="button"
+          class="mt-btn mt-btn--primary"
+          :disabled="!digitalText.trim()"
+          @click="handleDigitalSay"
+        >
           播报
-        </el-button>
+        </button>
       </template>
     </el-dialog>
   </div>
@@ -176,13 +301,16 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Loading, VideoCamera, VideoPlay } from '@element-plus/icons-vue'
+import { Link, Microphone, Monitor, SwitchButton, VideoCamera, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { closeMeeting, getDigitalStatus, getMeetingDetail } from '@/api/meeting'
 import AttendeeList from './components/AttendeeList.vue'
 import ChatPanel from './components/ChatPanel.vue'
+import ControlDock from './components/ControlDock.vue'
 import MeetingTopBar from './components/MeetingTopBar.vue'
 import ScreenStage from './components/ScreenStage.vue'
+import StatusNotice from './components/StatusNotice.vue'
+import StudioBackdrop from './components/StudioBackdrop.vue'
 import { useMeetingStore } from './stores/meeting'
 import { useLiveKitRoom, describeChatSend } from './hooks/useLiveKitRoom'
 import {
@@ -191,6 +319,7 @@ import {
   migrateLegacyHostSession,
   readHostSession,
 } from '@/utils/hostSession'
+import './styles/meeting.css'
 
 /** 老师发言时的昵称与角色（与后端落库口径一致） */
 const HOST_NICKNAME = '老师'
@@ -204,6 +333,13 @@ const stageRef = ref(null)
 /** 主持人会话：{ meetingId, meetingNo, joinUrl, hostToken, title } */
 const session = ref(null)
 
+/** 小屏切换的面板；宽屏两块同时显示 */
+const activePanel = ref('stage')
+const panelOptions = [
+  { label: '画面', value: 'stage' },
+  { label: '成员与聊天', value: 'chat' },
+]
+
 // ===== 数字人播报（讲稿由「PPT 放映页」念，见 docs/16 §5.7）=====
 const digitalVisible = ref(false)
 const digitalText = ref('')
@@ -215,6 +351,14 @@ const digitalHint = computed(() => {
   if (!status.enabled) return '后端未开启语音（tb.lecture.digital-human.enabled=false）。'
   if (!status.available) return '后端未配置语音合成（DashScope Key 为空），配好并重启后再刷新。'
   return '声音在「PPT 放映页」播放，随屏幕共享到学生端。'
+})
+
+const digitalState = computed(() => {
+  const status = digitalStatus.value
+  if (!status) return { label: '状态未知', tone: 'muted' }
+  if (!status.enabled) return { label: '未启用', tone: 'muted' }
+  if (!status.available) return { label: '语音未配置', tone: 'warn' }
+  return { label: '可用', tone: 'live' }
 })
 
 async function refreshDigitalStatus() {
@@ -236,16 +380,13 @@ const CHANNEL_PREFIX = 'tb-meeting:'
 /**
  * 给放映页发一条指令。
  *
- * <p>为什么不是接口：声音必须在**被共享的那一屏**（放映页）播出来，学生才听得到，
- * 而那一页也是唯一能顺手驱动口型的地方（口型跟的是它正在播的音频）。总线只做单向
- * （控制台 → 放映页）：翻页与「现在第几页」仍由放映页自己说了算。
- * 每条指令开一个短命频道：控制台不需要长期订阅，也就没有要清理的连接。
+ * <p>为什么不是接口：声音必须在**被共享的那一屏**（放映页）播出来，学生才听得到。
+ * 总线只做单向（控制台 → 放映页）；翻页与「现在第几页」仍由放映页自己说了算。
  *
  * <p>协议（P0 扩展，向后兼容）：`speak`/`stop` 是「念一段 / 立刻安静」的原始指令；
- * `lesson-start`/`lesson-stop` 启停讲课工作项（跟页照读）；`page` 是放映页反向广播的页码，
- * **不会**从这里发出（页面真相在放映页，本页只听不说）。
+ * `lesson-start`/`lesson-stop` 启停讲课工作项（跟页照读）；`page` 是放映页反向广播的页码。
  *
- * @param {{ action: 'speak'|'stop'|'lesson-start'|'lesson-stop', text?: string }} message 指令
+ * @param {{ action: 'speak'|'stop'|'lesson-start'|'lesson-stop'|'lesson-resolve', text?: string, mode?: string, resolution?: string }} message
  * @returns {boolean} 是否已发出（没有会议号或浏览器不支持时为 false）
  */
 function postToPresenter(message) {
@@ -283,7 +424,7 @@ function speakDigital(text) {
   return true
 }
 
-/** 停止演讲：工作项作废 + 掐断放映页播报请求，后端合成随即取消（旧口径只能等它念完） */
+/** 停止演讲：工作项作废 + 掐断放映页播报请求，后端合成随即取消 */
 function stopDigital() {
   if (!postToPresenter({ action: 'lesson-stop' })) return
   lessonActive.value = false
@@ -380,6 +521,9 @@ const missingCredential = ref(false)
 const credentialVisible = ref(false)
 /** 本机还留着主持人凭据的会议：建会态下列出来，作为「回到某一场」的入口 */
 const knownMeetings = ref([])
+
+/** 入口屏是否铺海报：空态 / 缺凭据 / 恢复中 */
+const showEntryPoster = computed(() => restoring.value || missingCredential.value || !session.value)
 
 const room = useLiveKitRoom({
   getLocalPreviewElement: () => stageRef.value?.videoRef,
@@ -525,8 +669,8 @@ function clearCurrentMeeting() {
  * <p>主持人凭据只存在创建会议的那个浏览器里，因此「地址栏带会议号但本地没凭据」是正常情况
  * （换机器 / 清了存储 / 会议已结束）：不报错，只提示并给「去 PPT 页创建会议」这个出口。
  *
- * <p>`?credential=1` 由 PPT 页建会后写入：控制台是老师第一个看到「凭据只此一次」的地方
- * （PPT 页建会即进放映，全屏覆盖层会把弹窗挡住），提示一次后立刻从地址栏摘掉，刷新不再重复。
+ * <p>`?credential=1` 由 PPT 页建会后写入：控制台是老师第一个看到「凭据只此一次」的地方，
+ * 提示一次后立刻从地址栏摘掉，刷新不再重复。
  */
 async function restoreFromQuery() {
   const meetingNo = meetId.value
@@ -586,8 +730,8 @@ function handleEnterMeeting(meetingNo) {
 /**
  * 「去 PPT 页创建会议」出口。
  *
- * <p>控制台自己不能建会：甲方案里被共享的那一屏是 PPT 页，建会必须发生在那儿
- * （见 docs/16 §5.6）。这里只负责断开当前房间并把老师送过去。
+ * <p>控制台自己不能建会：甲方案里被共享的那一屏是 PPT 页，建会必须发生在那儿。
+ * 这里只负责断开当前房间并把老师送过去。
  */
 async function goCreateInPpt() {
   await room.disconnect()
@@ -602,186 +746,321 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.digital-dialog__state {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0 0 0.75rem;
-  font-size: var(--tb-text-sm, 13px);
-}
-
-.digital-dialog__hint {
-  color: var(--tb-text-secondary);
-}
-
 .meeting-console {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
   height: 100%;
+  padding: clamp(12px, 1.6vw, 24px);
+  overflow: hidden;
+  background: var(--mt-bg);
 }
 
-.console-empty {
+.meeting-console__inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: clamp(10px, 1.2vw, 16px);
+  min-height: 0;
+}
+
+.console-notices {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--tb-size-2);
+}
+
+/* ================= 入口屏 ================= */
+.console-entry {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.console-entry__inner {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 1.5rem;
-  max-width: 560px;
-  background: var(--tb-bg-surface);
-  border-radius: var(--tb-radius-lg);
-  box-shadow: var(--tb-shadow-1);
+  gap: var(--tb-size-3);
+  width: min(880px, 100%);
+  padding: clamp(24px, 4vw, 64px) 0;
 }
 
-.console-empty__title {
+.console-entry__title {
+  max-width: 16ch;
+  margin: var(--tb-size-2) 0 0;
+  font-size: clamp(2.5rem, 6vw, 5.5rem);
+}
+
+.console-entry__desc {
+  max-width: 56ch;
   margin: 0;
-  color: var(--tb-text-primary);
+  color: var(--mt-text-2);
   font-size: var(--tb-text-lg);
+  line-height: 1.7;
 }
 
-.console-empty__tip {
-  margin: 0;
-  color: var(--tb-text-secondary);
-  font-size: var(--tb-text-sm);
-  line-height: 1.6;
+.console-entry__desc code {
+  padding: 1px 5px;
+  border-radius: var(--mt-radius-xs);
+  background: color-mix(in oklab, var(--mt-text) 7%, transparent);
+  color: var(--mt-text);
+  font-family: var(--mt-font-mono);
+  font-size: 0.92em;
 }
 
-.console-empty__tip code {
-  padding: 0 0.25rem;
-  background: var(--tb-bg-raised);
-  border-radius: var(--tb-radius-xs);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9em;
-}
-
-/* 按地址栏恢复中的占位：顶掉空态，避免先闪一下「会议在 PPT 页创建」 */
-.console-loading {
+.console-entry__actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--tb-size-2);
+  margin-top: var(--tb-size-2);
+}
+
+.console-entry__known {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--tb-size-3);
+  padding-top: var(--tb-size-3);
+  border-top: 1px solid var(--mt-line);
+}
+
+.console-entry__known-item {
+  display: grid;
+  grid-template-columns: 32px minmax(80px, 0.6fr) minmax(0, 1fr) 20px;
   align-items: center;
-  gap: 0.5rem;
-  padding: 1rem 1.25rem;
-  max-width: 560px;
-  color: var(--tb-text-secondary);
-  background: var(--tb-bg-surface);
-  border-radius: var(--tb-radius-lg);
-  box-shadow: var(--tb-shadow-1);
+  gap: var(--tb-size-3);
+  min-height: 48px;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--mt-line) 55%, transparent);
+  background: transparent;
+  color: var(--mt-text-2);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--mt-dur-1) var(--mt-ease);
 }
 
-.console-missing__action {
-  margin-top: 0.5rem;
+.console-entry__known-item:hover {
+  background: color-mix(in oklab, var(--mt-text) 4%, transparent);
 }
 
+.console-entry__known-index {
+  color: var(--mt-text-3);
+  font-size: 10px;
+}
+
+.console-entry__known-item strong {
+  color: var(--mt-text);
+  font-size: var(--tb-text-md);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+}
+
+.console-entry__known-title {
+  overflow: hidden;
+  color: var(--mt-text-2);
+  font-size: var(--tb-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-entry__known-arrow {
+  color: var(--mt-signal);
+  font-family: var(--mt-font-mono);
+}
+
+.console-entry__spinner {
+  width: 28px;
+  height: 28px;
+  margin-top: var(--tb-size-2);
+  border: 1px solid var(--mt-line-strong);
+  border-top-color: var(--mt-signal);
+  border-radius: 50%;
+  animation: mt-spin 0.9s linear infinite;
+}
+
+/* 入口 reveal：reduced-motion 由 meeting.css 统一关闭 */
+.console-entry__reveal {
+  animation: mt-rise-in 0.7s var(--mt-ease);
+}
+
+.console-entry__reveal:nth-child(2) {
+  animation-delay: 0.07s;
+}
+
+.console-entry__reveal:nth-child(3) {
+  animation-delay: 0.13s;
+}
+
+.console-entry__reveal:nth-child(4) {
+  animation-delay: 0.19s;
+}
+
+.console-entry__reveal:nth-child(5) {
+  animation-delay: 0.25s;
+}
+
+/* ================= 会议中 ================= */
+.console-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 24vw, 380px);
+  gap: clamp(10px, 1.2vw, 16px);
+  min-height: 0;
+}
+
+.console-body__stage {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.console-body__side {
+  min-height: 0;
+  padding: 12px;
+  gap: 10px;
+}
+
+.console-body__chat {
+  flex: 1;
+  min-height: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--mt-line);
+}
+
+.console-bottom {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--tb-size-2);
+}
+
+.console-dock {
+  width: 100%;
+}
+
+.console-switcher {
+  display: none;
+  flex: none;
+}
+
+/* ================= 凭据 ================= */
 .console-credential__row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+  gap: var(--tb-size-2);
+  margin-top: 6px;
 }
 
 .console-credential__token {
   flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
   overflow-x: auto;
-  padding: 0.25rem 0.5rem;
-  border-radius: var(--tb-radius-md);
-  background: var(--tb-bg-raised);
-  color: var(--tb-text-primary);
-  font-size: var(--tb-text-sm);
+  border: 1px solid var(--mt-line);
+  border-radius: var(--mt-radius-xs);
+  background: color-mix(in oklab, var(--mt-text) 6%, transparent);
+  color: var(--mt-text);
+  font-family: var(--mt-font-mono);
+  font-size: var(--tb-text-xs);
   white-space: nowrap;
 }
 
-/* 空态下列出的「本机还能回到的会议」 */
-.console-empty__known {
+/* ================= 数字人 voice booth ================= */
+.digital-dialog {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
-  width: 100%;
-  margin-top: 0.5rem;
-  padding-top: 0.75rem;
-  border-top: 1px dashed var(--tb-border-strong);
+  gap: var(--tb-size-3);
 }
 
-.console-empty__known-title {
-  margin: 0;
-  color: var(--tb-text-secondary);
-  font-size: var(--tb-text-sm);
-}
-
-.console-empty__known-list {
+.digital-dialog__state {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--tb-size-2);
 }
 
-/* 可点击的会议入口必须是真按钮：el-tag 挂 click 拿不到 focus 与键盘可达性 */
-.console-empty__known-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.375rem;
-  padding: 0.375rem 0.75rem;
-  background: var(--tb-bg-raised);
-  border: 1px solid var(--tb-border);
-  border-radius: var(--tb-radius-sm);
-  color: var(--tb-text-secondary);
-  font-size: var(--tb-text-sm);
-  cursor: pointer;
-  transition: border-color var(--tb-dur-1) var(--tb-ease-out), background var(--tb-dur-1) var(--tb-ease-out);
-}
-
-.console-empty__known-item:hover {
-  background: var(--tb-primary-soft);
-  border-color: var(--tb-primary-border);
-}
-
-.console-empty__known-item strong {
-  color: var(--tb-text-primary);
-  font-size: var(--tb-text-md);
-  letter-spacing: 0.08em;
-}
-
-.console-body {
-  display: grid;
+.digital-dialog__hint {
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 1rem;
-  min-height: 420px;
-}
-
-.console-body__stage {
   min-width: 0;
+  color: var(--mt-text-2);
+  font-size: var(--tb-text-sm);
+  line-height: 1.55;
 }
 
-.console-body__side {
+.digital-dialog__wave {
   display: flex;
-  flex-direction: column;
-  /* 没有这一行，聊天列表在矮窗口下会把面板撑破、内部滚动失效（学生端一直有，控制台漏了） */
-  min-height: 0;
-  padding: 1rem;
-  background: var(--tb-bg-surface);
-  border: var(--tb-border-width) solid var(--tb-border);
-  border-radius: var(--tb-radius-lg);
-  box-shadow: var(--tb-shadow-2);
+  align-items: flex-end;
+  gap: 4px;
+  height: 28px;
+  opacity: 0.65;
 }
 
-/* 名单与聊天是同一面板里的两个子区：用 1px 分隔线分区，不再靠 el-divider 撑出空隙 */
-.console-body__chat {
-  flex: 1;
-  min-height: 0;
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--tb-border);
+.digital-dialog__wave i {
+  display: block;
+  width: 3px;
+  height: 100%;
+  background: var(--mt-signal);
+  transform-origin: bottom;
+  animation: mt-equalize 1.6s var(--mt-ease-inout) infinite;
+  animation-delay: calc(var(--i) * -0.16s);
 }
 
+/* ================= 响应式 ================= */
 @media (max-width: 1080px) {
   .console-body {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 300px;
   }
 }
 
-.attention-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+@media (max-width: 1024px) {
+  .console-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .console-switcher {
+    display: block;
+  }
+
+  .console-body > * {
+    display: none;
+  }
+
+  .console-body[data-panel='stage'] .console-body__stage {
+    display: flex;
+  }
+
+  .console-body[data-panel='chat'] .console-body__side {
+    display: flex;
+  }
 }
 
+@media (max-width: 820px) {
+  .meeting-console {
+    padding: 10px;
+  }
+
+  .meeting-console__inner {
+    gap: 10px;
+  }
+
+  .console-body__side {
+    padding: 10px;
+  }
+
+  .console-bottom .mt-btn {
+    min-height: 46px;
+  }
+
+  .console-switcher :deep(.el-segmented) {
+    width: 100%;
+  }
+}
 </style>

@@ -28,6 +28,12 @@
             <artifactId>tb-common</artifactId>
             <version>${revision}</version>
         </dependency>
+        <!-- 安全上下文：SecurityFrameworkUtils / LoginUser（归属过滤与授权校验取当前用户） -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-spring-boot-starter-security</artifactId>
+            <version>${revision}</version>
+        </dependency>
         <!-- 基础设施模块：复用通用文件存储（MinIO）与 infra_file 元数据 -->
         <dependency>
             <groupId>org.example</groupId>

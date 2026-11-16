@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.backend.framework.common.exception.ServiceException;
+import org.example.backend.framework.security.LoginUser;
+import org.example.backend.framework.security.util.SecurityFrameworkUtils;
 import org.example.backend.module.infra.mapper.InfraFileMapper;
 import org.example.backend.module.infra.model.InfraFileDO;
 import org.example.backend.module.infra.service.MinioFileStorageService;
@@ -15,10 +17,12 @@ import org.example.backend.module.knowledgebase.mapper.KbSpaceMapper;
 import org.example.backend.module.knowledgebase.model.KbDocumentChunkDO;
 import org.example.backend.module.knowledgebase.model.KbDocumentDO;
 import org.example.backend.module.knowledgebase.model.KbDocumentParseBlockDO;
+import org.example.backend.module.knowledgebase.model.KbSpaceDO;
 import org.example.backend.module.knowledgebase.model.vo.DocumentRespVO;
 import org.example.backend.module.knowledgebase.model.vo.DocumentSaveReqVO;
 import org.example.backend.module.knowledgebase.model.vo.LayoutVO;
 import org.example.backend.module.knowledgebase.service.KbDocumentService;
+import org.example.backend.module.knowledgebase.service.KbSpaceAccess;
 import org.example.backend.module.knowledgebase.service.chunk.DocumentChunkService;
 import org.example.backend.module.knowledgebase.service.parse.DocumentParseGateway;
 import org.example.backend.module.knowledgebase.service.parse.ParseTaskStatus;
@@ -118,15 +122,14 @@ public class KbDocumentServiceImpl implements KbDocumentService {
 
     @Override
     public List<DocumentRespVO> getDocumentList(Long spaceId) {
+        requireReadableSpace(spaceId);
         // 文档列表仅返回已完成向量化的文档；解析中 / 待确认 / 失败等中间态不对外展示
         return documentMapper.selectCompletedListBySpaceId(spaceId).stream().map(this::buildRespVO).toList();
     }
 
     @Override
     public Long createDocument(DocumentSaveReqVO reqVO) {
-        if (spaceMapper.selectById(reqVO.getSpaceId()) == null) {
-            throw exception(SPACE_NOT_EXISTS);
-        }
+        requireOwnedSpace(reqVO.getSpaceId());
         KbDocumentDO document = new KbDocumentDO();
         document.setSpaceId(reqVO.getSpaceId());
         document.setName(reqVO.getName());
@@ -145,6 +148,7 @@ public class KbDocumentServiceImpl implements KbDocumentService {
         if (document == null) {
             throw exception(DOCUMENT_NOT_EXISTS);
         }
+        requireOwnedSpace(document.getSpaceId());
         logicalDelete(document);
     }
 
@@ -154,6 +158,7 @@ public class KbDocumentServiceImpl implements KbDocumentService {
         if (document == null) {
             throw exception(DOCUMENT_NOT_EXISTS);
         }
+        requireOwnedSpace(document.getSpaceId());
         // 已完成向量化的文档视为最终入库结果，放弃流程不生效
         if (hasStatus(document, STATUS_COMPLETED)) {
             log.info("放弃文档流程被忽略（文档已完成向量化）: documentId={}", documentId);
@@ -195,9 +200,7 @@ public class KbDocumentServiceImpl implements KbDocumentService {
 
     @Override
     public List<Map<String, Object>> uploadAndSubmit(List<MultipartFile> files, Long spaceId) {
-        if (spaceId == null || spaceMapper.selectById(spaceId) == null) {
-            throw exception(SPACE_NOT_EXISTS);
-        }
+        requireOwnedSpace(spaceId);
         if (files == null || files.isEmpty()) {
             throw new ServiceException(500, "上传文件不能为空");
         }
@@ -286,6 +289,7 @@ public class KbDocumentServiceImpl implements KbDocumentService {
         if (document == null) {
             throw exception(DOCUMENT_NOT_EXISTS);
         }
+        requireOwnedSpace(document.getSpaceId());
 
         // 解析已完成（待确认 / 已完成）：无需轮询，直接返回落库分片
         if (hasStatus(document, STATUS_COMPLETED) || hasStatus(document, STATUS_PENDING_CONFIRM)) {
@@ -548,6 +552,8 @@ public class KbDocumentServiceImpl implements KbDocumentService {
         if (spaceId == null || spaceMapper.selectById(spaceId) == null) {
             throw exception(SPACE_NOT_EXISTS);
         }
+        // 归属校验以文档真实所属空间为准（前端传参的 spaceId 仅做存在性校验）
+        requireOwnedSpace(document.getSpaceId());
         // 已完成向量化的文档不可重复提交（分片与向量均以首次确认结果为准）
         if (hasStatus(document, STATUS_COMPLETED)) {
             log.warn("重复向量化被拦截: documentId={}", documentId);
@@ -656,6 +662,31 @@ public class KbDocumentServiceImpl implements KbDocumentService {
     }
 
     // ========== 私有方法 ==========
+
+    /**
+     * 空间归属守卫：空间必须存在且当前登录用户为其创建者，否则按业务错误码拒绝。
+     *
+     * <p>知识库的写入口都以 {@code spaceId} 定位资源，越权风险集中在这一层；
+     * {@code searchBySpace} 是 doctemplate 检索增强复用的内部接缝，刻意不做校验。
+     */
+    private void requireOwnedSpace(Long spaceId) {
+        KbSpaceAccess.requireOwned(KbSpaceAccess.requireExisting(spaceMapper, spaceId), currentUserId());
+    }
+
+    /**
+     * 公有只读守卫：空间必须存在，且当前登录用户是创建者或空间已公开（US15）。
+     *
+     * <p>只用于纯读取链路（文档列表、分片列表）；任何会改动数据的操作都必须走 {@link #requireOwnedSpace}。
+     */
+    private void requireReadableSpace(Long spaceId) {
+        KbSpaceAccess.requireReadable(KbSpaceAccess.requireExisting(spaceMapper, spaceId), currentUserId());
+    }
+
+    /** 当前登录用户 id（/knowledge-base/** 全部要求登录，调用侧必然已登录） */
+    private Long currentUserId() {
+        LoginUser loginUser = SecurityFrameworkUtils.getLoginUser();
+        return loginUser == null ? null : loginUser.getId();
+    }
 
     private boolean hasStatus(KbDocumentDO document, int status) {
         return document.getStatus() != null && document.getStatus() == status;

@@ -1,0 +1,847 @@
+/**
+ * 模拟会议模块视觉层（2026-11-16 视觉升级）
+ *
+ * 只被 views/meeting/ 的两个根页面引入，选择器全部挂在 `.meeting-studio`
+ * （以及 teleport 到 body 的 `.mt-tokens` 弹层）下，不改动全局 theme.css。
+ * 颜色集中在这里；组件只引用 `--mt-*` / `--tb-*`。
+ *
+ * 设计语言：暗色导播台（深墨 + 品牌蓝 + 信号青/琥珀），浅色为暖纸白日光演播室。
+ */
+
+/* ==========================================================================
+   自托管字体（Latin / Latin-Ext；中文回退系统无衬线）
+   ========================================================================== */
+@font-face {
+  font-family: 'MT Space Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/fonts/space-grotesk-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'MT Space Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/fonts/space-grotesk-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'MT JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'MT JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ==========================================================================
+   ① 模块 Token（页面根与 teleported 弹层共用）
+   ========================================================================== */
+.meeting-studio,
+.mt-tokens {
+  --mt-font-display: 'MT Space Grotesk', 'Space Grotesk', var(--font-sans);
+  --mt-font-mono: 'MT JetBrains Mono', 'JetBrains Mono', var(--font-mono);
+
+  /* 底：亮色暖纸白，暗色近黑墨 */
+  --mt-bg: light-dark(#f2efe6, #05070b);
+  --mt-bg-deep: light-dark(#e9e3d6, #020307);
+  --mt-bg-elevated: light-dark(#fbf9f2, #0b0e14);
+  --mt-bg-rail: light-dark(rgba(255, 255, 255, 0.76), rgba(9, 12, 18, 0.74));
+  --mt-surface-glass: light-dark(rgba(255, 255, 255, 0.56), rgba(14, 18, 26, 0.56));
+  --mt-surface-solid: light-dark(#ffffff, #0d1118);
+
+  /* 线与字 */
+  --mt-line: light-dark(rgba(20, 24, 32, 0.13), rgba(255, 255, 255, 0.09));
+  --mt-line-strong: light-dark(rgba(20, 24, 32, 0.24), rgba(255, 255, 255, 0.2));
+  --mt-text: light-dark(#14171d, #f2f4f8);
+  --mt-text-2: light-dark(#4f5560, #a7afbc);
+  --mt-text-3: light-dark(#767b86, #6f7785);
+  --mt-text-on-brand: #ffffff;
+
+  /* 品牌与信号 */
+  --mt-brand: var(--tb-primary);
+  --mt-brand-strong: var(--tb-primary-active);
+  --mt-brand-soft: var(--tb-primary-soft);
+  --mt-signal: light-dark(#087480, #7ef0ff);
+  --mt-signal-strong: light-dark(#045a63, #b8f7ff);
+  --mt-amber: light-dark(#9a5b06, #ffb35c);
+  --mt-live: light-dark(#087480, #7ef0ff);
+  --mt-danger: var(--tb-danger);
+
+  /* 环境纹理 */
+  --mt-grid-line: light-dark(rgba(20, 24, 32, 0.055), rgba(255, 255, 255, 0.045));
+  --mt-grid-size: 56px;
+  --mt-aurora-1: light-dark(rgba(43, 74, 128, 0.1), rgba(63, 104, 171, 0.3));
+  --mt-aurora-2: light-dark(rgba(8, 116, 128, 0.08), rgba(126, 240, 255, 0.12));
+  --mt-aurora-3: light-dark(rgba(154, 91, 6, 0.07), rgba(255, 179, 92, 0.09));
+  --mt-grain-opacity: 0.14;
+
+  /* 阴影 */
+  --mt-shadow-1: 0 1px 0 light-dark(rgba(20, 24, 32, 0.05), rgba(255, 255, 255, 0.04));
+  --mt-shadow-2: 0 18px 40px -24px light-dark(rgba(20, 24, 32, 0.35), rgba(0, 0, 0, 0.8));
+  --mt-shadow-3: 0 40px 90px -40px light-dark(rgba(20, 24, 32, 0.45), rgba(0, 0, 0, 0.9));
+  --mt-ring: color-mix(in oklab, var(--mt-signal) 42%, transparent);
+
+  /* 形态与节奏 */
+  --mt-radius-xs: 2px;
+  --mt-radius-sm: 4px;
+  --mt-radius-md: 8px;
+  --mt-radius-lg: 14px;
+  --mt-radius-pill: 999px;
+  --mt-dur-1: var(--tb-dur-1);
+  --mt-dur-2: var(--tb-dur-2);
+  --mt-dur-3: var(--tb-dur-3);
+  --mt-dur-4: var(--tb-dur-4);
+  --mt-dur-5: var(--tb-dur-5);
+  --mt-ease: var(--tb-ease-out);
+  --mt-ease-inout: var(--tb-ease-inout);
+
+  /* 版式 */
+  --mt-display-size: clamp(2.75rem, 7vw, 6.25rem);
+  --mt-title-size: clamp(1.5rem, 2.6vw, 2.35rem);
+  --mt-eyebrow-size: var(--tb-text-2xs);
+
+  /* 层级（局部刻度，避免裸 z-index） */
+  --mt-z-ambient: 0;
+  --mt-z-stage: 1;
+  --mt-z-rail: 10;
+  --mt-z-header: 20;
+  --mt-z-dock: 30;
+  --mt-z-overlay: 100;
+}
+
+/* ==========================================================================
+   ② 根容器与基础排版
+   ========================================================================== */
+.meeting-studio {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  color: var(--mt-text);
+  background: var(--mt-bg);
+  font-family: var(--font-sans);
+}
+
+.meeting-studio *,
+.meeting-studio *::before,
+.meeting-studio *::after {
+  box-sizing: border-box;
+}
+
+.meeting-studio :focus-visible,
+.mt-tokens :focus-visible {
+  outline: 2px solid var(--mt-signal);
+  outline-offset: 2px;
+}
+
+.mt-display {
+  margin: 0;
+  color: var(--mt-text);
+  font-family: var(--mt-font-display);
+  font-size: var(--mt-display-size);
+  font-weight: 500;
+  line-height: 0.9;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.mt-title {
+  margin: 0;
+  color: var(--mt-text);
+  font-family: var(--mt-font-display);
+  font-size: var(--mt-title-size);
+  font-weight: 500;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.mt-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-size-2);
+  margin: 0;
+  color: var(--mt-text-3);
+  font-family: var(--mt-font-mono);
+  font-size: var(--mt-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.mt-mono {
+  font-family: var(--mt-font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+.mt-muted {
+  color: var(--mt-text-2);
+}
+
+.mt-faint {
+  color: var(--mt-text-3);
+}
+
+.mt-hairline {
+  width: 100%;
+  height: 1px;
+  margin: 0;
+  border: 0;
+  background: var(--mt-line);
+}
+
+.mt-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--mt-line-strong) transparent;
+}
+
+.mt-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.mt-scroll::-webkit-scrollbar-thumb {
+  border-radius: var(--mt-radius-pill);
+  background: var(--mt-line-strong);
+}
+
+.mt-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ==========================================================================
+   ③ 环境层：网格 / 极光 / 扫描线 / 噪点 / 海报
+   ========================================================================== */
+.mt-ambient {
+  position: absolute;
+  inset: 0;
+  z-index: var(--mt-z-ambient);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.mt-ambient__grid {
+  position: absolute;
+  inset: -12%;
+  background-image:
+    linear-gradient(var(--mt-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mt-grid-line) 1px, transparent 1px);
+  background-size: var(--mt-grid-size) var(--mt-grid-size);
+  mask-image: radial-gradient(78% 72% at 50% 18%, #000 0%, transparent 78%);
+  opacity: 0.9;
+}
+
+.mt-ambient__aurora {
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(42% 46% at 18% 12%, var(--mt-aurora-1) 0%, transparent 70%),
+    radial-gradient(38% 44% at 82% 8%, var(--mt-aurora-2) 0%, transparent 72%),
+    radial-gradient(50% 50% at 58% 96%, var(--mt-aurora-3) 0%, transparent 72%);
+  filter: blur(36px);
+  opacity: 0.9;
+}
+
+.mt-ambient__beam {
+  position: absolute;
+  top: -14%;
+  left: 50%;
+  width: min(72vw, 900px);
+  height: 62%;
+  transform: translateX(-50%);
+  background: radial-gradient(50% 50% at 50% 50%, color-mix(in oklab, var(--mt-signal) 10%, transparent), transparent 70%);
+  filter: blur(30px);
+  opacity: 0.8;
+}
+
+.mt-ambient__scan {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0 3px,
+    color-mix(in oklab, var(--mt-text) 4%, transparent) 3px 4px
+  );
+  mix-blend-mode: overlay;
+  opacity: 0.5;
+}
+
+.mt-ambient__scanline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 24%;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    color-mix(in oklab, var(--mt-signal) 8%, transparent) 60%,
+    transparent 100%
+  );
+  opacity: 0.55;
+  animation: mt-scan 11s linear infinite;
+}
+
+.mt-ambient__grain {
+  position: absolute;
+  inset: 0;
+  background-image: var(--tb-noise);
+  mix-blend-mode: overlay;
+  opacity: var(--mt-grain-opacity);
+}
+
+/* 入口海报：复用 HomeHero 的「染色 + 蒙层 + 颗粒」 */
+.mt-poster {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.mt-poster__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 72% 50%;
+  filter: brightness(0.92) saturate(1.04);
+  transform: scale(1.04);
+}
+
+.mt-poster--entry .mt-poster__img {
+  animation: mt-poster-in 1.6s var(--mt-ease) both;
+}
+
+.mt-poster__tint {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(140deg, var(--tb-primary-active) 0%, var(--tb-primary) 100%);
+  mix-blend-mode: color;
+  opacity: 0.55;
+}
+
+.mt-poster__scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      96deg,
+      color-mix(in oklab, var(--mt-bg) 88%, transparent) 0%,
+      color-mix(in oklab, var(--mt-bg) 58%, transparent) 34%,
+      color-mix(in oklab, var(--mt-bg) 18%, transparent) 68%,
+      color-mix(in oklab, var(--mt-bg) 6%, transparent) 100%
+    ),
+    linear-gradient(180deg, color-mix(in oklab, var(--mt-bg) 34%, transparent) 0%, transparent 42%),
+    radial-gradient(90% 120% at 100% 0%, color-mix(in oklab, var(--mt-bg) 34%, transparent) 0%, transparent 58%);
+}
+
+.mt-poster__grain {
+  position: absolute;
+  inset: 0;
+  background-image: var(--tb-noise);
+  mix-blend-mode: overlay;
+  opacity: calc(var(--mt-grain-opacity) * 1.2);
+}
+
+/* ==========================================================================
+   ④ 信号原语：chip / dot / 按钮 / 玻璃 / 控制坞
+   ========================================================================== */
+.mt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-size-2);
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--mt-line);
+  border-radius: var(--mt-radius-pill);
+  background: color-mix(in oklab, var(--mt-bg-elevated) 62%, transparent);
+  color: var(--mt-text-2);
+  font-family: var(--mt-font-mono);
+  font-size: var(--mt-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.mt-chip--live {
+  color: var(--mt-live);
+  border-color: color-mix(in oklab, var(--mt-live) 36%, transparent);
+  background: color-mix(in oklab, var(--mt-live) 10%, transparent);
+}
+
+.mt-chip--warn {
+  color: var(--mt-amber);
+  border-color: color-mix(in oklab, var(--mt-amber) 34%, transparent);
+  background: color-mix(in oklab, var(--mt-amber) 10%, transparent);
+}
+
+.mt-chip--danger {
+  color: var(--mt-danger);
+  border-color: color-mix(in oklab, var(--mt-danger) 34%, transparent);
+  background: color-mix(in oklab, var(--mt-danger) 10%, transparent);
+}
+
+.mt-chip--muted {
+  color: var(--mt-text-3);
+}
+
+.mt-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mt-text-3);
+}
+
+.mt-dot--live {
+  background: var(--mt-live);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--mt-live) 14%, transparent);
+  animation: mt-pulse 2.4s var(--mt-ease-inout) infinite;
+}
+
+.mt-dot--warn {
+  background: var(--mt-amber);
+}
+
+.mt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tb-size-2);
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--mt-line);
+  border-radius: var(--mt-radius-sm);
+  background: transparent;
+  color: var(--mt-text);
+  font-family: var(--font-sans);
+  font-size: var(--tb-text-sm);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--mt-dur-2) var(--mt-ease),
+    border-color var(--mt-dur-2) var(--mt-ease),
+    color var(--mt-dur-2) var(--mt-ease),
+    box-shadow var(--mt-dur-2) var(--mt-ease);
+}
+
+.mt-btn:hover:not(:disabled) {
+  border-color: var(--mt-line-strong);
+  background: color-mix(in oklab, var(--mt-text) 5%, transparent);
+}
+
+.mt-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.mt-btn--primary {
+  color: var(--mt-text-on-brand);
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--tb-primary-hover), var(--tb-primary));
+  box-shadow: var(--mt-shadow-2);
+}
+
+.mt-btn--primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--tb-primary), var(--tb-primary-active));
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--mt-signal) 32%, transparent),
+    var(--mt-shadow-3);
+}
+
+.mt-btn--signal {
+  color: var(--mt-signal-strong);
+  border-color: color-mix(in oklab, var(--mt-signal) 34%, transparent);
+  background: color-mix(in oklab, var(--mt-signal) 9%, transparent);
+}
+
+.mt-btn--quiet {
+  border-color: transparent;
+  color: var(--mt-text-2);
+}
+
+.mt-btn--danger {
+  color: var(--mt-danger);
+  border-color: color-mix(in oklab, var(--mt-danger) 30%, transparent);
+}
+
+.mt-btn__icon {
+  font-size: 16px;
+  transition: transform var(--mt-dur-2) var(--mt-ease);
+}
+
+.mt-btn:hover:not(:disabled) .mt-btn__icon {
+  transform: scale(1.08);
+}
+
+.mt-glass {
+  border: 1px solid var(--mt-line);
+  border-radius: var(--mt-radius-lg);
+  background: var(--mt-surface-glass);
+  box-shadow: var(--mt-shadow-2);
+  backdrop-filter: blur(20px) saturate(1.3);
+}
+
+.mt-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--mt-line);
+  border-radius: var(--mt-radius-lg);
+  background: var(--mt-bg-rail);
+  box-shadow: var(--mt-shadow-2);
+  backdrop-filter: blur(20px) saturate(1.3);
+}
+
+.mt-dock {
+  display: flex;
+  align-items: center;
+  gap: var(--tb-size-2);
+  padding: 8px;
+  border: 1px solid var(--mt-line);
+  border-radius: var(--mt-radius-lg);
+  background: var(--mt-bg-rail);
+  box-shadow: var(--mt-shadow-3);
+  backdrop-filter: blur(20px) saturate(1.35);
+}
+
+.mt-dock__group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: var(--tb-size-2);
+  border-right: 1px solid var(--mt-line);
+}
+
+.mt-dock__group:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.mt-corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 0 solid var(--mt-signal);
+  opacity: 0.68;
+  pointer-events: none;
+}
+
+.mt-corner--tl {
+  top: 12px;
+  left: 12px;
+  border-top-width: 1px;
+  border-left-width: 1px;
+}
+
+.mt-corner--tr {
+  top: 12px;
+  right: 12px;
+  border-top-width: 1px;
+  border-right-width: 1px;
+}
+
+.mt-corner--bl {
+  bottom: 12px;
+  left: 12px;
+  border-bottom-width: 1px;
+  border-left-width: 1px;
+}
+
+.mt-corner--br {
+  bottom: 12px;
+  right: 12px;
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+}
+
+/* ==========================================================================
+   ⑤ Element Plus 局部覆盖（限定在会议弹层/根内）
+   ========================================================================== */
+.mt-tokens {
+  color: var(--mt-text);
+  font-family: var(--font-sans);
+}
+
+.el-dialog.mt-dialog {
+  border: 1px solid var(--mt-line);
+  border-radius: var(--mt-radius-lg);
+  background: var(--mt-bg-elevated);
+  box-shadow: var(--mt-shadow-3);
+}
+
+/* 学生入会大厅：全屏弹层，保留 Element Plus 的焦点管理 */
+.el-dialog.mt-join-dialog {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--mt-bg);
+}
+
+.el-dialog.mt-join-dialog .el-dialog__header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.el-dialog.mt-join-dialog .el-dialog__body {
+  height: 100%;
+  padding: 0;
+}
+
+.mt-join-modal {
+  background: color-mix(in oklab, #000000 70%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.mt-dialog .el-dialog__header {
+  margin: 0;
+  padding: 20px 24px 0;
+}
+
+.mt-dialog .el-dialog__title {
+  color: var(--mt-text);
+  font-family: var(--mt-font-display);
+  font-size: var(--tb-text-xl);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.mt-dialog .el-dialog__body {
+  padding: 16px 24px;
+  color: var(--mt-text-2);
+}
+
+.mt-dialog .el-dialog__footer {
+  padding: 0 24px 20px;
+}
+
+.mt-dialog .el-dialog__close {
+  color: var(--mt-text-3);
+}
+
+.mt-dialog .el-dialog__close:hover {
+  color: var(--mt-text);
+}
+
+.mt-dialog .el-input__wrapper,
+.mt-dialog .el-textarea__inner {
+  background: color-mix(in oklab, var(--mt-bg) 70%, transparent);
+  box-shadow: 0 0 0 1px var(--mt-line) inset;
+  border-radius: var(--mt-radius-sm);
+}
+
+.mt-dialog .el-input__wrapper.is-focus,
+.mt-dialog .el-textarea__inner:focus {
+  background: var(--mt-bg-elevated);
+  box-shadow:
+    0 0 0 1px var(--mt-signal) inset,
+    0 0 0 4px var(--mt-ring);
+}
+
+.mt-dialog .el-input__inner,
+.mt-dialog .el-textarea__inner {
+  color: var(--mt-text);
+}
+
+.mt-dialog .el-input__inner::placeholder,
+.mt-dialog .el-textarea__inner::placeholder {
+  color: var(--mt-text-3);
+}
+
+.mt-dialog .el-button {
+  border-radius: var(--mt-radius-sm);
+  font-weight: 600;
+}
+
+.meeting-studio .el-segmented {
+  --el-segmented-bg-color: color-mix(in oklab, var(--mt-text) 6%, transparent);
+  --el-segmented-color: var(--mt-text-2);
+  --el-segmented-item-selected-bg-color: var(--mt-bg-elevated);
+  --el-segmented-item-selected-color: var(--mt-text);
+  --el-segmented-item-hover-bg-color: color-mix(in oklab, var(--mt-text) 8%, transparent);
+  --el-segmented-item-hover-color: var(--mt-text);
+  padding: 3px;
+  border-radius: var(--mt-radius-pill);
+}
+
+.meeting-studio .el-segmented__item,
+.meeting-studio .el-segmented__item-selected {
+  border-radius: var(--mt-radius-pill);
+}
+
+.meeting-studio .el-loading-mask {
+  background: color-mix(in oklab, var(--mt-bg) 72%, transparent);
+}
+
+.meeting-studio .el-loading-spinner .circular {
+  width: 22px;
+  height: 22px;
+}
+
+.meeting-studio .el-loading-spinner .path {
+  stroke: var(--mt-signal);
+}
+
+/* ==========================================================================
+   ⑥ 关键帧（只动 transform / opacity）
+   ========================================================================== */
+@keyframes mt-pulse {
+  0%,
+  100% {
+    opacity: 0.42;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes mt-breathe {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 0.72;
+  }
+}
+
+@keyframes mt-scan {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(430%);
+  }
+}
+
+@keyframes mt-equalize {
+  0%,
+  100% {
+    transform: scaleY(0.32);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes mt-rise-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes mt-poster-in {
+  from {
+    transform: scale(1.06);
+  }
+  to {
+    transform: scale(1.04);
+  }
+}
+
+@keyframes mt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================================================
+   ⑦ 减弱动效：整体关闭，直接呈现最终态
+   ========================================================================== */
+/* 移动端控制台占满内容区：隐藏全局侧栏，避免 390px 下只剩 120px 可用宽度。
+   只命中会议控制台，不影响其它页面。 */
+@media (max-width: 820px) {
+  .index-layout:has(.meeting-console) .sidebar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meeting-studio *,
+  .meeting-studio *::before,
+  .meeting-studio *::after,
+  .mt-tokens *,
+  .mt-tokens *::before,
+  .mt-tokens *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .mt-ambient__scanline,
+  .mt-ambient__scan {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   ⑧ light-dark() 不支持时的亮色兜底（与 theme.css 的降级策略一致）
+   ========================================================================== */
+@supports not (color: light-dark(#000, #fff)) {
+  .meeting-studio,
+  .mt-tokens {
+    --mt-bg: #f2efe6;
+    --mt-bg-deep: #e9e3d6;
+    --mt-bg-elevated: #fbf9f2;
+    --mt-bg-rail: rgba(255, 255, 255, 0.76);
+    --mt-surface-glass: rgba(255, 255, 255, 0.56);
+    --mt-surface-solid: #ffffff;
+    --mt-line: rgba(20, 24, 32, 0.13);
+    --mt-line-strong: rgba(20, 24, 32, 0.24);
+    --mt-text: #14171d;
+    --mt-text-2: #4f5560;
+    --mt-text-3: #767b86;
+    --mt-signal: #087480;
+    --mt-signal-strong: #045a63;
+    --mt-amber: #9a5b06;
+    --mt-live: #087480;
+    --mt-grid-line: rgba(20, 24, 32, 0.055);
+    --mt-aurora-1: rgba(43, 74, 128, 0.1);
+    --mt-aurora-2: rgba(8, 116, 128, 0.08);
+    --mt-aurora-3: rgba(154, 91, 6, 0.07);
+    --mt-shadow-1: 0 1px 0 rgba(20, 24, 32, 0.05);
+    --mt-shadow-2: 0 18px 40px -24px rgba(20, 24, 32, 0.35);
+    --mt-shadow-3: 0 40px 90px -40px rgba(20, 24, 32, 0.45);
+  }
+}

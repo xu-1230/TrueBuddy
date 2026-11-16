@@ -1,6 +1,7 @@
 package org.example.textflow.service;
 
 import org.example.textflow.entity.WorkflowProcessRespVO;
+import org.example.textflow.model.vo.PublicWorkflowVO;
 import org.example.textflow.model.vo.WorkflowDetailRespVO;
 import org.example.textflow.model.vo.WorkflowSaveReqVO;
 import org.example.textflow.model.vo.WorkflowVO;
@@ -38,5 +39,27 @@ public interface WorkflowService {
      * 查询工作流列表（不含画布定义，按更新时间倒序）。
      */
     List<WorkflowVO> listWorkflows();
+
+    /**
+     * 切换本人工作流的公有 / 私有（builtin 模板不可改）。
+     *
+     * @param workflowId 工作流 id（雪花 ID 字符串）
+     * @param visibility 0=私有，1=公有
+     */
+    void updateVisibility(String workflowId, Integer visibility);
+
+    /**
+     * 他人公有工作流列表（visibility=1 且非本人创建；匿名返回全部公有行）。
+     */
+    List<PublicWorkflowVO> listPublicWorkflows();
+
+    /**
+     * fork 一份工作流为当前用户的副本：拷名称（「原名（副本）」）/ 说明 / 画布定义，
+     * 草稿态、私有、归属当前用户。他人公有流运行的唯一前置通道（ADR 0006 决策 4）。
+     *
+     * @param workflowId 被 fork 的工作流 id（须为本人或他人公有）
+     * @return 副本 id（雪花 ID 字符串）
+     */
+    String forkWorkflow(String workflowId);
 
 }

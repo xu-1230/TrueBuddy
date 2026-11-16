@@ -143,6 +143,11 @@ public class ChatServiceImpl implements ChatService {
             throw badRequest("会话绑定的工作流与请求不一致，请重新建立会话");
         }
 
+        // 直跑闸（US21 / ADR 0006 决策 4）：执行只放行自有 + builtin，公有不豁免。
+        // 这里兜住「旧会话续跑 / 凭 id 直调」绕过建会话闸门的路径，且必须先于任何执行准备
+        assertWorkflowRunnable(workflowRepository.selectById(conversation.getWorkflowId())
+                .orElseThrow(() -> badRequest("工作流不存在: " + conversation.getWorkflowId())), currentUserId());
+
         // 定义必须已落库：/chat 不接受内联画布定义（定义来源见 WorkflowService#getProcess）
         WorkflowProcessRespVO process = workflowService.getProcess(conversation.getWorkflowId());
 
@@ -241,6 +246,7 @@ public class ChatServiceImpl implements ChatService {
         }
         WorkflowDO workflow = workflowRepository.selectById(workflowId)
                 .orElseThrow(() -> badRequest("工作流不存在: " + workflowId));
+        assertWorkflowRunnable(workflow, currentUserId());
 
         WorkflowConversationDO conversation = new WorkflowConversationDO();
         conversation.setId(String.valueOf(IdUtil.getSnowflakeNextId()));
@@ -389,6 +395,19 @@ public class ChatServiceImpl implements ChatService {
         return loginUser == null ? null : loginUser.getId();
     }
 
+    /**
+     * 直跑闸（US21 / ADR 0006 决策 4）：只有本人工作流与 builtin 模板可以直接运行，
+     * 「他人公有」不可运行——唯一通道是先 fork 为自己的副本。匿名请求一律拒绝。
+     */
+    private static void assertWorkflowRunnable(WorkflowDO workflow, Long userId) {
+        if (WorkflowConstants.BUILTIN_WORKFLOW_ID.equals(workflow.getId())) {
+            return;
+        }
+        if (userId == null || !userId.equals(workflow.getCreator())) {
+            throw forbidden("他人发布的工作流不能直接运行，请先 fork 为自己的副本");
+        }
+    }
+
     /** 标题缺省取工作流名称（会话列表直接可读），并截到列宽上限 */
     private static String titleOf(String title, String fallback) {
         String value = trimToNull(title);
@@ -420,6 +439,10 @@ public class ChatServiceImpl implements ChatService {
 
     private static ServiceException badRequest(String message) {
         return new ServiceException(GlobalErrorCodeConstants.BAD_REQUEST.getCode(), message);
+    }
+
+    private static ServiceException forbidden(String message) {
+        return new ServiceException(GlobalErrorCodeConstants.FORBIDDEN.getCode(), message);
     }
 
 }

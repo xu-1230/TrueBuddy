@@ -26,6 +26,20 @@ public interface KbDocumentParseBlockMapper {
             + "</script>")
     int insertBatch(@Param("blocks") List<KbDocumentParseBlockDO> blocks);
 
+    /**
+     * fork 复制：把源文档的版面块整批复制到副本文档名下（同事务 INSERT…SELECT，不经过应用内存）。
+     *
+     * @return 复制的块数
+     */
+    @Insert("INSERT INTO kb_document_parse_block (document_id, space_id, block_index, page_num, "
+            + "page_block_seq, block_type, content, text, external_id, token_count) "
+            + "SELECT #{newDocId}, #{newSpaceId}, block_index, page_num, page_block_seq, block_type, "
+            + "content, text, external_id, token_count "
+            + "FROM kb_document_parse_block WHERE document_id = #{sourceDocId}")
+    int copyBlocks(@Param("sourceDocId") Long sourceDocId,
+                   @Param("newDocId") Long newDocId,
+                   @Param("newSpaceId") Long newSpaceId);
+
     /** 从属表采用物理删除：重新解析时先清空旧块再重建 */
     @Delete("DELETE FROM kb_document_parse_block WHERE document_id = #{documentId}")
     int deleteByDocumentId(Long documentId);

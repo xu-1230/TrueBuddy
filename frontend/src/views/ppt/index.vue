@@ -201,11 +201,15 @@
           @pointerdown="startAvatarDrag"
           @dblclick="resetAvatarDrag"
         >
-          <!-- 位移只加在 canvas 上：拖动的是数字人本身，切换按钮留在原位 -->
-          <canvas
-            ref="canvasRef"
-            class="digital-human-canvas"
-            :style="screening ? { transform: `translate3d(${avatarDragOffset.x}px, ${avatarDragOffset.y}px, 0)` } : null"
+          <!-- 放映时 canvas 固定为全屏、模型在 Pixi 内部移动；canvas 本身不参与 CSS 位移 -->
+          <canvas ref="canvasRef" class="digital-human-canvas" />
+
+          <!-- 放映时的透明拖拽热区：跟着模型盒子移动，只有这块接收指针事件 -->
+          <div
+            v-if="screening"
+            ref="avatarHandleRef"
+            class="digital-human-drag"
+            :style="avatarHandleStyle"
           />
 
           <!-- 形象切换：点一下按登记表顺序换下一个，加载不出来的自动跳过 -->
@@ -677,11 +681,20 @@ onMounted(() => {
   updateViewport()
   canvasResizeObserver = new ResizeObserver(updateViewport)
   if (canvasWrapRef.value) canvasResizeObserver.observe(canvasWrapRef.value)
+  // 全屏 / 浏览器缩放 / 窗口尺寸变化都可能改变 devicePixelRatio；
+  // Pixi 只在初始化时读一次 resolution，不跟着刷新就会把 canvas 拉伸变糊。
+  window.addEventListener('resize', handleLive2DViewportChange)
+  document.addEventListener('fullscreenchange', handleLive2DViewportChange)
+  window.visualViewport?.addEventListener('resize', handleLive2DViewportChange)
   initLive2D()
+  requestAnimationFrame(resizeLive2DStage)
 })
 // 放在 beforeUnmount：此时 canvas 仍在 DOM 中，PIXI 可安全释放渲染器与 WebGL 上下文
 onBeforeUnmount(() => {
   endAvatarDrag()
+  window.removeEventListener('resize', handleLive2DViewportChange)
+  document.removeEventListener('fullscreenchange', handleLive2DViewportChange)
+  window.visualViewport?.removeEventListener('resize', handleLive2DViewportChange)
   destroyLive2D()
   // 离开 PPT 页就别再念了：掐断请求即取消后端合成，随后收掉播放器与总线
   stopSpeaking()
@@ -1100,6 +1113,8 @@ const importSlideData = (data) => {
 window.PIXI = PIXI
 
 const canvasRef = ref(null)
+const LIVE2D_WIDTH = 400
+const LIVE2D_HEIGHT = 800
 let app = null // PIXI.Application 单实例
 let model = null // Live2DModel 单实例
 let live2dDisposed = false // 卸载标记：阻断「组件已卸载后才 resolve」的异步回调写入已销毁实例
@@ -1109,10 +1124,99 @@ const currentAvatarId = ref(DEFAULT_AVATAR_MODEL) // 当前挂在舞台上的形
 const switchingAvatar = ref(false) // 切换进行中：防止连点把加载流程叠起来
 const currentAvatarLabel = computed(() => getAvatarModelConfig(currentAvatarId.value).label)
 
-// 放映时数字人的拖拽位移，相对「贴右 + 垂直居中」的默认位置；编辑模式下不生效
+// 放映时数字人的拖拽位移，相对「贴右 + 垂直居中」的默认盒子；编辑模式下不生效
 const avatarDragOffset = ref({ x: 0, y: 0 })
 const draggingAvatar = ref(false)
-let avatarDragState = null // { pointerX, pointerY, originX, originY, left, top, width, height }
+const avatarHandleRef = ref(null)
+/** 当前视口尺寸：放映时全屏 canvas 与拖拽热区都按它计算 */
+const viewportSize = ref({ width: window.innerWidth, height: window.innerHeight })
+let avatarDragState = null // { pointerX, pointerY, left, top, width, height }
+
+/**
+ * 放映时模型所在的 400×800 盒子（贴右、垂直居中）。
+ * canvas 本身固定在视口 (0,0) 不动，盒子只用于摆放模型与拖拽热区。
+ */
+const avatarBox = computed(() => {
+  const { width, height } = viewportSize.value
+  return {
+    left: width - LIVE2D_WIDTH,
+    top: (height - LIVE2D_HEIGHT) / 2,
+  }
+})
+
+/** 透明拖拽热区的位置：默认盒子 + 拖拽偏移 */
+const avatarHandleStyle = computed(() => {
+  if (!screening.value) return null
+  const base = avatarBox.value
+  return {
+    left: `${base.left + avatarDragOffset.value.x}px`,
+    top: `${base.top + avatarDragOffset.value.y}px`,
+    width: `${LIVE2D_WIDTH}px`,
+    height: `${LIVE2D_HEIGHT}px`,
+  }
+})
+
+/**
+ * 在 Pixi 内部摆模型：
+ * - 放映时把模型放进贴右居中的 400×800 盒子，canvas 固定全屏、不参与 CSS 位移；
+ * - 编辑时仍按右侧面板的 400×800 取景。
+ */
+const placeAvatar = () => {
+  if (!app || !model) return
+  const cfg = getAvatarModelConfig(currentAvatarId.value)
+  const { width = 0, height = 0 } = model.internalModel ?? {}
+  if (!width || !height) return
+
+  if (screening.value) {
+    const box = avatarBox.value
+    const zoom = cfg.framing?.zoom ?? 1
+    const offsetX = cfg.framing?.offsetX ?? 0
+    const offsetY = cfg.framing?.offsetY ?? 0
+    const scale = Math.min(LIVE2D_WIDTH / width, LIVE2D_HEIGHT / height) * zoom
+    model.scale.set(scale)
+    model.position.set(
+      box.left + avatarDragOffset.value.x + (LIVE2D_WIDTH - width * scale) / 2 + offsetX,
+      box.top + avatarDragOffset.value.y + (LIVE2D_HEIGHT - height * scale) / 2 + offsetY,
+    )
+    return
+  }
+
+  applyFraming(model, { width: app.screen.width, height: app.screen.height }, cfg.framing)
+}
+
+/**
+ * 同步 Pixi 舞台尺寸 / 分辨率。
+ *
+ * <p>放映时 canvas 固定为全屏舞台（模型在 Pixi 内部移动）；编辑时回到右侧面板的
+ * 400×800。窗口缩放、全屏、DPR 变化都走这里。
+ */
+const resizeLive2DStage = () => {
+  if (!app || live2dDisposed) return
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  viewportSize.value = { width: vw, height: vh }
+
+  const targetW = screening.value ? vw : LIVE2D_WIDTH
+  const targetH = screening.value ? vh : LIVE2D_HEIGHT
+  const dpr = window.devicePixelRatio || 1
+  const resolutionChanged = Math.abs(app.renderer.resolution - dpr) >= 0.01
+  if (resolutionChanged) app.renderer.resolution = dpr
+  if (resolutionChanged || app.screen.width !== targetW || app.screen.height !== targetH) {
+    app.renderer.resize(targetW, targetH)
+  }
+  placeAvatar()
+}
+
+const handleLive2DViewportChange = () => {
+  resizeLive2DStage()
+  // 全屏切换后 DPR / 视口尺寸可能晚一帧才生效，再补一次
+  requestAnimationFrame(resizeLive2DStage)
+}
+
+// 进入/退出放映：canvas 从侧栏 400×800 切成全屏，模型按新舞台重摆
+watch(screening, () => {
+  requestAnimationFrame(resizeLive2DStage)
+})
 
 /** 加载器：把 URL 变成 Live2DModel，交给 configs/avatar 决定先试哪个地址 */
 const createLive2DModel = (url) => Live2DModel.from(url, {
@@ -1235,11 +1339,11 @@ const loadPreferredAvatar = async () => {
 const initLive2D = async () => {
   if (live2dDisposed || app || !canvasRef.value) return
 
+  viewportSize.value = { width: window.innerWidth, height: window.innerHeight }
   app = new PIXI.Application({
     view: canvasRef.value,
-    width: 400,
-    height: 800,
-    // resizeTo: window,
+    width: screening.value ? window.innerWidth : LIVE2D_WIDTH,
+    height: screening.value ? window.innerHeight : LIVE2D_HEIGHT,
     backgroundAlpha: 0,
     resolution: window.devicePixelRatio || 1,
     autoDensity: true,
@@ -1258,12 +1362,8 @@ const initLive2D = async () => {
   if (loaded.id !== DEFAULT_AVATAR_MODEL) {
     console.warn(`[数字人] 当前显示的是兜底形象 ${loaded.id}，DeepSeek 鲸鱼娘未能加载`)
   }
-  // 取景按模型原始宽高算，换形象不需要再回来改数字
-  applyFraming(
-    model,
-    { width: app.screen.width, height: app.screen.height },
-    getAvatarModelConfig(loaded.id).framing,
-  )
+  // 放映时按全屏舞台里的 400×800 盒子摆放；编辑时按侧栏取景
+  placeAvatar()
   // 必须赶在 addChild 之前：一旦上舞台就开始出帧，第一帧就会把水印画出去
   applyWatermarkPolicy(model, loaded.id)
   app.stage.addChild(model)
@@ -1298,11 +1398,8 @@ const mountAvatar = async (id) => {
 
   const previous = model
   model = loaded.model
-  applyFraming(
-    model,
-    { width: app.screen.width, height: app.screen.height },
-    getAvatarModelConfig(id).framing,
-  )
+  currentAvatarId.value = id
+  placeAvatar()
   // 同上：先关水印再上舞台，避免切换瞬间闪一下
   applyWatermarkPolicy(model, id)
   app.stage.addChild(model)
@@ -1358,21 +1455,18 @@ const clampValue = (value, min, max) => Math.min(Math.max(value, min), max)
 /**
  * 开始拖动数字人（仅放映模式生效）。
  *
- * 事件挂在容器上，但真正能命中的只有 canvas：放映时整个面板是
- * `pointer-events: none`（为了不挡住翻页和工具栏），下面只把 canvas
- * 那一块收回 auto，四周的透明留白照样穿透。
+ * <p>canvas 在放映时固定为全屏、不参与 CSS 位移；真正可命中的是跟着模型盒子
+ * 移动的透明热区。事件从热区冒泡到占位容器，这里用热区的 rect 计算位移。
  */
 const startAvatarDrag = (e) => {
-  if (!screening.value || !canvasRef.value) return
+  if (!screening.value || !avatarHandleRef.value) return
   // 只认左键，右键留给浏览器菜单
   if (e.pointerType === 'mouse' && e.button !== 0) return
 
-  const rect = canvasRef.value.getBoundingClientRect()
+  const rect = avatarHandleRef.value.getBoundingClientRect()
   avatarDragState = {
     pointerX: e.clientX,
     pointerY: e.clientY,
-    originX: avatarDragOffset.value.x,
-    originY: avatarDragOffset.value.y,
     left: rect.left,
     top: rect.top,
     width: rect.width,
@@ -1380,7 +1474,7 @@ const startAvatarDrag = (e) => {
   }
   draggingAvatar.value = true
 
-  // 监听挂 window：鼠标拖快了会跑出 canvas，只绑在元素上会中途断掉
+  // 监听挂 window：鼠标拖快了会跑出热区，只绑在元素上会中途断掉
   window.addEventListener('pointermove', moveAvatarDrag)
   window.addEventListener('pointerup', endAvatarDrag)
   window.addEventListener('pointercancel', endAvatarDrag)
@@ -1397,10 +1491,10 @@ const moveAvatarDrag = (e) => {
   const left = clampValue(nextLeft, AVATAR_DRAG_KEEP - state.width, window.innerWidth - AVATAR_DRAG_KEEP)
   const top = clampValue(nextTop, AVATAR_DRAG_KEEP - state.height, window.innerHeight - AVATAR_DRAG_KEEP)
 
-  avatarDragOffset.value = {
-    x: state.originX + (left - state.left),
-    y: state.originY + (top - state.top),
-  }
+  // 盒子相对默认位置的位移；模型在 Pixi 内部移动，canvas 不动
+  const base = avatarBox.value
+  avatarDragOffset.value = { x: left - base.left, y: top - base.top }
+  placeAvatar()
 }
 
 const endAvatarDrag = () => {
@@ -1415,6 +1509,7 @@ const endAvatarDrag = () => {
 const resetAvatarDrag = () => {
   if (!screening.value) return
   avatarDragOffset.value = { x: 0, y: 0 }
+  placeAvatar()
 }
 </script>
 
@@ -1809,12 +1904,10 @@ const resetAvatarDrag = () => {
   text-overflow: ellipsis;
 }
 
-/* 放映模式下：数字人浮于放映覆盖层之上，随放映一起展示 */
+/* 放映模式下：canvas 固定为全屏舞台，模型在 Pixi 内部移动；canvas 本身不参与 CSS 位移 */
 .digital-human-placeholder.screening-mode {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 10000;
   margin: 0;
   border: none;
@@ -1824,17 +1917,24 @@ const resetAvatarDrag = () => {
   pointer-events: none;
 }
 
-/* 放映时只有 canvas 这一块收回指针事件，用来拖动；四周留白仍然穿透。
-   整块面板若设成 auto 会挡住右侧 400px 的翻页与工具栏。 */
 .digital-human-placeholder.screening-mode .digital-human-canvas {
-  pointer-events: auto;
-  cursor: grab;
-  touch-action: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
 }
 
-.digital-human-placeholder.screening-mode.is-dragging .digital-human-canvas {
+/* 透明拖拽热区：跟着模型盒子移动；只有这块接收指针事件 */
+.digital-human-drag {
+  position: absolute;
+  z-index: 1;
+  cursor: grab;
+  touch-action: none;
+  pointer-events: auto;
+}
+
+.digital-human-placeholder.screening-mode.is-dragging .digital-human-drag {
   cursor: grabbing;
-  will-change: transform;
 }
 
 /* 放映时只让数字人上屏：切换按钮属于编辑期控件，不给观众看到 */

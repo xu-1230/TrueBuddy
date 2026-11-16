@@ -15,7 +15,7 @@
 | 方法 | 路径 | 说明 | 返回 |
 | --- | --- | --- | --- |
 | POST | `/doc-template/generate` | 生成文档：`templateFileId` + `spaceId`（空 / `"default"` = 不启用检索）+ `description`（≤500 字）+ `quality`（480p/720p/1080p） | **同步阻塞**返回生成文件列表（无轮询、无 SSE） |
-| GET | `/doc-template/history?limit=` | 生成历史（默认 20 条，上限 100） | `CommonResult<List<...>>` |
+| GET | `/doc-template/history?limit=` | 生成历史（默认 20 条，上限 100，按**任务**计数）；每条内联 `docs` 文件摘要（`DocFileRespVO`，`src` 为空、不签发 URL），首页「文档」tab 据此展开文件卡 | `CommonResult<List<GenerationHistoryRespVO>>` |
 | GET | `/doc-template/detail?id=` | 生成详情（任务 + 文件列表，重新签发 MinIO 预签名 URL） | `CommonResult<GenerationRespVO>` |
 
 ## 3. 生成主流程（`DocTemplateServiceImpl.generate`）
@@ -59,9 +59,14 @@
 
 1. 选模板文件 → `POST /infra/file/upload` 拿 templateFileId。
 2. 选知识库（内置「默认知识库」传 `"default"` = 不启用检索）、填 AI 描述、清晰度。
-3. 点生成 → `POST /doc-template/generate` **同步等待** → 渲染结果卡片（tag / summary / MinIO URL）。
-4. `loadHistory()` 刷新历史抽屉；点历史条目 → `GET /detail?id=` 回填结果。
-5. 结果卡可打开查看模式（docx-preview 渲染 + 元素选取 + AI 聊天面板）。
+3. 点生成 → `POST /doc-template/generate` **同步等待** → 有文档则 `replace` 到 `/index/doc-template/:generationId`，渲染结果卡片（tag / summary / MinIO URL）；失败 / 0 份只提示错误，不改 URL 与当前结果。
+4. **URL 是页面状态的唯一真相源**：`watch([:id, ?file], immediate)` 驱动载入。点历史条目 → `push` 到 `/:generationId`（0 份 / 失败记录同样进入），抽屉立即关闭，由结果区显示「正在载入生成记录…」；详情拉取后回填预览 URL。
+5. `?file=<DocFileVO.id>`（`doc_template_file` 主键，不是 `infra_file.id`）打开查看模式；刷新 / 前进 / 后退均可重放。文件不存在或不属于该次生成 → `replace` 剔除 query 回结果列表。
+6. 结果卡可打开查看模式（docx-preview 渲染 + 元素选取 + AI 聊天面板）；「返回结果列表」= `push` 去掉 `file` 的地址。
+
+> URL 契约、异常分层与验收项见 [specs/2026-11-16-模板生成页路由状态.md](./specs/2026-11-16-模板生成页路由状态.md)。
+>
+> 首页（`views/system/SystemHomeView.vue`）「文档」tab 复用 history 内联的 `docs` 展开文件卡，一份文件一张卡，点击直达上述 `/:generationId?file=<docId>`；详见 [specs/2026-11-16-首页文档tab列出生成文档.md](./specs/2026-11-16-首页文档tab列出生成文档.md)。
 
 ## 6. 现状与规划
 
@@ -70,5 +75,6 @@
 | `components/AiChatPanel.vue` | 回复来自前端写死的回复池（演示态） | 接入真实 SSE 流式对话（复用 workflow 的 SSE 读取封装） |
 | 导出 | `quality` 档位仅作生成参数；`doc_template_file.type`（WORD/PDF/MARKDOWN）已预留 | 导出能力落地 |
 | 管理端 | `/admin/doc-template/{templates,records,inspections}` 三页为前端 mock，业务接口未实现 | 与后端真实数据打通 |
+| 历史 / 详情越权 | `getHistory` / `getDetail` 未按 `creator` 过滤，`/doc-template/**` 在放行白名单内；`/index/doc-template/:id` 可枚举访问任意生成记录 | 按登录用户 `creator` 过滤并调整白名单，或改用不可枚举 id |
 
 > 表结构（`doc_template_generation` / `doc_template_file`，status 枚举）见 [doc-database.md](./doc-database.md)。

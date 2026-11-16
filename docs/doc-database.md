@@ -1,6 +1,6 @@
 # doc-database · 数据库设计
 
-> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-13
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-16
 > 事实源：`backend/sql/`（每表一个建表文件 + 日期命名的增量补丁）；本文与 SQL 文件冲突时以 SQL 为准并同步本文。
 
 ---
@@ -14,7 +14,7 @@
 | 外键 | 全部为**逻辑外键**（无物理约束），下文「→」表示跨表引用 |
 | 通用审计列 | 业务表统一：`create_time/update_time TIMESTAMP 默认now`、`creator/updater BIGINT`、软删 `deleted BOOLEAN 默认false`（`kb_document` 例外用 `deleted_at`，`homework_file` 物理删除） |
 | `newsql/public.sql` | pg_dump 导出，**只含 7 张 system 表 + pgvector 扩展对象**；且内含 `DROP TABLE`，只作参考、禁止当迁移脚本执行 |
-| 表规模 | 单表 DDL 共 21 张（含 doc_template.sql 内 2 张）；恢复脚本额外 3 张（旧版批改两表 + vector_store）→ 全库 24 张 |
+| 表规模 | 单表 DDL 共 22 张（含 doc_template.sql 内 2 张、homework_grading_result.sql）；恢复脚本额外 3 张（旧版批改两表 + vector_store）→ 全库 25 张 |
 
 ## 2. system 模块（RBAC 与认证）
 
@@ -48,11 +48,14 @@
 
 **homework_file** — 作业文件表（物理删除）：`task_id` → homework_task；`file_id` → infra_file（可空）；**`relative_path VARCHAR(512)`**（形如 `课程/学号-姓名/文件.docx`）；`name`；`size`。UNIQUE(task_id, relative_path)。
 
+**homework_grading_result** — 批改评分结果表（一次批改的逐学生评分记录，从属表物理删除）：`task_id` → homework_task；`student`（模型解析，未署名时服务端填「未署名」）；`score NUMERIC(5,1)`（可空）；`grade`（优/良/…）；`comment TEXT`；`deductions JSONB` 字符串数组；`read_files JSONB` 字符串数组（模型实际读取的文件相对路径）；`conversation_id`（产出本批结果的工作流会话 id，仅溯源）。idx(task_id)。**覆盖式回写**：同一任务重复回写先按 task_id 物理删除旧行再整批插入，以最后一次为准（US12）。命名刻意避开已废弃的旧表名。
+
 **homework_grading_task / homework_grading_record** — **旧版表**，仅存于 `restore_dropped_tables_20261022.sql` 恢复脚本，现行代码不使用（批改执行已移交工作流链路，见 doc-homework.md）。
 
 ## 6. knowledgebase 模块
 
-**kb_space** — 知识库空间：`name VARCHAR(100)`；`description`。UNIQUE(name) WHERE deleted=FALSE（删除后可复用同名）。
+**kb_space** — 知识库空间：`name VARCHAR(100)`；`description`；**`visibility SMALLINT` 0=私有/1=公有（默认私有，ADR 0006 归属模型）**。UNIQUE(name) WHERE deleted=FALSE（删除后可复用同名）。
+> 迁移：`visibility_creator_backfill_20261116.sql` 给 `kb_space` / `workflow` 补 visibility 列（存量一律刷 0=私有），并把 `creator IS NULL` 的存量行统一归入 admin 种子账号（system_user.id=1），保证演示数据仍可见；幂等可重跑。
 
 **kb_document** — 文档表（原文不落库，由 parse_block 聚合）：`space_id` → kb_space；`file_id` → infra_file（可空）；`name`；`type` PDF/WORD/MARKDOWN；`chunk_count`；`token_count`；**`status SMALLINT` 0=待处理/1=解析中/2=已向量化/3=失败/4=分片待确认/5=待分片/6=AI分片中/7=向量化中**；`docmind_job_id`；`parse_progress` 0-100；`parse_error`；`parse_start_at/parse_end_at/vectorize_at`；**软删用 `deleted_at TIMESTAMP`（NULL=未删除），无 deleted 布尔列**。idx(space_id, status) WHERE deleted_at IS NULL。
 
@@ -72,7 +75,7 @@
 
 ## 8. workflow 模块（三表主键均为应用生成雪花 ID，非自增）
 
-**workflow** — 定义表（`{nodes,edges}` 整体存 JSON，**不做版本管理**）：`name`（非纯数字 workflowId 时按此匹配）；`description`；`schema_json TEXT`；`status` 0=草稿/1=已发布。idx(name) WHERE deleted=FALSE。内置模板「标准批改作业」由启动初始化器在表为空时写入（固定 id，幂等）。
+**workflow** — 定义表（`{nodes,edges}` 整体存 JSON，**不做版本管理**）：`name`（非纯数字 workflowId 时按此匹配）；`description`；`schema_json TEXT`；`status` 0=草稿/1=已发布；**`visibility SMALLINT` 0=私有/1=公有（默认私有，ADR 0006 归属模型）**。idx(name) WHERE deleted=FALSE。内置模板「标准批改作业」由启动初始化器在表为空时写入（固定 id，幂等；`visibility=1` 且 creator 豁免——builtin 全员可见可运行）。
 
 **workflow_conversation** — 会话表（前端一个聊天窗口 = 一行）：`conversation_id VARCHAR(36)` UUID（UNIQUE，/chat 续跑定位）；`workflow_id`；`workflow_name`（冗余）；`title`。idx(update_time DESC)（最近活跃排序）。
 

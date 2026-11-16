@@ -16,6 +16,8 @@ public class SpaceRespVO {
     private String name;
     /** 空间描述 */
     private String description;
+    /** 可见性：0=私有，1=公有 */
+    private Integer visibility;
     /** 文档数量 */
     private Long documentCount;
     /** 创建时间 */
