@@ -126,7 +126,7 @@ html[data-theme="ink"],
   --tb-warning: light-dark(#9a5b06, #e5a13d);
   --tb-danger: light-dark(#b3362a, #ef6a5e);
   --tb-info: light-dark(#3b6fd4, #7aa6f0);
-  --tb-accent: light-dark(#bf4636, #e0a63f);
+  --tb-accent: light-dark(#bf4636, #3f68ab);
 
   /* 形态个性：Ink 的"刻本感"——比其他主题更小一号的圆角 + 实描边 + 紧凑阴影 */
   --tb-radius-xs: 2px;
