@@ -60,7 +60,7 @@
 | 机制 | 位置 | 说明 |
 | --- | --- | --- |
 | `@PermitAll` | 方法 / 类 | 标注即免登录（现有 `AuthController.login`） |
-| `tb.security.permit-all-urls` | `application.yml` | URL 白名单：`/system/auth/login`、`/system/auth/refresh`、`/test2/read-pptx`、`/test2/file-text`、`/doc-template/**`、`/workflow/**`、`/homework/**`、`/meeting/**`（实时媒体与聊天走自托管 LiveKit 的 7880/7881，不经过本服务；会议内身份是 `hostToken` / `attendeeToken`，离会接口 `POST /meeting/leave` 也靠它校验）、`/ppt/**`（PPT 讲稿生成，无状态接口） |
+| `tb.security.permit-all-urls` | `application.yml` | URL 白名单：`/system/auth/login`、`/system/auth/refresh`、`/test2/read-pptx`、`/test2/file-text`、`/workflow/**`、`/homework/**`、`/meeting/**`（实时媒体与聊天走自托管 LiveKit 的 7880/7881，不经过本服务；会议内身份是 `hostToken` / `attendeeToken`，离会接口 `POST /meeting/leave` 也靠它校验）、`/ppt/**`（PPT 讲稿生成，无状态接口）。`/doc-template/**` 自 2026-11-17 起移出白名单：生成 / 历史 / 详情 / 聊天记录 / AI 编辑 / 撤回全部要求登录并按 `creator` 隔离 |
 | 兜底 | `SecurityConfig` | `anyRequest().authenticated()`；静态资源与 `DispatcherType.ASYNC` 放行 |
 
 > 新增免登录接口优先使用 `@PermitAll`；批量前缀放行才写入 `permit-all-urls` 并同步本文档。
@@ -69,7 +69,7 @@
 >
 > **仍待整改**：`application.yml` 里 `/workflow/**` 上方的注释仍写着「`/run`、`/resume` 为 SSE 流」，而这两个端点已合并为 `POST /chat`（且 `/chat/**` **故意不放行**，要求登录）；注释误导，需随代码修正。
 
-### 2.5 接口清单（共 15 个 `@RestController` / 53 个接口）
+### 2.5 接口清单（共 16 个 `@RestController` / 56 个接口）
 
 > 下表路径均省略上下文前缀 `/api`。归属与共享相关接口的口径见 [adr/0006](./adr/0006-知识库与工作流归属与共享模型.md)。
 
@@ -80,9 +80,12 @@
 | 3 | `Test2Controller` | GET | `/test2/ping` | 连通性测试 | `CommonResult<String>` |
 | 4 | `Test2Controller` | GET | `/test2/read-pptx` | 读取本地 pptx 做解析验证（白名单放行） | `CommonResult<List<PptxPage>>` |
 | 5 | `FileController` | POST | `/infra/file/upload` | 文件上传（multipart） | `CommonResult<FileUploadRespVO>` |
-| 6 | `DocTemplateController` | POST | `/doc-template/generate` | 发起模板复刻生成 | `CommonResult<GenerationRespVO>` |
-| 7 | `DocTemplateController` | GET | `/doc-template/history` | 生成历史（可选 `limit`，按任务条数；每条内联 `docs` 文件摘要，`src` 为空、不签发 MinIO URL；首页「文档」tab 据此展开文件卡） | `CommonResult<List<GenerationHistoryRespVO>>` |
-| 8 | `DocTemplateController` | GET | `/doc-template/detail` | 生成详情（`id`） | `CommonResult<GenerationRespVO>` |
+| 6 | `DocTemplateController` | POST | `/doc-template/generate` | 发起模板复刻生成（登录；写入当前用户 creator） | `CommonResult<GenerationRespVO>` |
+| 7 | `DocTemplateController` | GET | `/doc-template/history` | 生成历史（登录；只返回当前用户 creator 的任务；可选 `limit`；每条内联 `docs` 文件摘要） | `CommonResult<List<GenerationHistoryRespVO>>` |
+| 8 | `DocTemplateController` | GET | `/doc-template/detail` | 生成详情（`id`；登录；非本人按生成记录不存在处理；`docs[].src` 指向当前版本文件） | `CommonResult<GenerationRespVO>` |
+| 8.1 | `DocChatController` | POST | `/doc-template/chat` | 一轮 AI 文档编辑（登录；SSE）。请求 `{rootFileId, instruction, selections[], history[]}`；事件 `status` / `assistant` / `version` / `error` / `done` | `SseEmitter` |
+| 8.2 | `DocChatController` | POST | `/doc-template/chat/undo` | 撤回某次编辑（登录；目标版本及全部后代置 superseded，当前版本回到父版本；目标助手消息及其后聊天消息一并失效，响应含落库的 `notice`） | `CommonResult<ChatUndoRespVO>` |
+| 8.3 | `DocChatController` | GET | `/doc-template/chat/history` | 某文档（根文件/工作区）的聊天记录（登录；按 creator 隔离；`rootFileId` 必填，`limit` 默认 200、上限 500；按时间正序） | `CommonResult<List<ChatMessageRespVO>>` |
 | 9 | `KbSpaceController` | GET | `/knowledge-base/space/list` | 空间列表（**按 creator 过滤**，只返回当前登录用户自己的空间，ADR 0006） | `CommonResult<List<SpaceRespVO>>` |
 | 10 | `KbSpaceController` | POST | `/knowledge-base/space/create` | 新建空间（默认私有） | `CommonResult<Long>` |
 | 11 | `KbSpaceController` | PUT | `/knowledge-base/space/update` | 更新空间 | `CommonResult<SpaceRespVO>` |

@@ -12,9 +12,9 @@
 | 数据库 | PostgreSQL（`127.0.0.1:5432/tb`）+ pgvector 扩展 |
 | 迁移方式 | **无迁移工具**：建表 SQL 手工放在 `backend/sql/`，增量变更用日期命名的补丁脚本（如 `index_and_column_fixes_20261023.sql`） |
 | 外键 | 全部为**逻辑外键**（无物理约束），下文「→」表示跨表引用 |
-| 通用审计列 | 业务表统一：`create_time/update_time TIMESTAMP 默认now`、`creator/updater BIGINT`、软删 `deleted BOOLEAN 默认false`（`kb_document` 例外用 `deleted_at`，`homework_file` 物理删除） |
+| 通用审计列 | 业务表统一：`create_time/update_time TIMESTAMP 默认now`、`creator/updater BIGINT`、软删 `deleted BOOLEAN 默认false`（`kb_document` 例外用 `deleted_at`，`homework_file` 物理删除；`doc_template_version` / `doc_template_chat_message` 为追加写不可变记录，只有 `creator/create_time` 与 `superseded`，不设 `updater/deleted`） |
 | `newsql/public.sql` | pg_dump 导出，**只含 7 张 system 表 + pgvector 扩展对象**；且内含 `DROP TABLE`，只作参考、禁止当迁移脚本执行 |
-| 表规模 | 单表 DDL 共 24 张（含 doc_template.sql 内 2 张、homework_grading_result.sql、vector_store.sql）；`restore_dropped_tables_20261022.sql` 另含旧版批改两表与 `vector_store` 的历史恢复语句，仅作参考，现行建表以本目录每表脚本为准 |
+| 表规模 | 单表 DDL 共 26 张（含 doc_template.sql 内 2 张、homework_grading_result.sql、doc_template_version.sql、doc_template_chat_message.sql、vector_store.sql）；`restore_dropped_tables_20261022.sql` 另含旧版批改两表与 `vector_store` 的历史恢复语句，仅作参考，现行建表以本目录每表脚本为准 |
 
 ## 2. system 模块（RBAC 与认证）
 
@@ -40,7 +40,13 @@
 
 **doc_template_generation** — 生成任务表：`template_file_id` → infra_file；`space_id` → kb_space（空=不启用检索）；`description VARCHAR(500)`；`quality` 480p/720p/1080p；`doc_count`；**`status SMALLINT` 0=生成中/1=成功/2=部分成功/3=失败**；`error_msg`；`duration_ms`。idx(template_file_id)、idx(space_id)。
 
-**doc_template_file** — 生成结果文件表：`generation_id` → doc_template_generation；`file_id` → infra_file；`name`；`type` WORD/PDF/MARKDOWN；`size`；`tag` 份数定位标签；`summary`；`sort`。idx(generation_id)、idx(file_id)。
+**doc_template_file** — 生成结果文件表（根行同时是「文档工作区」）：`generation_id` → doc_template_generation；`file_id` → infra_file（v1 文件）；`name`；`type` WORD/PDF/MARKDOWN；`size`；`tag` 份数定位标签；`summary`；`sort`；`current_version_id` → doc_template_version（`NULL` = 当前就是根文件 v1）；`creator` 为文档所有者（生成 / 历史 / 详情 / 编辑均按它隔离）。idx(generation_id)、idx(file_id)。
+
+> 归属迁移：`doc_template_chat_edit_20261117.sql` 把存量 `doc_template_generation.creator` / `doc_template_file.creator` 统一刷为 `2902017108@qq.com`（`system_user.id=1`）；新生成由应用写入当前登录用户。
+
+**doc_template_version** — 文档编辑版本表（根文件即 v1，本表只存 v2+）：`root_file_id` → doc_template_file.id；`file_id` → infra_file（该版本文档）；`parent_version_id`（`NULL` = 父级是 v1 根文件）；`revision`（2、3…，`(root_file_id, revision)` 唯一）；`edit_summary`；`edit_ops JSONB`（审计）；`creator`；`create_time`；`superseded`（撤回时目标版本及全部后代置 TRUE）。idx(parent_version_id)、idx(root_file_id, superseded)。撤回把 `doc_template_file.current_version_id` 回到目标版本的 `parent_version_id`。
+
+**doc_template_chat_message** — 文档 AI 聊天消息表（按根文件 / 工作区归属，2026-11-17 新增）：`root_file_id` → doc_template_file.id；`role` = `user` / `assistant` / `system`；`content` 扁平文本（LLM 上下文与兜底展示）；`blocks JSONB`（助手结构化回复 p / ul）；`selections JSONB`（用户消息的选区上下文）；`version_id` → doc_template_version（本次编辑产生的版本，无编辑为空）；`superseded`（撤回时目标消息及其后消息置 TRUE）；`error`（失败回复）；`creator`；`create_time`。idx(root_file_id, id)、idx(root_file_id, version_id) WHERE version_id IS NOT NULL。打开文档时由 `GET /doc-template/chat/history` 回放；撤回与版本级联同步失效，聊天记录只对根文件 creator 可见。
 
 ## 5. homework 模块
 
