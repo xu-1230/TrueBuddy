@@ -60,16 +60,16 @@
 | 机制 | 位置 | 说明 |
 | --- | --- | --- |
 | `@PermitAll` | 方法 / 类 | 标注即免登录（现有 `AuthController.login`） |
-| `tb.security.permit-all-urls` | `application.yml` | URL 白名单：`/system/auth/login`、`/system/auth/refresh`、`/test2/read-pptx`、`/test2/file-text`、`/workflow/**`、`/homework/**`、`/meeting/**`（实时媒体与聊天走自托管 LiveKit 的 7880/7881，不经过本服务；会议内身份是 `hostToken` / `attendeeToken`，离会接口 `POST /meeting/leave` 也靠它校验）、`/ppt/**`（PPT 讲稿生成，无状态接口）。`/doc-template/**` 自 2026-11-17 起移出白名单：生成 / 历史 / 详情 / 聊天记录 / AI 编辑 / 撤回全部要求登录并按 `creator` 隔离 |
+| `tb.security.permit-all-urls` | `application.yml` | URL 白名单：`/system/auth/login`、`/system/auth/refresh`、`/test2/read-pptx`、`/test2/file-text`、`/homework/**`、`/meeting/**`（实时媒体与聊天走自托管 LiveKit 的 7880/7881，不经过本服务；会议内身份是 `hostToken` / `attendeeToken`，离会接口 `POST /meeting/leave` 也靠它校验）、`/ppt/**`（PPT 讲稿生成，无状态接口）。`/doc-template/**` 自 2026-11-17 起移出白名单：生成 / 历史 / 详情 / 聊天记录 / AI 编辑 / 撤回全部要求登录并按 `creator` 隔离；**`/workflow/**` 同日移出**（ADR 0007）：列表 / 详情 / 可见性 / fork / 删除全部要求登录 |
 | 兜底 | `SecurityConfig` | `anyRequest().authenticated()`；静态资源与 `DispatcherType.ASYNC` 放行 |
 
 > 新增免登录接口优先使用 `@PermitAll`；批量前缀放行才写入 `permit-all-urls` 并同步本文档。
 >
 > **已整改**：`/test2/kb-parse*` 四条残留已从白名单清理，当前 `permit-all-urls` 与 `Test2Controller` 实际端点一致。
 >
-> **仍待整改**：`application.yml` 里 `/workflow/**` 上方的注释仍写着「`/run`、`/resume` 为 SSE 流」，而这两个端点已合并为 `POST /chat`（且 `/chat/**` **故意不放行**，要求登录）；注释误导，需随代码修正。
+> **已整改**：`application.yml` 的 `/workflow/**` 白名单与过期注释已随 ADR 0007 一并移除（执行入口仍是 `POST /chat`，要求登录）。
 
-### 2.5 接口清单（共 16 个 `@RestController` / 56 个接口）
+### 2.5 接口清单（共 16 个 `@RestController` / 58 个接口）
 
 > 下表路径均省略上下文前缀 `/api`。归属与共享相关接口的口径见 [adr/0006](./adr/0006-知识库与工作流归属与共享模型.md)。
 
@@ -80,7 +80,7 @@
 | 3 | `Test2Controller` | GET | `/test2/ping` | 连通性测试 | `CommonResult<String>` |
 | 4 | `Test2Controller` | GET | `/test2/read-pptx` | 读取本地 pptx 做解析验证（白名单放行） | `CommonResult<List<PptxPage>>` |
 | 5 | `FileController` | POST | `/infra/file/upload` | 文件上传（multipart） | `CommonResult<FileUploadRespVO>` |
-| 6 | `DocTemplateController` | POST | `/doc-template/generate` | 发起模板复刻生成（登录；写入当前用户 creator） | `CommonResult<GenerationRespVO>` |
+| 6 | `DocTemplateController` | POST | `/doc-template/generate` | 发起模板复刻生成（登录；写入当前用户 creator）；请求 `templateFileId` + `spaceIds[]`（多选知识库，空 / 只含 `"default"` = 不启用检索；单值 `spaceId` 已移除，见 ADR 0008）+ `description` + `quality` | `CommonResult<GenerationRespVO>` |
 | 7 | `DocTemplateController` | GET | `/doc-template/history` | 生成历史（登录；只返回当前用户 creator 的任务；可选 `limit`；每条内联 `docs` 文件摘要） | `CommonResult<List<GenerationHistoryRespVO>>` |
 | 8 | `DocTemplateController` | GET | `/doc-template/detail` | 生成详情（`id`；登录；非本人按生成记录不存在处理；`docs[].src` 指向当前版本文件） | `CommonResult<GenerationRespVO>` |
 | 8.1 | `DocChatController` | POST | `/doc-template/chat` | 一轮 AI 文档编辑（登录；SSE）。请求 `{rootFileId, instruction, selections[], history[]}`；事件 `status` / `assistant` / `version` / `error` / `done` | `SseEmitter` |
@@ -104,10 +104,12 @@
 | 24 | `WorkflowController` | GET | `/workflow/text` | **联调专用**：同步执行 classpath 内置定义一次，把终态状态键打到控制台，不是业务接口 | `void`（无包装） |
 | 25 | `WorkflowController` | POST | `/workflow/save` | 保存工作流定义（`id` 空 = 新建，非空 = 更新；画布 JSON 整存，**不做版本管理**；返回 String 类型的雪花 id） | `CommonResult<String>` |
 | 26 | `WorkflowController` | GET | `/workflow/detail` | 工作流详情（query 参数 `workflow_id`；含 `schemaJson` 画布字符串与 `builtin` / `stepCount` / `visibility` / `mine`） | `CommonResult<WorkflowDetailRespVO>` |
-| 27 | `WorkflowController` | GET | `/workflow/list` | 工作流列表（不含 `schemaJson`，按更新时间倒序；含 `builtin` / `stepCount`；**按 creator 过滤**——登录见自己的 + builtin，匿名只见 builtin） | `CommonResult<List<WorkflowVO>>` |
-| 28 | `WorkflowController` | PUT | `/workflow/visibility` | 切换工作流可见性（`workflow_id` + `visibility` 0=私有/1=公有；**仅创建者**，builtin 拒绝，非法值 400） | `CommonResult<Boolean>` |
-| 29 | `WorkflowController` | GET | `/workflow/public-list` | 他人公有工作流列表（画布页「公有库」；不含 `schemaJson`，带 `creatorName`；匿名可见全部公有行——白名单 URL 级现状） | `CommonResult<List<PublicWorkflowVO>>` |
+| 27 | `WorkflowController` | GET | `/workflow/list` | 工作流列表（不含 `schemaJson`，按更新时间倒序；含 `visibility` / `builtin` / `stepCount`；**要求登录**，按 creator 过滤 = 自己的 + builtin） | `CommonResult<List<WorkflowVO>>` |
+| 28 | `WorkflowController` | PUT | `/workflow/visibility` | 切换工作流可见性（`workflow_id` + `visibility` 0=私有/1=公有；**仅创建者**，builtin 拒绝，非法值 400；更新影响 0 行按不存在 400） | `CommonResult<Boolean>` |
+| 29 | `WorkflowController` | GET | `/workflow/public-list` | 他人公有工作流列表（列表页「公有库」；不含 `schemaJson`，带 `creatorName`；**要求登录**，只返回他人的公有行） | `CommonResult<List<PublicWorkflowVO>>` |
 | 30 | `WorkflowController` | POST | `/workflow/fork` | fork 工作流为独立副本（`workflow_id`；本人空间或他人公有可 fork，**builtin 显式拒绝**；拷名称「原名（副本）」/说明/画布，草稿态私有归属自己，返回副本 id） | `CommonResult<String>` |
+| 30a | `WorkflowController` | PUT | `/workflow/rename` | 重命名本人工作流（`workflow_id` + `name`；**仅创建者**，builtin 拒绝；名称 trim 后非空且 ≤100 字符；只改名称，不触碰画布定义） | `CommonResult<Boolean>` |
+| 30b | `WorkflowController` | DELETE | `/workflow/delete` | 软删除本人工作流（`workflow_id`；**仅创建者**，builtin 拒绝）；会话 / 执行记录不级联，后续用该工作流运行会按「不存在」拒绝 | `CommonResult<Boolean>` |
 | 31 | `ChatController` | POST | `/chat` | **执行入口（SSE）**：`produces = text/event-stream`，请求体 `{conversationId, workflowId?, message?}`；首轮与人工确认续跑同一端点，画布**不内联提交**（靠 `workflowId` 引用已落库定义）。**直跑闸**：会话绑定的工作流须 `own OR builtin`，否则 403 提示 fork。事件协议见 `ChatProtocol`，详见 [doc-workflow.md](./doc-workflow.md) §2.2 | `SseEmitter` |
 | 32 | `ChatController` | POST | `/chat/conversation` | 新建会话（`workflowId` 必须已落库；**直跑闸**同 31：`own OR builtin`） | `CommonResult<ConversationVO>` |
 | 33 | `ChatController` | GET | `/chat/conversation/list` | 会话列表（按最近活跃倒序） | `CommonResult<List<ConversationVO>>` |
@@ -134,11 +136,11 @@
 
 > 接口 24~33 属**自定义工作流模块**（包根 `org.example.textflow`），分两块：
 >
-> - **定义持久化与归属共享（接口 25~30）**：工作流定义落在 `workflow` 表（脚本 `sql/workflow.sql`，表结构见 [doc-workflow.md](./doc-workflow.md) §6）。`POST /workflow/save` 新建 / 更新定义（`id` 空 = 新建、非空 = 更新；`id` 全程为**字符串形式**的雪花 id，避免前端 JS 丢精度）；`GET /workflow/detail` 返回含 `schemaJson` 的详情；`GET /workflow/list` 返回不含画布的列表并**按 creator 过滤**（登录见自己的 + builtin，匿名只见 builtin）。详情与列表都带 `builtin`（是否内置模板）与 `stepCount`（顶层节点数），供批改页工作流下拉分组与「N 个步骤」展示；详情另带 `visibility` / `mine`，画布页据此呈现只读形态。归属共享三接口：`PUT /workflow/visibility`（仅创建者）、`GET /workflow/public-list`（他人公有）、`POST /workflow/fork`（深拷贝副本，他人公有流运行的唯一前置通道）。内置模板「标准批改作业」由启动初始化器在表为空时写入（固定 id，幂等）。
+> - **定义持久化与归属共享（接口 25~30、30a、30b）**：工作流定义落在 `workflow` 表（脚本 `sql/workflow.sql`，表结构见 [doc-workflow.md](./doc-workflow.md) §6）。`POST /workflow/save` 新建 / 更新定义（`id` 空 = 新建、非空 = 更新；`id` 全程为**字符串形式**的雪花 id，避免前端 JS 丢精度）；`GET /workflow/detail` 返回含 `schemaJson` 的详情；`GET /workflow/list` 返回不含画布的列表并**按 creator 过滤**（登录用户见自己的 + builtin）。详情与列表都带 `builtin`（是否内置模板）与 `stepCount`（顶层节点数），供列表卡片与批改页下拉分组；**列表带 `visibility`**（卡片渲染与切换），详情另带 `mine`（画布只读判定）。归属共享接口：`PUT /workflow/visibility`（仅创建者）、`GET /workflow/public-list`（他人公有）、`POST /workflow/fork`（深拷贝副本，他人公有流运行的唯一前置通道）、`PUT /workflow/rename`（只改名称）、`DELETE /workflow/delete`（软删除，builtin 拒绝）。内置模板「标准批改作业」由启动初始化器写入（固定 id，幂等）。
 > - **执行链路（接口 31~33）**：入口是 **`POST /chat`**（不再是 `POST /workflow/run`，也没有 `POST /workflow/resume`）。请求体 `{conversationId, workflowId?, message?}`：无 `conversationId` 时先建会话，**首轮与人工确认续跑共用同一端点**，靠「该会话最新一条执行记录的状态」分流（客户端不传状态）。**直跑闸**：建会话与执行都校验会话绑定的工作流须 `own OR builtin`，他人的公有流一律 403 提示先 fork。事件帧为 `conversation.chat.in_progress` → `conversation.message.completed`\*（节点产出 / 表单卡片 / 正文）→ 终态帧 `conversation.chat.{completed,failed,requires_action}`，每轮都以 `done` 收尾（**终态看帧，不看流是否结束**）。会话与执行实例落 `workflow_conversation` / `workflow_run`；**中断点与图 checkpoint 仍是内存 Map**（`executeId` → `InterruptionMetadata`、`MemorySaver`），进程重启后续跑会退化为新执行。LLM 节点注入真实 `ChatClient`（知识库检索工具仍为占位）。
 >
-> 放行与鉴权的分工：`/workflow/**` 免登录（联调方便），**`/chat/**` 不在白名单内**——会话与执行实例要记 `creator` 并按用户隔离，因此要求登录（这也是它不挂在 `/workflow` 前缀下的原因）。
-> 前端接口层 `frontend/src/api/workflow.js`：`CHAT_API`（`chat` = `/api/chat`，**带** `/api` 前缀，因为 `fetch` 不走 axios 实例；`conversation` / `conversationList` **不带**前缀）与 `WORKFLOW_REST_API`（`save` / `detail` / `list` / `visibility` / `publicList` / `fork`，走 axios，避免与 `baseURL` 重复拼接），导出 `buildChatBody` / `buildCardSubmitBody` / `buildRunDefinition` / `buildWorkflowSchema` / `saveWorkflow` / `getWorkflowDetail` / `listWorkflows` / `updateWorkflowVisibility` / `getPublicWorkflows` / `forkWorkflow` / `createConversation` / `listConversations`。SSE 读取封装在 `frontend/src/utils/event-stream.js` 的 `readEventStream`（`fetch` + `ReadableStream`，因 `EventSource` 只支持 GET、也带不了请求体；讲稿播报 50 复用同一份），事件到状态快照的归约在 `views/workflow2/utils/run-state.js`。消费方：画布页 `views/workflow2/WorkflowView.vue`（建会话 / 试运行 / 节点下方人工确认卡片 / 公有库抽屉与 fork）、批改页 `views/homework/HomeworkGradingView.vue`（工作流下拉 `listWorkflows`）与首页 `views/system/SystemHomeView.vue`（`listWorkflows` 拉动态）。
+> 放行与鉴权的分工：`/workflow/**` 与 `/chat/**` 都要求登录（ADR 0007）；会话与执行实例要记 `creator` 并按用户隔离。
+> 前端接口层 `frontend/src/api/workflow.js`：`CHAT_API`（`chat` = `/api/chat`，**带** `/api` 前缀，因为 `fetch` 不走 axios 实例；`conversation` / `conversationList` **不带**前缀）与 `WORKFLOW_REST_API`（`save` / `detail` / `list` / `visibility` / `publicList` / `fork` / `rename` / `delete`，走 axios，避免与 `baseURL` 重复拼接），导出 `buildChatBody` / `buildCardSubmitBody` / `buildRunDefinition` / `buildWorkflowSchema` / `saveWorkflow` / `getWorkflowDetail` / `listWorkflows` / `updateWorkflowVisibility` / `getPublicWorkflows` / `forkWorkflow` / `renameWorkflow` / `deleteWorkflow` / `createConversation` / `listConversations`（接口 25~33、30a、30b）。SSE 读取封装在 `frontend/src/utils/event-stream.js` 的 `readEventStream`（`fetch` + `ReadableStream`，因 `EventSource` 只支持 GET、也带不了请求体；讲稿播报 50 复用同一份），事件到状态快照的归约在 `views/workflow2/utils/run-state.js`。消费方：列表页 `views/workflow2/WorkflowListView.vue`（我的工作流 + 公有库、fork / 可见性 / 重命名 / 删除）、画布页 `views/workflow2/WorkflowView.vue`（按路由 id 载入、建会话 / 试运行 / 节点下方人工确认卡片 / 只读画布 fork）、批改页 `views/homework/HomeworkGradingView.vue`（工作流下拉 `listWorkflows`）与首页 `views/system/SystemHomeView.vue`（`listWorkflows` 拉动态）。
 
 ### 2.6 待整改（后端）
 
@@ -214,7 +216,7 @@ service.interceptors.response.use(
 | `file.js` | `uploadFile` | 接口 5 |
 | `knowledgebase.js` | `getSpaceList`、`getPublicSpaceList`、`updateSpaceVisibility(id, visibility)`、`forkSpace(id)`、`createSpace`、`updateSpace`、`deleteSpace`、`getDocumentList`、`createDocument`、`deleteDocument`、`getChunkList`、`uploadDocument`、`getParseStatus`、`vectorizeDocument`、`abandonDocument` | 接口 9~23 |
 | `homework.js` | `uploadHomeworkFiles(files, paths, folderName, onUploadProgress)`、`submitGrading(payload)`、`listHomeworkTasks(limit)`、`getHomeworkTaskDetail(taskId)`、`startHomeworkGrading(taskId)`、`writeHomeworkResults(taskId, payload)` | 接口 34~39：上传成功后串行提交批改（上传带进度回调）；任务列表/详情供历史抽屉，start 与 results 由执行链路调用（见 [doc-homework.md](./doc-homework.md) §6）。历史的 `gradeHomework` / `getGradingHistory` / `getGradingDetail` / `exportGradingResult` 属演示态，已随页面改造移除 |
-| `workflow.js` | `buildChatBody`、`buildCardSubmitBody`、`buildRunDefinition`、`buildWorkflowSchema`、`saveWorkflow`、`getWorkflowDetail`、`listWorkflows`、`updateWorkflowVisibility(workflowId, visibility)`、`getPublicWorkflows()`、`forkWorkflow(workflowId)`、`createConversation`、`listConversations`；常量 `CHAT_API`（SSE / 会话地址，其中 `chat` **含** `/api` 前缀）与 `WORKFLOW_REST_API`（REST 路径，无前缀） | 接口 25~33：`views/workflow2/WorkflowView.vue`（画布编辑 + 保存对话框 + 按 `workflow_id` 打开 + 公有库抽屉 / fork / 可见性切换 + 建会话 + 试运行 + 节点下方人工确认卡片）、`views/homework/HomeworkGradingView.vue` 与 `views/system/SystemHomeView.vue`（`listWorkflows`）；SSE 读取封装见 `src/utils/event-stream.js`。**没有轮询兜底**：`GET /workflow/get_process` 从未实现，终态只认 SSE 帧 |
+| `workflow.js` | `buildChatBody`、`buildCardSubmitBody`、`buildRunDefinition`、`buildWorkflowSchema`、`saveWorkflow`、`getWorkflowDetail`、`listWorkflows`、`updateWorkflowVisibility(workflowId, visibility)`、`getPublicWorkflows()`、`forkWorkflow(workflowId)`、`renameWorkflow(workflowId, name)`、`deleteWorkflow(workflowId)`、`createConversation`、`listConversations`；常量 `CHAT_API`（SSE / 会话地址，其中 `chat` **含** `/api` 前缀）与 `WORKFLOW_REST_API`（REST 路径，无前缀） | 接口 25~33、30a、30b：`views/workflow2/WorkflowListView.vue`（我的工作流 / 公有库、fork / 可见性 / 重命名 / 删除）、`views/workflow2/WorkflowView.vue`（画布编辑 + 保存对话框 + 按路由 `:id` 打开 + 只读画布 fork + 建会话 + 试运行 + 节点下方人工确认卡片）、`views/homework/HomeworkGradingView.vue` 与 `views/system/SystemHomeView.vue`（`listWorkflows`）；SSE 读取封装见 `src/utils/event-stream.js`。**没有轮询兜底**：`GET /workflow/get_process` 从未实现，终态只认 SSE 帧 |
 | `meeting.js` | `createMeeting`、`joinMeeting`、`leaveMeeting`、`getMeetingDetail`、`getMeetingState`、`sendMeetingMessage`、`closeMeeting`、`getDigitalStatus`；常量 `MEETING_REST_API` | 接口 31~38：`createMeeting` 由 **`views/ppt/index.vue`**（PPT 页的「创建会议」入口）调用，其余在 `views/meeting/MeetingConsoleView.vue`（老师控制台）与 `views/meeting/MeetingRoomView.vue`（学生会议室）。`leaveMeeting` 走 `navigator.sendBeacon`（组件卸载路径上普通请求会被浏览器掐掉），因此带 `/api` 前缀而非用 axios 实例。实时能力不在本文件内：LiveKit 房间客户端见 `views/meeting/hooks/useLiveKitRoom.js`（屏幕共享带 `audio: true`，学生端 attach `screen_share_audio`），「在线成员 vs 入会台账」的裁决见 `views/meeting/utils/attendees.js`，主持人凭据的本地存取见 `src/utils/hostSession.js`（PPT 页写、控制台读） |
 | `ppt.js` | `optimizeSpeech(payload, signal)`；常量 `PPT_REST_API` | 接口 39：`views/ppt/index.vue`（备注区星形按钮 = 本页、工具栏按钮 = 全部）+ 两个对比弹窗（`views/ppt/components/ai/`）。整篇是**一次长请求**，离开页面用 `AbortController` 中止。**播报不走本文件**：放映页用 `@/utils/event-stream` 直接读接口 40 的 SSE，播放与口型在 `views/ppt/utils/speech-player.js`（见 docs/16 §5.7） |
 
@@ -291,7 +293,7 @@ async function load() {
 | `DocTemplateController` | `/doc-template` | `/api/doc-template` |
 | `KbSpaceController` / `KbDocumentController` / `KbDocumentChunkController` | `/knowledge-base/{space,document,chunk}` | `/api/knowledge-base/*` |
 | `WorkflowController` | `/workflow` | `/api/workflow` |
-| `ChatController` | `/chat` | `/api/chat`（SSE 执行入口，**不挂在 `/workflow` 下**：`/workflow/**` 免登录而 `/chat/**` 要求登录） |
+| `ChatController` | `/chat` | `/api/chat`（SSE 执行入口，**不挂在 `/workflow` 下**：执行链路与会话归属独立成前缀；`/workflow/**` 与 `/chat/**` 自 ADR 0007 起都要求登录） |
 | `HomeworkController` | `/homework` | `/api/homework` |
 | `MeetingController` | `/meeting` | `/api/meeting`（实时媒体与聊天走自托管 LiveKit，不经过本服务的 Controller） |
 | `PptSpeechController` | `/ppt/speech` | `/api/ppt/speech` |
