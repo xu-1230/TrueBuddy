@@ -51,6 +51,10 @@ public class StartNode implements NodeAction {
                 continue;
             }
             Object value = state == null ? null : state.value(name).orElse(null);
+            // 只有「没提供这个键」才取默认值：显式 0 / false / [] / "" 都是调用方的真实取值
+            if (value == null && field.getDefaultValue() != null) {
+                value = field.getDefaultValue();
+            }
             if (isRequired(field) && isMissing(value)) {
                 throw new IllegalStateException(missingMessage(field));
             }

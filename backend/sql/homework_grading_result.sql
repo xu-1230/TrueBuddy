@@ -16,9 +16,10 @@ CREATE TABLE IF NOT EXISTS homework_grading_result (
     student         VARCHAR(255) NOT NULL,                   -- 学生姓名（模型解析；空值由服务端填「未署名」）
     score           NUMERIC(5,1),                            -- 得分（可空）
     grade           VARCHAR(32),                             -- 等级（优 / 良 / 及格…，模型产出）
-    comment         TEXT,                                    -- 评语
-    deductions      JSONB        NOT NULL DEFAULT '[]'::jsonb, -- 扣分明细（字符串数组）
+    comment         TEXT,                                    -- LEGACY：旧评语列，已迁移到 custom，停止写入
+    deductions      JSONB        NOT NULL DEFAULT '[]'::jsonb, -- LEGACY：旧扣分明细列（结构化列表），已迁移到 custom，停止写入
     read_files      JSONB        NOT NULL DEFAULT '[]'::jsonb, -- 模型实际读取的文件相对路径（字符串数组）
+    custom          JSONB        NOT NULL DEFAULT '{}'::jsonb, -- 自定义导出列的值：key → 文本/数字
     conversation_id VARCHAR(64),                             -- 产出本批结果的工作流会话 id（溯源）
     create_time     TIMESTAMP    NOT NULL DEFAULT now(),     -- 创建时间
     update_time     TIMESTAMP    NOT NULL DEFAULT now(),     -- 更新时间（覆盖式回写时刷新）
@@ -30,11 +31,15 @@ COMMENT ON COLUMN homework_grading_result.task_id         IS '所属任务 id（
 COMMENT ON COLUMN homework_grading_result.student         IS '学生姓名（模型解析，未署名时为「未署名」）';
 COMMENT ON COLUMN homework_grading_result.score           IS '得分（可空）';
 COMMENT ON COLUMN homework_grading_result.grade           IS '等级（优 / 良 / 及格…）';
-COMMENT ON COLUMN homework_grading_result.comment         IS '评语';
-COMMENT ON COLUMN homework_grading_result.deductions      IS '扣分明细（JSONB 字符串数组）';
+COMMENT ON COLUMN homework_grading_result.comment         IS 'LEGACY：旧评语列，已迁移到 custom，停止写入';
+COMMENT ON COLUMN homework_grading_result.deductions      IS 'LEGACY：旧扣分明细列（JSONB 字符串数组），已迁移到 custom，停止写入';
 COMMENT ON COLUMN homework_grading_result.read_files      IS '模型实际读取的文件相对路径（JSONB 字符串数组）';
+COMMENT ON COLUMN homework_grading_result.custom         IS '自定义导出列的值（JSONB 对象，key → 文本/数字）';
 COMMENT ON COLUMN homework_grading_result.conversation_id IS '产出本批结果的工作流会话 id（溯源）';
 
 -- 按任务读取（历史回看按 id 升序 = 名单顺序）与覆盖式删除都走 task_id
 CREATE INDEX IF NOT EXISTS idx_homework_grading_result_task_id
     ON homework_grading_result (task_id);
+
+-- 已建表的环境补列（新环境由上面的 CREATE TABLE 直接建出）
+ALTER TABLE homework_grading_result ADD COLUMN IF NOT EXISTS custom JSONB NOT NULL DEFAULT '{}'::jsonb;

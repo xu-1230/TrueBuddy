@@ -112,11 +112,11 @@
 | 32 | `ChatController` | POST | `/chat/conversation` | 新建会话（`workflowId` 必须已落库；**直跑闸**同 31：`own OR builtin`） | `CommonResult<ConversationVO>` |
 | 33 | `ChatController` | GET | `/chat/conversation/list` | 会话列表（按最近活跃倒序） | `CommonResult<List<ConversationVO>>` |
 | 34 | `HomeworkController` | POST | `/homework/upload` | 作业文件夹批量上传（multipart：`files` + `paths`（与 `files` 顺序一一对应的相对路径）+ 可选 `folderName`），落 `homework_task` / `homework_file` 并返回文件树 | `CommonResult<HomeworkUploadRespVO>` |
-| 35 | `HomeworkController` | POST | `/homework/grade` | 提交批改（`taskId` / `spaceIds` / `files` / `description` / `exportFormat` / `workflowId`）；当前仅接收并记录 | `CommonResult<Boolean>` |
-| 36 | `HomeworkController` | GET | `/homework/task/list` | 批改任务列表（历史抽屉；可选 `limit`，最近 N 条：id/名称/状态/时间/记录数） | `CommonResult<List<HomeworkTaskItemVO>>` |
-| 37 | `HomeworkController` | GET | `/homework/task/detail` | 批改任务详情（`taskId`；配置 + 文件树 + 逐学生评分只读回看） | `CommonResult<HomeworkTaskDetailRespVO>` |
+| 35 | `HomeworkController` | POST | `/homework/grade` | 提交批改（`taskId` / `spaceIds` / `files` / `description` / **`scoreMin` / `scoreMax` / `passScore` / `customFields`** / `workflowId`）；落库存档并校验区间 / 列定义（400）；`exportFormat` 已 deprecated | `CommonResult<Boolean>` |
+| 36 | `HomeworkController` | GET | `/homework/task/list` | 批改任务列表（历史抽屉；可选 `limit`，最近 N 条：id/名称/状态/时间/记录数/评分区间） | `CommonResult<List<HomeworkTaskItemVO>>` |
+| 37 | `HomeworkController` | GET | `/homework/task/detail` | 批改任务详情（`taskId`；配置 + 评分区间 + 自定义列定义 + 文件树 + 逐学生评分（`custom`）只读回看） | `CommonResult<HomeworkTaskDetailRespVO>` |
 | 38 | `HomeworkController` | POST | `/homework/task/start` | 开始执行批改（`taskId`；状态 0→1，前端在 `/grade` 后、跑工作流前调用） | `CommonResult<Boolean>` |
-| 39 | `HomeworkController` | POST | `/homework/{taskId}/results` | **终态回写**：逐学生评分覆盖式落库（先删后插，以最后一次为准）+ 任务状态收敛 2/3/4；取消的执行不回写 | `CommonResult<HomeworkResultWriteRespVO>`（written / missed） |
+| 39 | `HomeworkController` | POST | `/homework/{taskId}/results` | **终态回写**：逐学生评分（`student/score/grade/readFiles/custom`）覆盖式落库（先删后插，以最后一次为准）+ 任务状态收敛 2/3/4；取消的执行不回写 | `CommonResult<HomeworkResultWriteRespVO>`（written / missed） |
 | 40 | `HomeworkFileTextController` | GET | `/test2/file-text` | 读取作业文件文本，逐条返回、单文件失败不影响整批（HTTP 恒 200）；内部用模拟批改请求，**是联调桩，不是业务接口** | `CommonResult<HomeworkFileTextRespVO>` |
 | 41 | `MeetingController` | POST | `/meeting/create` | 创建会议（**入口在 PPT 页**：建会后本页进放映、控制台另开标签页，见 [16](./doc-lecture.md) §5.6）：返回会议号、入会链接与主持人凭据 | `CommonResult<MeetingCreateRespVO>` |
 | 42 | `MeetingController` | POST | `/meeting/join` | 学生入会（会议号 + 昵称），返回参会凭据与会议初始数据；**不限人数**（上限闸门已作废，见 ADR-0001） | `CommonResult<MeetingJoinRespVO>` |

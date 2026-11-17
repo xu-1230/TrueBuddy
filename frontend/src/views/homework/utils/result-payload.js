@@ -26,13 +26,31 @@ const scoreOf = (value) => {
 }
 
 /**
+ * 自定义导出列归一：只接受对象（模型偶尔把 custom 写成 JSON 字符串，解析一次）。
+ * 静态列的默认值由服务端按任务定义合并，前端不在这里重复填。
+ */
+const customOf = (value) => {
+  if (value == null) return {}
+  if (typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
+
+/**
  * 运行结果 → 回写请求体
  *
  * @param {object} options 选项
  * @param {Array} options.records 逐学生记录（字段名来自输出节点契约 / 历史落库行）
  * @param {object|null} [options.statistics] 汇总节点的产出（仅透传给服务端记日志）
  * @param {string|number|null} [options.conversationId] 产出本批结果的工作流会话 id
- * @returns {{conversationId: string, statistics: object|null, records: Array<{student: string, score: number|null, grade: string, comment: string, deductions: string[], readFiles: string[]}>}}
+ * @returns {{conversationId: string, statistics: object|null, records: Array<{student: string, score: number|null, grade: string, custom: object, readFiles: string[]}>}}
  */
 export function buildResultWritePayload({ records, statistics, conversationId }) {
   return {
@@ -42,8 +60,7 @@ export function buildResultWritePayload({ records, statistics, conversationId })
       student: textOf(record?.student),
       score: scoreOf(record?.score),
       grade: textOf(record?.grade),
-      comment: textOf(record?.comment),
-      deductions: listOf(record?.deductions).map(textOf),
+      custom: customOf(record?.custom),
       readFiles: listOf(record?.readFiles).map(textOf),
     })),
   }

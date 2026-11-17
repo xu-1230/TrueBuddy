@@ -505,7 +505,7 @@ data: {"conversation_id":"…","execute_id":"…"}
 - **校验**：`name` 必填且 ≤100 字符，`description` ≤500 字符，`schemaJson` 必须是合法 JSON 且连线 `id` 非空、全图唯一（复用 `WorkflowProcessLoader#parse`）；失败返回 `code = 400`，`message` 可直接展示。
 - **id 全程按 String 传递**：19 位雪花 ID 超出 JS 安全整数范围，入参与出参的 `id` 都是字符串（`WorkflowSaveReqVO#id` 与各 VO 的 `id` 字段均为 `String`），仓库层写入时用 `CAST(? AS BIGINT)` 显式转换。
 - **列表不返回 `schemaJson`**（画布可能很大），但服务端会读取它统计 `stepCount`；`WorkflowVO` / `WorkflowDetailRespVO` 都带 `builtin`（是否内置模板，按固定 id 判定）与 `stepCount`（顶层节点数，迭代体子块不计入），供前端下拉分组与「N 个步骤」展示。
-- **内置模板**：`WorkflowDefinitionInitializer`（`ApplicationRunner`）在表内**无未删除记录**时，把 `resources/workflow/standard-grading.json` 写入为一条固定 id（`1000000000000000001`）的「标准批改作业」记录；幂等——表里有记录即跳过，不覆盖用户数据，初始化失败只告警、不阻断启动。**注意：改种子文件不会更新已存在的库**，生效方式见 [specs/2026-10-14-批改作业工作流定义替换.md](./specs/2026-10-14-批改作业工作流定义替换.md) §6；该模板的定义内容与结构同文 §3。
+- **内置模板**：`WorkflowDefinitionInitializer`（`ApplicationRunner`）每次启动读取 `resources/workflow/standard-grading.json`，与库内固定 id（`1000000000000000001`）的 `schema_json` 对比；不同则按固定 id `upsert`（软删行恢复、表内已有其它工作流也补内置行），schema 相同则跳过。内置模板在 UI 层禁止保存修改，因此 seed 是唯一源码；非内置工作流完全不受影响。初始化失败只告警、不阻断启动。区间与自定义导出列的结构见 [specs/2026-11-17-作业批改评分区间与自定义导出列.md](./specs/2026-11-17-作业批改评分区间与自定义导出列.md) §4。
 - **与执行链路的关系**：`WorkflowServiceImpl#getProcess`（第 60~68 行）对**数字 id 读 `workflow` 表的 `schema_json`**（读库路径每次都查库，改定义立即生效），只有非数字 id（联调用的 `"text"`）回落 classpath `text.json`（该路径进程内首次读取后缓存，改文件需重启）。因此**运行时的定义以库内记录为准**。
 - 索引：`idx_workflow_name ON workflow(name) WHERE deleted = FALSE`（**非唯一**，fork 副本命名防撞靠应用层循环 `selectIdByName`，重试上限 99 次）。
 - 脚本使用 `CREATE TABLE IF NOT EXISTS`，不会重建已存在的旧结构表；旧表为旧画布格式，与当前结构不同构。

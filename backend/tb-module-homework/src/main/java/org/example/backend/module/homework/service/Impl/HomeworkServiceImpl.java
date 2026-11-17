@@ -11,6 +11,7 @@ import org.example.backend.module.homework.mapper.HomeworkTaskMapper;
 import org.example.backend.module.homework.model.HomeworkFileDO;
 import org.example.backend.module.homework.model.HomeworkGradingResultDO;
 import org.example.backend.module.homework.model.HomeworkTaskDO;
+import org.example.backend.module.homework.model.vo.HomeworkCustomFieldVO;
 import org.example.backend.module.homework.model.vo.HomeworkFileItemVO;
 import org.example.backend.module.homework.model.vo.HomeworkGradeReqVO;
 import org.example.backend.module.homework.model.vo.HomeworkResultRecordVO;
@@ -33,15 +34,18 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import static org.example.backend.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_FILE_COUNT_EXCEED;
 import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_FILE_EMPTY;
 import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_FILE_SIZE_EXCEED;
 import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_FILE_TYPE_NOT_ALLOWED;
+import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_GRADE_CONFIG_INVALID;
 import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_PATH_COUNT_MISMATCH;
 import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_PATH_INVALID;
 import static org.example.backend.module.homework.enums.ErrorCodeConstants.HOMEWORK_TASK_NOT_EXISTS;
@@ -76,6 +80,27 @@ public class HomeworkServiceImpl implements HomeworkService {
             "pdf", "doc", "docx", "md", "markdown", "txt",
             "ppt", "pptx", "xls", "xlsx",
             "png", "jpg", "jpeg", "gif", "webp");
+
+    /** 评分区间默认值（与前端面板 / 工作流 startnode default 保持一致） */
+    private static final BigDecimal DEFAULT_SCORE_MIN = BigDecimal.ZERO;
+    private static final BigDecimal DEFAULT_SCORE_MAX = new BigDecimal("100");
+    private static final BigDecimal DEFAULT_PASS_SCORE = new BigDecimal("60");
+
+    /** 自定义列 key 的格式：ASCII 标识符，避免模型输出 / JSON 键被转义改写 */
+    private static final Pattern CUSTOM_KEY_PATTERN = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]*$");
+    /** 自定义列 key 不能与逐学生固定字段冲突（comment / deductions 是预置列，允许） */
+    private static final Set<String> RESERVED_CUSTOM_KEYS =
+            Set.of("student", "score", "grade", "readFiles", "custom");
+    private static final int CUSTOM_KEY_MAX = 40;
+    private static final int CUSTOM_DESCRIPTION_MAX = 120;
+
+    /** 自定义列可用的变量类型（与工作流变量类型字典一致） */
+    private static final Set<String> CUSTOM_FIELD_TYPES = Set.of(
+            "string", "integer", "number", "boolean", "time", "object", "list", "file");
+    /** 容器类型的合法元素类型（list / file 各自不同） */
+    private static final Map<String, Set<String>> CONTAINER_ELEMENT_TYPES = Map.of(
+            "list", Set.of("string", "integer", "number", "boolean", "object"),
+            "file", Set.of("string", "integer", "number"));
 
     @Resource
     private MinioFileStorageService minioFileStorageService;
@@ -174,13 +199,38 @@ public class HomeworkServiceImpl implements HomeworkService {
      */
     @Override
     public void receiveGradeRequest(HomeworkGradeReqVO reqVO) {
+        if (reqVO == null || reqVO.getTaskId() == null) {
+            throw exception(HOMEWORK_TASK_NOT_EXISTS);
+        }
+        HomeworkTaskDO task = taskMapper.selectById(reqVO.getTaskId());
+        if (task == null) {
+            throw exception(HOMEWORK_TASK_NOT_EXISTS);
+        }
+
         List<HomeworkFileItemVO> fileItems = reqVO.getFiles() == null ? List.of() : reqVO.getFiles();
         List<String> spaceIds = reqVO.getSpaceIds() == null ? List.of() : reqVO.getSpaceIds();
-        taskMapper.updateGradeConfig(reqVO.getTaskId(), reqVO.getDescription(), String.join(",", spaceIds));
+
+        BigDecimal scoreMin = reqVO.getScoreMin() == null ? DEFAULT_SCORE_MIN : reqVO.getScoreMin();
+        BigDecimal scoreMax = reqVO.getScoreMax() == null ? DEFAULT_SCORE_MAX : reqVO.getScoreMax();
+        BigDecimal passScore = reqVO.getPassScore() == null ? DEFAULT_PASS_SCORE : reqVO.getPassScore();
+        validateScoreRange(scoreMin, scoreMax, passScore);
+
+        List<HomeworkCustomFieldVO> customFields =
+                reqVO.getCustomFields() == null ? List.of() : reqVO.getCustomFields();
+        validateCustomFields(customFields);
+
+        int updated = taskMapper.updateGradeConfig(
+                reqVO.getTaskId(), reqVO.getDescription(), String.join(",", spaceIds),
+                scoreMin, scoreMax, passScore, toJson(customFields));
+        if (updated == 0) {
+            throw exception(HOMEWORK_TASK_NOT_EXISTS);
+        }
+
         int descriptionLength = reqVO.getDescription() == null ? 0 : reqVO.getDescription().length();
-        log.info("收到批改请求: taskId={}, spaceIds={}, fileCount={}, exportFormat={}, workflowId={}, descriptionLength={}",
-                reqVO.getTaskId(), spaceIds, fileItems.size(),
-                reqVO.getExportFormat(), reqVO.getWorkflowId(), descriptionLength);
+        log.info("收到批改请求: taskId={}, spaceIds={}, fileCount={}, workflowId={}, descriptionLength={}, "
+                        + "scoreRange=[{}, {}], passScore={}, customFields={}",
+                reqVO.getTaskId(), spaceIds, fileItems.size(), reqVO.getWorkflowId(), descriptionLength,
+                scoreMin, scoreMax, passScore, customFields.size());
         // 批改取文件以 fileId 为准（fileId → infra_file 的 bucket/path → MinIO）；
         // 请求里的预签名 URL 7 天过期，只作辅助，不记录以免日志冗长
         if (!fileItems.isEmpty()) {
@@ -221,6 +271,7 @@ public class HomeworkServiceImpl implements HomeworkService {
         }
         HomeworkTaskDetailRespVO respVO = new HomeworkTaskDetailRespVO();
         fillTaskFields(respVO, task);
+        respVO.setCustomFields(parseCustomFields(task.getCustomFields()));
         List<HomeworkFileItemVO> files = new ArrayList<>();
         for (HomeworkFileDO file : fileMapper.selectListWithInfraByTaskId(taskId)) {
             HomeworkFileItemVO item = new HomeworkFileItemVO();
@@ -276,9 +327,10 @@ public class HomeworkServiceImpl implements HomeworkService {
             throw exception(HOMEWORK_TASK_NOT_EXISTS);
         }
         List<HomeworkResultRecordVO> inputRecords = reqVO.getRecords() == null ? List.of() : reqVO.getRecords();
+        List<HomeworkCustomFieldVO> customFields = parseCustomFields(task.getCustomFields());
         List<HomeworkGradingResultDO> rows = new ArrayList<>(inputRecords.size());
         for (HomeworkResultRecordVO record : inputRecords) {
-            rows.add(toResultDO(taskId, record, reqVO.getConversationId()));
+            rows.add(toResultDO(taskId, record, reqVO.getConversationId(), customFields));
         }
         int total = rows.size();
         int missed = missedCountOf(task.getFileCount(), total);
@@ -312,40 +364,110 @@ public class HomeworkServiceImpl implements HomeworkService {
         return Math.max(0, fileCount - recordCount);
     }
 
-    /** 回写记录 VO → DO（student 空值兜底、JSON 数组文本化、score 归一为 BigDecimal） */
-    private HomeworkGradingResultDO toResultDO(Long taskId, HomeworkResultRecordVO record, String conversationId) {
+    /** 回写记录 VO → DO（student 空值兜底、custom 按定义合并静态值、JSON 文本化） */
+    private HomeworkGradingResultDO toResultDO(Long taskId, HomeworkResultRecordVO record,
+                                               String conversationId,
+                                               List<HomeworkCustomFieldVO> customFields) {
         HomeworkGradingResultDO row = new HomeworkGradingResultDO();
         row.setTaskId(taskId);
         String student = record.getStudent() == null ? "" : record.getStudent().trim();
         row.setStudent(student.isEmpty() ? "未署名" : student);
         row.setScore(record.getScore() == null ? null : BigDecimal.valueOf(record.getScore()));
         row.setGrade(record.getGrade());
-        row.setComment(record.getComment());
-        row.setDeductions(toJson(record.getDeductions()));
-        row.setReadFiles(toJson(record.getReadFiles()));
+        row.setCustom(toJson(mergeCustomValues(customFields, record.getCustom())));
+        row.setReadFiles(toJsonList(record.getReadFiles()));
         row.setConversationId(conversationId);
         return row;
     }
 
-    /** 评分结果 DO → VO（JSON 数组文本还原成字符串列表，供历史回看） */
+    /** 评分结果 DO → VO（custom / 已读文件 JSON 还原；旧 comment/deductions 仅兼容保留） */
     private HomeworkResultRecordVO toResultVO(HomeworkGradingResultDO row) {
         HomeworkResultRecordVO vo = new HomeworkResultRecordVO();
         vo.setStudent(row.getStudent());
         vo.setScore(row.getScore() == null ? null : row.getScore().doubleValue());
         vo.setGrade(row.getGrade());
+        vo.setCustom(fromCustomJson(row.getCustom()));
+        vo.setReadFiles(fromJson(row.getReadFiles()));
         vo.setComment(row.getComment());
         vo.setDeductions(fromJson(row.getDeductions()));
-        vo.setReadFiles(fromJson(row.getReadFiles()));
         return vo;
     }
 
-    /** 字符串列表 → JSON 数组文本（null 归一为 []，与 JSONB 列的 NOT NULL DEFAULT '[]' 对齐） */
-    private String toJson(List<String> values) {
+    /** 对象 → JSON 文本（custom / customFields 落 JSONB） */
+    private String toJson(Object value) {
         try {
-            return objectMapper.writeValueAsString(values == null ? List.of() : values);
+            return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("评分记录 JSON 序列化失败", e);
+            throw new IllegalStateException("批改配置 JSON 序列化失败", e);
         }
+    }
+
+    /** 字符串列表 → JSON 数组文本（null 归一为 []，与 JSONB 列的 NOT NULL DEFAULT '[]' 对齐） */
+    private String toJsonList(List<String> values) {
+        return toJson(values == null ? List.of() : values);
+    }
+
+    /** custom JSON 文本 → Map（空文本 / 反序列化失败都归空对象） */
+    private Map<String, Object> fromCustomJson(String json) {
+        if (json == null || json.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+        } catch (JsonProcessingException e) {
+            log.warn("评分记录 custom JSON 解析失败，按空对象处理: {}", json, e);
+            return new LinkedHashMap<>();
+        }
+    }
+
+    /** homework_task.custom_fields JSON → 定义列表（空 / 坏数据按空列表，不回滚历史回看） */
+    private List<HomeworkCustomFieldVO> parseCustomFields(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<HomeworkCustomFieldVO> fields =
+                    objectMapper.readValue(json, new TypeReference<List<HomeworkCustomFieldVO>>() {});
+            // 兼容早期 text / integer：对外统一成工作流类型名
+            fields.forEach(field -> field.setType(normalizeCustomFieldType(field.getType())));
+            return fields;
+        } catch (JsonProcessingException e) {
+            log.warn("任务 custom_fields JSON 解析失败，按空列表处理: {}", json, e);
+            return List.of();
+        }
+    }
+
+    /** 自定义列类型归一：兼容早期 text / float；integer、number 等保持工作流类型 */
+    private static String normalizeCustomFieldType(String type) {
+        if ("text".equals(type)) {
+            return "string";
+        }
+        if ("float".equals(type)) {
+            return "number";
+        }
+        return type;
+    }
+
+    /**
+     * 按任务定义过滤逐学生 custom：只保留已定义 key，取模型值；
+     * 未定义的 key 丢弃，缺失值落空串（导出/卡片显示为空）。
+     */
+    private Map<String, Object> mergeCustomValues(List<HomeworkCustomFieldVO> fields,
+                                                  Map<String, Object> modelCustom) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (fields == null || fields.isEmpty()) {
+            return result;
+        }
+        Map<String, Object> source = modelCustom == null ? Map.of() : modelCustom;
+        for (HomeworkCustomFieldVO field : fields) {
+            String key = trimToNull(field.getKey());
+            if (key == null) {
+                continue;
+            }
+            Object value = source.get(key);
+            result.put(key, value == null ? "" : value);
+        }
+        return result;
     }
 
     /** JSON 数组文本 → 字符串列表（空文本 / 反序列化失败都归空列表，别让一行坏数据拖垮整个详情） */
@@ -370,8 +492,88 @@ public class HomeworkServiceImpl implements HomeworkService {
         vo.setTotalSize(task.getTotalSize());
         vo.setDescription(task.getDescription());
         vo.setSpaceIds(splitSpaceIds(task.getSpaceIds()));
+        vo.setScoreMin(task.getScoreMin());
+        vo.setScoreMax(task.getScoreMax());
+        vo.setPassScore(task.getPassScore());
         vo.setResultCount(task.getResultCount());
         vo.setCreateTime(task.getCreateTime());
+    }
+
+    /** 评分区间校验：最低分 < 最高分，及格线落在区间内 */
+    private void validateScoreRange(BigDecimal scoreMin, BigDecimal scoreMax, BigDecimal passScore) {
+        if (scoreMin.compareTo(scoreMax) >= 0) {
+            throw exception(HOMEWORK_GRADE_CONFIG_INVALID, "最低分必须小于最高分");
+        }
+        if (passScore.compareTo(scoreMin) < 0 || passScore.compareTo(scoreMax) > 0) {
+            throw exception(HOMEWORK_GRADE_CONFIG_INVALID, "及格线必须落在评分区间内");
+        }
+    }
+
+    /** 自定义导出列校验：变量名（key）/ 描述 / 类型 / 容器元素类型，任一不合法直接 400 */
+    private void validateCustomFields(List<HomeworkCustomFieldVO> fields) {
+        Set<String> keys = new HashSet<>();
+        for (HomeworkCustomFieldVO field : fields) {
+            if (field == null) {
+                throw exception(HOMEWORK_GRADE_CONFIG_INVALID, "自定义导出列不能为空");
+            }
+            String key = trimToNull(field.getKey());
+            String description = trimToNull(field.getDescription());
+            String type = normalizeCustomFieldType(trimToNull(field.getType()));
+            // 落库统一成工作流类型名（string / number），旧客户端的 text 在这里归一
+            field.setType(type);
+            field.setKey(key);
+
+            if (key == null || !CUSTOM_KEY_PATTERN.matcher(key).matches()) {
+                throw exception(HOMEWORK_GRADE_CONFIG_INVALID,
+                        "自定义导出列的变量名只能是字母、数字、下划线且不能以数字开头");
+            }
+            if (key.length() > CUSTOM_KEY_MAX) {
+                throw exception(HOMEWORK_GRADE_CONFIG_INVALID,
+                        "自定义导出列的变量名不能超过 " + CUSTOM_KEY_MAX + " 个字符");
+            }
+            if (RESERVED_CUSTOM_KEYS.contains(key)) {
+                throw exception(HOMEWORK_GRADE_CONFIG_INVALID,
+                        "自定义导出列的变量名不能使用保留字段「" + key + "」");
+            }
+            if (!keys.add(key)) {
+                throw exception(HOMEWORK_GRADE_CONFIG_INVALID, "自定义导出列的变量名重复：" + key);
+            }
+            if (!CUSTOM_FIELD_TYPES.contains(type)) {
+                throw exception(HOMEWORK_GRADE_CONFIG_INVALID,
+                        "自定义导出列「" + key + "」的类型不支持：" + type);
+            }
+            Set<String> elementTypes = CONTAINER_ELEMENT_TYPES.get(type);
+            if (elementTypes != null) {
+                Object elementType = field.getSchema() == null ? null : field.getSchema().get("type");
+                String element = elementType == null ? null : String.valueOf(elementType).trim();
+                if (element == null || !elementTypes.contains(element)) {
+                    throw exception(HOMEWORK_GRADE_CONFIG_INVALID,
+                            "自定义导出列「" + key + "」的 " + type + " 需要合法元素类型："
+                                    + String.join(" / ", elementTypes));
+                }
+                field.setSchema(Map.of("type", element));
+            } else {
+                // 标量类型不保留残留 schema，避免模型/前端读到旧结构
+                field.setSchema(null);
+            }
+            if (description == null) {
+                throw exception(HOMEWORK_GRADE_CONFIG_INVALID,
+                        "自定义导出列「" + key + "」必须填写描述，供模型产出内容");
+            }
+            if (description.length() > CUSTOM_DESCRIPTION_MAX) {
+                throw exception(HOMEWORK_GRADE_CONFIG_INVALID,
+                        "自定义导出列「" + key + "」的描述不能超过 " + CUSTOM_DESCRIPTION_MAX + " 个字符");
+            }
+        }
+    }
+
+    /** 去空白；空串归一为 null（校验用） */
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /** 逗号分隔 CSV → 列表（落库前未写批改配置时为 null，归一为空列表） */

@@ -1,6 +1,7 @@
 package org.example.textflow.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 import java.util.LinkedHashMap;
@@ -27,6 +28,15 @@ public class NodeField {
 
     /** 复杂类型（如 list）的元素结构，例如 {"type": "string"} */
     private Map<String, Object> schema = new LinkedHashMap<>();
+
+    /**
+     * 缺省值（可选）：输入变量缺失（值为 null）时由开始节点回填。
+     *
+     * <p>只有「没提供这个键」才取默认值；显式传 0 / false / 空数组 / 空串都按调用方的值处理，
+     * 避免把「老师清空了自定义列」误当成「没填」。JSON 字段名沿用 {@code default}。
+     */
+    @JsonProperty("default")
+    private Object defaultValue;
 
     /**
      * 输入变量的来源引用（仅 inputs 存在）：

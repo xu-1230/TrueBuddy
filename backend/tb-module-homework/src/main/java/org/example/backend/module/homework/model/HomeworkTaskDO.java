@@ -2,6 +2,7 @@ package org.example.backend.module.homework.model;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -25,6 +26,14 @@ public class HomeworkTaskDO {
     private String description;
     /** 知识库 id 列表（逗号分隔），由批改请求写入 */
     private String spaceIds;
+    /** 评分区间下限（默认 0） */
+    private BigDecimal scoreMin;
+    /** 评分区间上限 / 满分（默认 100） */
+    private BigDecimal scoreMax;
+    /** 及格线（默认 60） */
+    private BigDecimal passScore;
+    /** 自定义导出列定义（JSON 数组文本） */
+    private String customFields;
     /** 创建时间 */
     private LocalDateTime createTime;
     /** 更新时间 */
