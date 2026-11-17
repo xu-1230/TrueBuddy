@@ -4,6 +4,9 @@ import service from './index'
 export const login = (username, password) =>
   service({ url: '/system/auth/login', method: 'post', data: { username, password } })
 
+/** 当前登录用户资料：昵称 / 头像 / 角色（登录即可，不要求管理端权限） */
+export const getProfile = () => service({ url: '/system/auth/profile', method: 'get' })
+
 /**
  * 发送邮箱验证码
  * @param {string} email
