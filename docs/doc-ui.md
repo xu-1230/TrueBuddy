@@ -77,7 +77,7 @@
 | 3 | 新增深浅色自适应样式，优先使用 `light-dark()` 或语义化 CSS 变量 |
 | 4 | 新增颜色优先使用 `oklch()`（可感知均匀，便于生成色阶），与既有十六进制混用时可读性优先 |
 | 5 | 禁止在组件内直接修改全局 Element Plus 变量（`--el-*`），需要局部覆盖时在组件根类下限定作用域 |
-| 6 | **`light-dark()` 只能出现在 `<color>` 的位置**，不能包住整条多段值。反例（曾在全站生效）：`--tb-shadow-2: light-dark(0 2px 8px rgba(…), 0 2px 8px rgba(…))` —— 传入的不是颜色，变量替换后 `box-shadow` 在 computed-value 阶段无效并**静默回落为 `none`**，34 个文件、72 处引用同时失去阴影且无任何报错。正确写法把偏移/模糊保持在外、只让 `light-dark()` 决定颜色：`--tb-shadow-2: 0 2px 8px light-dark(rgba(20,30,45,.1), rgba(0,0,0,.5))`；并在 §2.1 的旧内核兜底块里补一组不带 `light-dark()` 的亮色值 |
+| 6 | **`light-dark()` 只能出现在 `<color>` 的位置**，不能包住整条多段值。反例（曾在全站生效）：`--tb-shadow-2: light-dark(0 2px 8px rgba(…), 0 2px 8px rgba(…))` —— 传入的不是颜色，变量替换后 `box-shadow` 在 computed-value 阶段无效并**静默回落为 `none`**，34 个文件、72 处引用同时失去阴影且无任何报错。正确写法把偏移/模糊保持在外、只让 `light-dark()` 决定颜色：`--tb-shadow-2: 0 2px 8px light-dark(rgba(20,30,45,.1), rgba(0,0,0,.5))`；并在 §2.1 的旧内核兜底块里补一组不带 `light-dark()` 的亮色值。同类错误也出现在 `HomeHero.vue` / `ShowcaseCard.vue` 的 `filter: light-dark(brightness(…), brightness(…))`（`filter` 不接受颜色函数，整条声明被丢弃），已改为固定媒体层变量（见 §3.3 约定 6） |
 | 7 | **`light-dark()` 在「使用处」解析，不在「定义处」**：把它写进自定义属性再传进子树时，取哪一支取决于**真正使用它的那一层**的 `color-scheme`。反例（本轮实测踩到）：`.stage { --stage-bottom: light-dark(brand-950, neutral-950) }` 配子层 `.showcase { color-scheme: dark; background: var(--stage-bottom) }`，亮色主题下仍恒取暗支。正确做法二选一：需要随全局明暗分流的底色，直接画在**未被换肤的祖先元素**上（本项目即 `LoginView.vue` 的 `.stage` 画底色、`LoginShowcase.vue` 只负责文字与叠加）；或跨边界传色时只写 `var()` 引用原始色阶——`var()` 在声明处就完成替换，传下去的是定值，不再受下游 `color-scheme` 影响 |
 
 ### 3.3 主题统一（已全站落地）
@@ -103,7 +103,7 @@
    配套技法（已实测）：容器上写 `color-scheme: dark`（配 `data-appearance="dark"` 作语义标记）时，`light-dark()` 会**按容器**解析——页面亮色时容器内自动取深色一套，因此「局部固定深色」也无需硬编码任何颜色；不写这行则完全跟随全局主题。`views/homework/HomeworkGradingView.vue` 的 `.stage` 选后者，并在注释里留了这行开关。
 4. 变量命名、色板取值与形态参数以 [ui.html](./ui.html) 为**唯一视觉样张**：七套主题的色阶、圆角 / 描边 / 阴影 / 动效参数与组件外观均在该文件内对齐；二者不一致时先改样张，再改代码。
 5. 页面级「兼容别名」：`views/doctemplate/DocTemplateView.vue` 根类仍保留 `--primary / --primary-dark / --primary-soft / --accent*` 这组变量名（取值全部指向 Token）；`views/homework/HomeworkGradingView.vue` 的这层别名已删除，页面直接引用 `var(--tb-*)`，可作为彻底直连的参照实现（见 §7）。
-6. 刻意保留的固定色：放映台与品牌展示台（固定深色）、文件类型色块与装饰标签条、`MarkdownViewer` 的代码高亮色相、模拟会议模块的 `--mt-*` 视觉层（固定暗场舞台/结束幕，见 §10）。这些区域的语义不随明暗变化，取值方式见 §3.1 表格。
+6. 刻意保留的固定色：放映台与品牌展示台（固定深色）、文件类型色块与装饰标签条、首页 A2 入口卡与 Zone B 媒体卡的固定墨蓝媒体层（底色 / 染色 / 图片滤镜不随主题变亮）、`MarkdownViewer` 的代码高亮色相、模拟会议模块的 `--mt-*` 视觉层（固定暗场舞台/结束幕，见 §10）。这些区域的语义不随明暗变化，取值方式见 §3.1 表格。
 7. **不支持 `light-dark()` 的内核**：由 `assets/theme.css` 末尾的 `@supports not (color: light-dark(…))` 块降级为亮色取值（同时覆盖 `--el-*` 色阶）。
 
 ---
@@ -337,3 +337,29 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 - **顶栏读数条（2026-11-17）**：`.studio-bar` 为极简读数条，高 56px，只用一条底线与分组竖线，不保留玻璃底、圆角、阴影与图标光点；ON AIR / STANDBY 是主状态，时钟 / 在线数 / 连接状态为竖线分隔的次要读数，顶栏内 `mt-chip` 只留文字与圆点；会议号收成一行小号 mono（`ID` + 号码）；槽位按钮经 `:slotted(.mt-btn)` 压到 32px。老师控制台与学生会议室共用同一套外观。
 - 行为契约不变：路由、`?meetid=` / `?credential=1`、host/attendee token、全部 `/meeting/**` 接口、LiveKit track attach、DataChannel 聊天双写、在线名单只认房间事件（ADR-0002）、10s 轮询、`sendBeacon` 离会、讲课 BroadcastChannel 协议。
 - 验收：`npm run lint` / `npm test`（309 条）/ `npm run build` 全过；桌面 1600×1000 与移动 390×844 的明暗入口/会议中/结束幕已用本机 Chrome 做过视觉验收。真实 LiveKit 共享画面与双端联调仍需在环境可用时按 [doc-lecture.md](./doc-lecture.md) §11.2 回归。
+
+---
+
+## 11. 文档模板 AI 聊天面板（`views/doctemplate/components/AiChatPanel.vue`，2026-11-17）
+
+> 参考 Astryx AI Chat 模板（`astryx-stack x78zum5 xdt5ytf` 的垂直 stack）重做；页面仍是「左 docx 预览 + 右聊天」，不翻转主次、不接真实 SSE。
+
+### 11.1 结构与消息层级
+
+- 面板无独立 header：顶部从「今天」分隔开始，下接居中系统提示「已加载《文档名》，可以开始评审。」；文档上下文只在这条系统提示里出现。
+- 消息区为 `display:flex; flex-direction:column` 的垂直堆栈；助手消息 = 26px 圆形品牌 soft 头像 + 平铺正文 / 项目列表，用户消息 = 右侧中性填充气泡。
+- 每条消息带 `HH:mm`（`<time>`）；用户消息带「已送达」+ 对勾；typing 为「头像 + 三点」，不再包气泡。
+- 富文本 mock：消息 content 为字符串或 `{ type: 'p' | 'ul' }` 块数组，组件内本地渲染；不引入 MarkdownViewer / bytemd。
+- 切换 `documentName` 时重建初始 mock 对话（时间、消息 id 重新生成）并回底；回复池按顺序循环。
+
+### 11.2 形状与颜色
+
+- 面板 / 用户气泡 / composer 统一 `--tb-radius-xl`（12px）；头像、发送按钮、滚到底按钮为 `50%`。
+- 中性气泡 + 品牌点色：用户气泡 `color-mix(in oklab, var(--tb-text-primary) 7%, var(--tb-bg-surface))`；品牌色只用于发送按钮、助手头像与焦点环，不使用墨蓝渐变气泡。
+- composer 为 `--tb-bg-raised` 圆角容器，只保留自增长输入（最多 5 行）+ 圆形发送；下方小字「模拟对话 / Enter 发送 · Shift + Enter 换行」。不设上下文 chip、提及 / 附件工具条与「提问」标识。
+
+### 11.3 滚动与响应式
+
+- **智能滚动**：用户距底部 ≤48px 时新消息自动跟随；上滑阅读时保持位置并显示右下角「回到最新消息」圆钮；自己发送消息始终回底。
+- `≤1024px` 时查看模式改为上下堆叠：docx 预览 `height: min(60vh, 560px)`、聊天全宽 `height: min(480px, 60vh)`；预览内部滚动。
+- 无障碍：`role="log"` + `aria-live="polite"`、按钮 / 输入区 `aria-label`、`<time>`、sr-only「AI 助手」标题；`prefers-reduced-motion` 下关闭 typing 三点与 `chat-in` 入场。
