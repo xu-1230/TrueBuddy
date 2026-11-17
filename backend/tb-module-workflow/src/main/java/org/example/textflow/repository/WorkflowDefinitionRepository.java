@@ -90,6 +90,18 @@ public class WorkflowDefinitionRepository {
     private static final String COUNT_NOT_DELETED =
             "SELECT COUNT(*) FROM workflow WHERE deleted = FALSE";
 
+    /**
+     * 内置模板的幂等写入：按固定 id upsert，软删的行会被恢复。
+     * 内置模板在 UI 层不可保存修改，因此用 seed 覆盖是安全的；非内置行完全不受影响。
+     */
+    private static final String UPSERT_BUILTIN =
+            "INSERT INTO workflow (id, name, description, schema_json, status, visibility, create_time, update_time, deleted) "
+                    + "VALUES (CAST(? AS BIGINT), ?, ?, ?, 0, 0, now(), now(), FALSE) "
+                    + "ON CONFLICT (id) DO UPDATE SET "
+                    + "name = EXCLUDED.name, description = EXCLUDED.description, "
+                    + "schema_json = EXCLUDED.schema_json, status = 0, visibility = 0, "
+                    + "deleted = FALSE, update_time = now()";
+
     private static final RowMapper<WorkflowDO> ROW_MAPPER = (rs, rowNum) -> {
         WorkflowDO workflow = new WorkflowDO();
         workflow.setId(rs.getString("id"));
@@ -182,6 +194,11 @@ public class WorkflowDefinitionRepository {
     public long countNotDeleted() {
         Long count = jdbcTemplate.queryForObject(COUNT_NOT_DELETED, Long.class);
         return count == null ? 0L : count;
+    }
+
+    /** 按固定 id 写入 / 刷新内置模板（软删行恢复；非内置行不受影响） */
+    public int upsertBuiltin(String id, String name, String description, String schemaJson) {
+        return jdbcTemplate.update(UPSERT_BUILTIN, id, name, description, schemaJson);
     }
 
     private static LocalDateTime toLocalDateTime(Timestamp timestamp) {

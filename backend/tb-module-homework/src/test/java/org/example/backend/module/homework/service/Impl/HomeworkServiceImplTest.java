@@ -7,6 +7,8 @@ import org.example.backend.module.homework.mapper.HomeworkTaskMapper;
 import org.example.backend.module.homework.model.HomeworkFileDO;
 import org.example.backend.module.homework.model.HomeworkGradingResultDO;
 import org.example.backend.module.homework.model.HomeworkTaskDO;
+import org.example.backend.module.homework.model.vo.HomeworkCustomFieldVO;
+import org.example.backend.module.homework.model.vo.HomeworkGradeReqVO;
 import org.example.backend.module.homework.model.vo.HomeworkResultRecordVO;
 import org.example.backend.module.homework.model.vo.HomeworkResultWriteReqVO;
 import org.example.backend.module.homework.model.vo.HomeworkResultWriteRespVO;
@@ -24,8 +26,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.stubbing.Answer;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -85,6 +89,13 @@ class HomeworkServiceImplTest {
         task.setTotalSize(2048L);
         task.setDescription("按评分标准逐题给分");
         task.setSpaceIds(spaceIds);
+        task.setScoreMin(java.math.BigDecimal.ZERO);
+        task.setScoreMax(new java.math.BigDecimal("100"));
+        task.setPassScore(new java.math.BigDecimal("60"));
+        task.setCustomFields("["
+                + "{\"key\":\"deductions\",\"description\":\"逐项列出\",\"type\":\"string\"},"
+                + "{\"key\":\"comment\",\"description\":\"面向学生\",\"type\":\"string\"}"
+                + "]");
         task.setCreateTime(LocalDateTime.of(2026, 11, 16, 10, 30));
         return task;
     }
@@ -218,25 +229,23 @@ class HomeworkServiceImplTest {
 
     // ========== 004：结果覆盖式回写与评分回看 ==========
 
-    private HomeworkResultRecordVO recordVO(String student, Double score, List<String> deductions) {
+    private HomeworkResultRecordVO recordVO(String student, Double score, Map<String, Object> custom) {
         HomeworkResultRecordVO record = new HomeworkResultRecordVO();
         record.setStudent(student);
         record.setScore(score);
         record.setGrade("良");
-        record.setComment("整体完整");
-        record.setDeductions(deductions);
+        record.setCustom(custom);
         record.setReadFiles(List.of("电子技术基础-第3次作业/20230101-张三/第三章习题.docx"));
         return record;
     }
 
-    private HomeworkGradingResultDO resultRow(String student, String deductionsJson) {
+    private HomeworkGradingResultDO resultRow(String student, String customJson) {
         HomeworkGradingResultDO row = new HomeworkGradingResultDO();
         row.setTaskId(TASK_ID);
         row.setStudent(student);
         row.setScore(new java.math.BigDecimal("85.5"));
         row.setGrade("良");
-        row.setComment("整体完整");
-        row.setDeductions(deductionsJson);
+        row.setCustom(customJson);
         row.setReadFiles("[\"电子技术基础-第3次作业/20230101-张三/第三章习题.docx\"]");
         row.setConversationId("conv-1");
         return row;
@@ -250,16 +259,19 @@ class HomeworkServiceImplTest {
         when(taskMapper.selectById(TASK_ID)).thenReturn(pending);
         when(fileMapper.selectListWithInfraByTaskId(TASK_ID)).thenReturn(List.of());
         when(resultMapper.selectListByTaskId(TASK_ID)).thenReturn(List.of(
-                resultRow("张三", "[\"字迹潦草\"]"), resultRow("李四", "[]")));
+                resultRow("张三", "{\"deductions\":\"字迹潦草\",\"comment\":\"整体完整\"}"),
+                resultRow("李四", "{}")));
 
         HomeworkTaskDetailRespVO detail = service.getTaskDetail(TASK_ID);
 
         assertThat(detail.getResults()).hasSize(2);
         assertThat(detail.getResults().get(0).getStudent()).isEqualTo("张三");
         assertThat(detail.getResults().get(0).getScore()).isEqualTo(85.5);
-        assertThat(detail.getResults().get(0).getDeductions()).containsExactly("字迹潦草");
-        assertThat(detail.getResults().get(1).getDeductions()).isEmpty();
+        assertThat(detail.getResults().get(0).getCustom()).containsEntry("deductions", "字迹潦草");
+        assertThat(detail.getResults().get(1).getCustom()).isEmpty();
         assertThat(detail.getMissedCount()).isEqualTo(1);
+        assertThat(detail.getCustomFields()).hasSize(2);
+        assertThat(detail.getCustomFields().get(0).getKey()).isEqualTo("deductions");
     }
 
     @Test
@@ -284,7 +296,7 @@ class HomeworkServiceImplTest {
         HomeworkResultWriteReqVO reqVO = new HomeworkResultWriteReqVO();
         reqVO.setConversationId("conv-9");
         reqVO.setRecords(List.of(
-                recordVO(" 张三 ", 88.0, List.of("字迹潦草")),
+                recordVO(" 张三 ", 88.0, Map.of("deductions", "字迹潦草", "comment", "整体完整")),
                 recordVO("  ", 75.0, null)));
 
         HomeworkResultWriteRespVO respVO = service.writeResults(TASK_ID, reqVO);
@@ -297,11 +309,11 @@ class HomeworkServiceImplTest {
         verify(resultMapper).insertBatch(captor.capture());
         HomeworkGradingResultDO first = captor.getValue().get(0);
         assertThat(first.getStudent()).isEqualTo("张三");
-        assertThat(first.getDeductions()).isEqualTo("[\"字迹潦草\"]");
+        assertThat(first.getCustom()).isEqualTo("{\"deductions\":\"字迹潦草\",\"comment\":\"整体完整\"}");
         assertThat(first.getConversationId()).isEqualTo("conv-9");
         HomeworkGradingResultDO second = captor.getValue().get(1);
         assertThat(second.getStudent()).isEqualTo("未署名");
-        assertThat(second.getDeductions()).isEqualTo("[]");
+        assertThat(second.getCustom()).isEqualTo("{\"deductions\":\"\",\"comment\":\"\"}");
         verify(taskMapper).updateStatusToFinal(TASK_ID, 2);
     }
 
@@ -315,7 +327,7 @@ class HomeworkServiceImplTest {
         when(taskMapper.updateStatusToFinal(eq(TASK_ID), eq(3))).thenReturn(1);
 
         HomeworkResultWriteReqVO reqVO = new HomeworkResultWriteReqVO();
-        reqVO.setRecords(List.of(recordVO("张三", 88.0, List.of())));
+        reqVO.setRecords(List.of(recordVO("张三", 88.0, Map.of())));
 
         HomeworkResultWriteRespVO respVO = service.writeResults(TASK_ID, reqVO);
 
@@ -353,6 +365,103 @@ class HomeworkServiceImplTest {
         assertThatThrownBy(() -> service.writeResults(TASK_ID, reqVO))
                 .isInstanceOfSatisfying(ServiceException.class,
                         e -> assertThat(e.getCode()).isEqualTo(1_004_000_007));
+    }
+
+    // ========== 批改配置：评分区间 + 自定义导出列 ==========
+
+    private HomeworkCustomFieldVO customField(String key, String description, String type) {
+        HomeworkCustomFieldVO field = new HomeworkCustomFieldVO();
+        field.setKey(key);
+        field.setDescription(description);
+        field.setType(type);
+        return field;
+    }
+
+    private HomeworkGradeReqVO gradeReq(List<HomeworkCustomFieldVO> fields,
+                                        String min, String max, String pass) {
+        HomeworkGradeReqVO reqVO = new HomeworkGradeReqVO();
+        reqVO.setTaskId(TASK_ID);
+        reqVO.setDescription("按维度评分");
+        reqVO.setScoreMin(new BigDecimal(min));
+        reqVO.setScoreMax(new BigDecimal(max));
+        reqVO.setPassScore(new BigDecimal(pass));
+        reqVO.setCustomFields(fields);
+        return reqVO;
+    }
+
+    @Test
+    @DisplayName("批改配置：合法区间与自定义列落库，custom 定义以 JSON 透传")
+    void receiveGradeRequest_storesRangeAndFields() {
+        when(taskMapper.selectById(TASK_ID)).thenReturn(task(0, null));
+        when(taskMapper.updateGradeConfig(any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
+
+        HomeworkCustomFieldVO listField = customField("col_3", "逐条列出亮点", "list");
+        listField.setSchema(Map.of("type", "string"));
+
+        ArgumentCaptor<String> customJson = ArgumentCaptor.forClass(String.class);
+        service.receiveGradeRequest(gradeReq(List.of(
+                customField("col_1", "写出一处亮点", "string"),
+                customField("col_2", "课程名称", "string"),
+                listField
+        ), "0", "20", "12"));
+
+        verify(taskMapper).updateGradeConfig(eq(TASK_ID), eq("按维度评分"), eq(""),
+                eq(new BigDecimal("0")), eq(new BigDecimal("20")), eq(new BigDecimal("12")),
+                customJson.capture());
+        assertThat(customJson.getValue()).contains("\"col_1\"").contains("亮点");
+        assertThat(customJson.getValue()).contains("\"col_2\"").contains("课程名称");
+        assertThat(customJson.getValue()).contains("\"type\":\"list\"");
+        assertThat(customJson.getValue()).contains("\"schema\":{\"type\":\"string\"}");
+    }
+
+    @Test
+    @DisplayName("批改配置：最低分不小于最高分 → 400（1_004_000_008），不写库")
+    void receiveGradeRequest_invalidRange_throws() {
+        when(taskMapper.selectById(TASK_ID)).thenReturn(task(0, null));
+
+        assertThatThrownBy(() -> service.receiveGradeRequest(
+                gradeReq(List.of(), "20", "20", "12")))
+                .isInstanceOfSatisfying(ServiceException.class,
+                        e -> assertThat(e.getCode()).isEqualTo(1_004_000_008));
+        verify(taskMapper, never()).updateGradeConfig(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("批改配置：缺描述 / 类型非法 → 400（1_004_000_008）")
+    void receiveGradeRequest_invalidFields_throws() {
+        when(taskMapper.selectById(TASK_ID)).thenReturn(task(0, null));
+
+        assertThatThrownBy(() -> service.receiveGradeRequest(gradeReq(List.of(
+                customField("col_1", "", "string")
+        ), "0", "100", "60")))
+                .isInstanceOfSatisfying(ServiceException.class,
+                        e -> assertThat(e.getCode()).isEqualTo(1_004_000_008));
+
+        assertThatThrownBy(() -> service.receiveGradeRequest(gradeReq(List.of(
+                customField("col_1", "加分说明", "unknown")
+        ), "0", "100", "60")))
+                .isInstanceOfSatisfying(ServiceException.class,
+                        e -> assertThat(e.getCode()).isEqualTo(1_004_000_008));
+
+        // list 缺元素类型 → 拒绝
+        assertThatThrownBy(() -> service.receiveGradeRequest(gradeReq(List.of(
+                customField("col_1", "逐条列出亮点", "list")
+        ), "0", "100", "60")))
+                .isInstanceOfSatisfying(ServiceException.class,
+                        e -> assertThat(e.getCode()).isEqualTo(1_004_000_008));
+
+        verify(taskMapper, never()).updateGradeConfig(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("批改配置：任务不存在 → 1_004_000_006")
+    void receiveGradeRequest_taskNotExists_throws() {
+        when(taskMapper.selectById(TASK_ID)).thenReturn(null);
+
+        assertThatThrownBy(() -> service.receiveGradeRequest(
+                gradeReq(List.of(), "0", "100", "60")))
+                .isInstanceOfSatisfying(ServiceException.class,
+                        e -> assertThat(e.getCode()).isEqualTo(1_004_000_006));
     }
 
 }

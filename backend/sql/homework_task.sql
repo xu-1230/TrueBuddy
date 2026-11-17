@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS homework_task (
     status      SMALLINT     NOT NULL DEFAULT 0,         -- 任务状态，见下方 COMMENT
     description VARCHAR(500),                            -- AI 描述说明（批改要求），由 POST /homework/grade 写入
     space_ids   VARCHAR(512),                            -- 知识库 id 列表（逗号分隔），由 POST /homework/grade 写入
+    score_min   NUMERIC(6,2) NOT NULL DEFAULT 0,         -- 评分区间下限，由 POST /homework/grade 写入
+    score_max   NUMERIC(6,2) NOT NULL DEFAULT 100,       -- 评分区间上限（满分），由 POST /homework/grade 写入
+    pass_score  NUMERIC(6,2) NOT NULL DEFAULT 60,        -- 及格线，由 POST /homework/grade 写入
+    custom_fields JSONB      NOT NULL DEFAULT '[]'::jsonb, -- 自定义导出列定义（key/label/description/type）
     create_time TIMESTAMP    NOT NULL DEFAULT now(),     -- 创建时间
     update_time TIMESTAMP    NOT NULL DEFAULT now(),     -- 更新时间
     creator     BIGINT,                                  -- 创建人 id
@@ -30,6 +34,10 @@ COMMENT ON COLUMN homework_task.total_size IS '文件总大小（字节）';
 COMMENT ON COLUMN homework_task.status IS '任务状态：0=已上传待批改，1=批改中，2=成功，3=部分成功，4=失败';
 COMMENT ON COLUMN homework_task.description IS 'AI 描述说明（批改要求），工作流开始节点按 taskId 读取';
 COMMENT ON COLUMN homework_task.space_ids IS '知识库 id 列表（逗号分隔），工作流开始节点按 taskId 读取为 know';
+COMMENT ON COLUMN homework_task.score_min IS '评分区间下限；默认 0';
+COMMENT ON COLUMN homework_task.score_max IS '评分区间上限（满分）；默认 100';
+COMMENT ON COLUMN homework_task.pass_score IS '及格线，必须落在 [score_min, score_max]；默认 60';
+COMMENT ON COLUMN homework_task.custom_fields IS '自定义导出列定义 JSON 数组：{key,description,type,schema}；key 即变量名 / 导出表头；每列由模型逐学生产出';
 
 -- 列表按创建时间倒序（仅约束未删除记录）
 CREATE INDEX IF NOT EXISTS idx_homework_task_create_time
@@ -38,3 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_homework_task_create_time
 -- 已建表的环境补列（新环境由上面的 CREATE TABLE 直接建出）
 ALTER TABLE homework_task ADD COLUMN IF NOT EXISTS description VARCHAR(500);
 ALTER TABLE homework_task ADD COLUMN IF NOT EXISTS space_ids   VARCHAR(512);
+ALTER TABLE homework_task ADD COLUMN IF NOT EXISTS score_min   NUMERIC(6,2) NOT NULL DEFAULT 0;
+ALTER TABLE homework_task ADD COLUMN IF NOT EXISTS score_max   NUMERIC(6,2) NOT NULL DEFAULT 100;
+ALTER TABLE homework_task ADD COLUMN IF NOT EXISTS pass_score  NUMERIC(6,2) NOT NULL DEFAULT 60;
+ALTER TABLE homework_task ADD COLUMN IF NOT EXISTS custom_fields JSONB NOT NULL DEFAULT '[]'::jsonb;

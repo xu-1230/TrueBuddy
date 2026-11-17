@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 import org.example.backend.module.homework.model.HomeworkTaskDO;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Mapper
@@ -23,12 +24,18 @@ public interface HomeworkTaskMapper {
     @Select("SELECT * FROM homework_task WHERE id = #{id} AND deleted = FALSE")
     HomeworkTaskDO selectById(Long id);
 
-    /** 写入本次批改的配置（批改要求 + 知识库），供工作流开始节点按 taskId 回查 */
+    /** 写入本次批改的配置（批改要求 + 知识库 + 评分区间 + 自定义导出列），供历史回看与导出使用 */
     @Update("UPDATE homework_task SET description = #{description}, space_ids = #{spaceIds}, "
+            + "score_min = #{scoreMin}, score_max = #{scoreMax}, pass_score = #{passScore}, "
+            + "custom_fields = #{customFields}::jsonb, "
             + "update_time = now() WHERE id = #{id}")
     int updateGradeConfig(@Param("id") Long id,
                           @Param("description") String description,
-                          @Param("spaceIds") String spaceIds);
+                          @Param("spaceIds") String spaceIds,
+                          @Param("scoreMin") BigDecimal scoreMin,
+                          @Param("scoreMax") BigDecimal scoreMax,
+                          @Param("passScore") BigDecimal passScore,
+                          @Param("customFields") String customFields);
 
     /** 最近 N 条任务（历史抽屉列表，口径同文档生成历史：按创建时间倒序；附带评分记录数） */
     @Select("SELECT t.*, (SELECT COUNT(*) FROM homework_grading_result r WHERE r.task_id = t.id) AS result_count "

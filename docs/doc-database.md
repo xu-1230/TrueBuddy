@@ -50,11 +50,13 @@
 
 ## 5. homework 模块
 
-**homework_task** — 批改任务表（一次文件夹上传 = 一行，软删）：`folder_name`；`file_count`；`total_size`；**`status SMALLINT` 0=待批改/1=批改中/2=成功/3=部分成功/4=失败**；`description`（批改要求）；`space_ids VARCHAR(512)`（逗号分隔）。idx(create_time DESC) WHERE deleted=FALSE。1:N homework_file。
+**homework_task** — 批改任务表（一次文件夹上传 = 一行，软删）：`folder_name`；`file_count`；`total_size`；**`status SMALLINT` 0=待批改/1=批改中/2=成功/3=部分成功/4=失败**；`description`（批改要求）；`space_ids VARCHAR(512)`（逗号分隔）；**`score_min / score_max / pass_score NUMERIC(6,2)`**（评分区间，默认 0/100/60）；**`custom_fields JSONB`**（自定义导出列定义 `{key,description,type,schema}`；`type` 取工作流变量类型，`schema.type` 为 list/file 元素类型）。idx(create_time DESC) WHERE deleted=FALSE。1:N homework_file。
 
 **homework_file** — 作业文件表（物理删除）：`task_id` → homework_task；`file_id` → infra_file（可空）；**`relative_path VARCHAR(512)`**（形如 `课程/学号-姓名/文件.docx`）；`name`；`size`。UNIQUE(task_id, relative_path)。
 
-**homework_grading_result** — 批改评分结果表（一次批改的逐学生评分记录，从属表物理删除）：`task_id` → homework_task；`student`（模型解析，未署名时服务端填「未署名」）；`score NUMERIC(5,1)`（可空）；`grade`（优/良/…）；`comment TEXT`；`deductions JSONB` 字符串数组；`read_files JSONB` 字符串数组（模型实际读取的文件相对路径）；`conversation_id`（产出本批结果的工作流会话 id，仅溯源）。idx(task_id)。**覆盖式回写**：同一任务重复回写先按 task_id 物理删除旧行再整批插入，以最后一次为准（US12）。命名刻意避开已废弃的旧表名。
+**homework_grading_result** — 批改评分结果表（一次批改的逐学生评分记录，从属表物理删除）：`task_id` → homework_task；`student`（模型解析，未署名时服务端填「未署名」）；`score NUMERIC(5,1)`（可空）；`grade`（优/良/…）；**`custom JSONB`**（自定义导出列的值：key → 文本/数字，由模型逐学生产出）；`read_files JSONB` 字符串数组（模型实际读取的文件相对路径）；`conversation_id`（产出本批结果的工作流会话 id，仅溯源）；`comment TEXT` / `deductions JSONB` 为 **LEGACY** 列（已一次性迁入 `custom`，停止读写）。idx(task_id)。**覆盖式回写**：同一任务重复回写先按 task_id 物理删除旧行再整批插入，以最后一次为准（US12）。命名刻意避开已废弃的旧表名。
+
+> 迁移：`homework_score_range_custom_20261117.sql` 给 `homework_task` 加 `score_min/score_max/pass_score/custom_fields`、给 `homework_grading_result` 加 `custom`；旧 `comment/deductions` 一次性迁入 `custom`（旧列保留 legacy）；存量评分区间从 `description` 里的 `0-200` / `60-100` 等区间恢复（下限 > 0 时及格线取下限，下限为 0 时取满分 60%）；剥掉早期定义里已废弃的 `default` / `label` 键（变量名即 key），并把 `type=text` 归一为 `string`。可重复执行。
 
 **homework_grading_task / homework_grading_record** — **旧版表**，仅存于 `restore_dropped_tables_20261022.sql` 恢复脚本，现行代码不使用（批改执行已移交工作流链路，见 doc-homework.md）。
 

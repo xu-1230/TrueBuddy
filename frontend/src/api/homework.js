@@ -70,7 +70,10 @@ export function uploadHomeworkFiles(files, paths, folderName, onUploadProgress) 
  * @property {string[]} spaceIds    选中的知识库 id 列表
  * @property {HomeworkFileItemVO[]} files 作业文件清单（含相对路径、fileId 与 MinIO 预签名 URL，直接透传上传返回）
  * @property {string} description   AI 描述说明（批改要求）
- * @property {'xlsx'|'csv'} exportFormat 导出结果格式
+ * @property {number} scoreMin      评分区间下限（默认 0）
+ * @property {number} scoreMax      评分区间上限 / 满分（默认 100）
+ * @property {number} passScore     及格线（默认 60，必须落在区间内）
+ * @property {Array<{key:string,description:string,type:string,schema?:{type:string}}>} customFields 自定义导出列（key 即变量名 / 导出表头）
  * @property {string} workflowId    选择的工作流 id
  */
 
@@ -96,6 +99,9 @@ export function submitGrading(payload) {
  * @property {number} totalSize    文件总大小（字节）
  * @property {string|null} description AI 描述说明（批改要求，未提交批改请求前为 null）
  * @property {string[]} spaceIds   知识库 id 列表（未提交批改请求前为空数组）
+ * @property {number} scoreMin     评分区间下限
+ * @property {number} scoreMax     评分区间上限 / 满分
+ * @property {number} passScore    及格线
  * @property {string} createTime   创建时间
  */
 
@@ -112,8 +118,10 @@ export function listHomeworkTasks(limit) {
 
 /**
  * @typedef {HomeworkTaskItemVO} HomeworkTaskDetailRespVO 任务详情（只读回看）
- * 任务字段同列表项，另含文件树：
+ * 任务字段同列表项，另含文件树、自定义列定义与逐学生结果：
  * @property {HomeworkFileItemVO[]} files 任务下全部作业（按相对路径升序，含预签名 URL 与 MIME）
+ * @property {Array<{key:string,description:string,type:string,schema?:{type:string}}>} customFields 自定义导出列定义（key 即变量名 / 导出表头）
+ * @property {Array<{student:string,score:number|null,grade:string,custom:object,readFiles:string[]}>} results 逐学生结果
  */
 
 /**

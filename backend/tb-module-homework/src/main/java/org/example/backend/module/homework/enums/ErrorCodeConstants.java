@@ -18,5 +18,7 @@ public interface ErrorCodeConstants {
     ErrorCode HOMEWORK_FILE_TYPE_NOT_ALLOWED = new ErrorCode(1_004_000_005, "不支持的文件类型：{}");
     ErrorCode HOMEWORK_TASK_NOT_EXISTS = new ErrorCode(1_004_000_006, "批改任务不存在");
     ErrorCode HOMEWORK_TASK_STATUS_INVALID = new ErrorCode(1_004_000_007, "任务不是待批改状态，无法开始批改");
+    /** 错误信息带具体原因（评分区间 / 自定义导出列校验），前端直接展示 */
+    ErrorCode HOMEWORK_GRADE_CONFIG_INVALID = new ErrorCode(1_004_000_008, "批改配置不合法：{}");
 
 }

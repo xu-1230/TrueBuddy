@@ -132,6 +132,21 @@ const humanNode = () => DEFAULT_FLOW_DEFINITION.nodes.find((node) => String(node
 const SAMPLE = {
   student_list: [{ student: '天才', files: [{ path: 'a.docx', fileId: 122 }] }],
   plan: '满分 100、及格线 60；主题契合 25 / 内容深度 30 / 呈现效果 25 / 规范性 20',
+  score_min: 0,
+  score_max: 100,
+  pass_score: 60,
+  custom_fields: [
+    {
+      key: 'deductions',
+      description: '扣分明细：逐项列出失分项与扣分',
+      type: 'string',
+    },
+    {
+      key: 'comment',
+      description: 'AI 评语：面向学生本人的评语',
+      type: 'string',
+    },
+  ],
 }
 
 /** 按后端 `HumanNode` 的口径把节点声明拼成卡片：data 来自 inputs，fields 来自 outputs */
@@ -187,5 +202,9 @@ test('真实定义：上游没产出取值时，拦下来的理由是「上游�
 
   const issues = blockingIssuesOf(card, resolveCard(card).values)
   assert.equal(issues.unfilled.length, 0, '这些字段没有可编辑控件，不该提示"请先填写"')
-  assert.deepEqual(issues.sourceMissing, card.fields.map((field) => field.label))
+  // custom_fields 是可选字段（老师可以一个自定义列都不建），不参与「上游没给值」拦截
+  assert.deepEqual(
+    issues.sourceMissing,
+    card.fields.filter((field) => field.required).map((field) => field.label),
+  )
 })

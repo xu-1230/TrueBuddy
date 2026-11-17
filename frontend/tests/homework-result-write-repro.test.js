@@ -27,8 +27,10 @@ test('内置标准工作流：迭代聚合产出 → 回写 payload 必须带逐
     student: ['张三', '李四'],
     score: [88, 76],
     grade: ['良', '及格'],
-    comment: ['结构完整', '第三题失分'],
-    deductions: [[{ item: '第三题', diff: 5, reason: '公式错误' }], []],
+    custom: [
+      { deductions: '第三题 −5：公式错误', comment: '结构完整' },
+      { deductions: '第三题 −5：公式错误', comment: '第三题失分' },
+    ],
     readFiles: [['电子技术基础/张三/第三章.docx'], ['电子技术基础/李四/第三章.docx']],
   }
 
@@ -39,4 +41,5 @@ test('内置标准工作流：迭代聚合产出 → 回写 payload 必须带逐
   assert.equal(payload.records.length, 2, '空 records 会让后端只删不插，表必然 0 行')
   assert.equal(payload.records[0].student, '张三')
   assert.equal(payload.records[0].score, 88)
+  assert.equal(payload.records[0].custom.comment, '结构完整')
 })

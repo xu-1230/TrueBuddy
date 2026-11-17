@@ -2,6 +2,7 @@ package org.example.backend.module.homework.model.vo;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -28,7 +29,16 @@ public class HomeworkGradeReqVO {
     private List<HomeworkFileItemVO> files;
     /** AI 描述说明（批改要求） */
     private String description;
-    /** 导出结果格式：xlsx / csv */
+    /** 评分区间下限（默认 0） */
+    private BigDecimal scoreMin;
+    /** 评分区间上限 / 满分（默认 100） */
+    private BigDecimal scoreMax;
+    /** 及格线（默认 60，必须落在 [scoreMin, scoreMax]） */
+    private BigDecimal passScore;
+    /** 自定义导出列定义（可为空列表；预置扣分明细 / AI 评语） */
+    private List<HomeworkCustomFieldVO> customFields;
+    /** @deprecated 导出格式已从配置面板移除，保留字段仅为兼容旧客户端；当前不使用 */
+    @Deprecated
     private String exportFormat;
     /** 选择的工作流 id */
     private String workflowId;

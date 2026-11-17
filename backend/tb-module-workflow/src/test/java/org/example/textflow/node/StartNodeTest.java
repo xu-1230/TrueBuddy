@@ -146,4 +146,68 @@ class StartNodeTest {
 
         assertThat(outputsOf(result)).isEmpty();
     }
+
+    // ========== 评分区间 / 自定义列：可选 + default ==========
+
+    private static WorkflowNode definitionWithDefaults() {
+        WorkflowNode node = definition();
+        NodeField scoreMin = new NodeField();
+        scoreMin.setName("score_min");
+        scoreMin.setType("number");
+        scoreMin.setDefaultValue(0);
+
+        NodeField scoreMax = new NodeField();
+        scoreMax.setName("score_max");
+        scoreMax.setType("number");
+        scoreMax.setDefaultValue(100);
+
+        NodeField passScore = new NodeField();
+        passScore.setName("pass_score");
+        passScore.setType("number");
+        passScore.setDefaultValue(60);
+
+        NodeField customFields = new NodeField();
+        customFields.setName("custom_fields");
+        customFields.setType("list");
+        customFields.setDefaultValue(List.of(Map.of("key", "deductions", "label", "扣分明细")));
+
+        node.getData().getOutputs().addAll(List.of(scoreMin, scoreMax, passScore, customFields));
+        return node;
+    }
+
+    /** 没提供 score_* / custom_fields：按定义里的 default 回填 */
+    @Test
+    void apply_usesDeclaredDefaultsWhenOptionalInputsAbsent() {
+        Map<String, Object> values = new HashMap<>();
+        values.put("file_tree", List.of(Map.of("fileId", 122)));
+        values.put("description", "按维度评分");
+
+        Map<String, Object> outputs = outputsOf(
+                new StartNode(definitionWithDefaults()).apply(stateOf(values)));
+
+        assertThat(outputs.get("score_min")).isEqualTo(0);
+        assertThat(outputs.get("score_max")).isEqualTo(100);
+        assertThat(outputs.get("pass_score")).isEqualTo(60);
+        assertThat(outputs.get("custom_fields")).isEqualTo(List.of(Map.of("key", "deductions", "label", "扣分明细")));
+    }
+
+    /** 显式 0 / 空数组不能被默认值覆盖：0 是合法最低分，[] 是「本次没有自定义列」 */
+    @Test
+    void apply_keepsExplicitZeroAndEmptyList() {
+        Map<String, Object> values = new HashMap<>();
+        values.put("file_tree", List.of(Map.of("fileId", 122)));
+        values.put("description", "按维度评分");
+        values.put("score_min", 0);
+        values.put("score_max", 20);
+        values.put("pass_score", 12);
+        values.put("custom_fields", List.of());
+
+        Map<String, Object> outputs = outputsOf(
+                new StartNode(definitionWithDefaults()).apply(stateOf(values)));
+
+        assertThat(outputs.get("score_min")).isEqualTo(0);
+        assertThat(outputs.get("score_max")).isEqualTo(20);
+        assertThat(outputs.get("pass_score")).isEqualTo(12);
+        assertThat(outputs.get("custom_fields")).isEqualTo(List.of());
+    }
 }
