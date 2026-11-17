@@ -1,5 +1,8 @@
 package org.example.backend.module.doctemplate.service;
 
+import org.example.backend.module.doctemplate.model.vo.ChatHistoryMessage;
+import org.example.backend.module.doctemplate.model.vo.ChatSelection;
+import org.example.backend.module.doctemplate.model.vo.DocEditPlan;
 import org.example.backend.module.doctemplate.model.vo.DocPlanResult;
 import org.example.backend.module.doctemplate.model.vo.ReplacementRule;
 
@@ -50,5 +53,20 @@ public interface AiContentService {
      */
     List<ReplacementRule> buildFixups(String textDigest, String tablesDigest, DocPlanResult.DocItem item,
                                       List<String> missingKeywords, Map<String, Integer> forbiddenCounts);
+
+    /**
+     * AI 聊天编辑：根据用户要求、选中元素、会话历史与当前版本全文摘要，产出回复 + 结构化编辑指令。
+     *
+     * @param instruction   用户修改要求
+     * @param textDigest    正文段落清单（位置 → 原文）
+     * @param tablesDigest  表格与嵌套表格段落清单
+     * @param selections    用户选中的元素（上下文提示，可为空）
+     * @param history       本次会话最近的有效消息（可为空）
+     * @param errors        上一次校验失败的具体错误（首次为空；修正轮传入）
+     * @return 编辑规划（reply + operations）
+     */
+    DocEditPlan edit(String instruction, String textDigest, String tablesDigest,
+                     List<ChatSelection> selections, List<ChatHistoryMessage> history,
+                     List<String> errors);
 
 }

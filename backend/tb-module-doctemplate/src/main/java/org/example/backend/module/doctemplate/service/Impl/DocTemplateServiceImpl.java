@@ -2,12 +2,17 @@ package org.example.backend.module.doctemplate.service.Impl;
 
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.example.backend.framework.common.exception.enums.GlobalErrorCodeConstants;
 import org.example.backend.framework.common.exception.ServiceException;
+import org.example.backend.framework.security.LoginUser;
+import org.example.backend.framework.security.util.SecurityFrameworkUtils;
 import org.example.backend.module.doctemplate.config.DocTemplateProperties;
 import org.example.backend.module.doctemplate.mapper.DocTemplateFileMapper;
 import org.example.backend.module.doctemplate.mapper.DocTemplateGenerationMapper;
+import org.example.backend.module.doctemplate.mapper.DocTemplateVersionMapper;
 import org.example.backend.module.doctemplate.model.DocTemplateFileDO;
 import org.example.backend.module.doctemplate.model.DocTemplateGenerationDO;
+import org.example.backend.module.doctemplate.model.DocTemplateVersionDO;
 import org.example.backend.module.doctemplate.model.vo.DocFileRespVO;
 import org.example.backend.module.doctemplate.model.vo.DocPlanResult;
 import org.example.backend.module.doctemplate.model.vo.DocxReplaceReport;
@@ -104,6 +109,8 @@ public class DocTemplateServiceImpl implements DocTemplateService {
     @Resource
     private DocTemplateFileMapper fileMapper;
     @Resource
+    private DocTemplateVersionMapper versionMapper;
+    @Resource
     private InfraFileMapper infraFileMapper;
     @Resource
     private MinioFileStorageService minioFileStorageService;
@@ -122,8 +129,19 @@ public class DocTemplateServiceImpl implements DocTemplateService {
     @Resource
     private DocTemplateProperties properties;
 
+    /** 当前登录用户：生成 / 历史 / 详情 / 编辑都按 creator 隔离 */
+    private Long currentUserId() {
+        LoginUser loginUser = SecurityFrameworkUtils.getLoginUser();
+        if (loginUser == null || loginUser.getId() == null) {
+            throw new ServiceException(GlobalErrorCodeConstants.UNAUTHORIZED.getCode(),
+                    GlobalErrorCodeConstants.UNAUTHORIZED.getMsg());
+        }
+        return loginUser.getId();
+    }
+
     @Override
     public GenerationRespVO generate(GenerateReqVO reqVO) {
+        Long userId = currentUserId();
         // 1. 参数校验
         validateRequest(reqVO);
 
@@ -146,6 +164,8 @@ public class DocTemplateServiceImpl implements DocTemplateService {
         generation.setQuality(reqVO.getQuality());
         generation.setDocCount(0);
         generation.setStatus(0);
+        generation.setCreator(userId);
+        generation.setUpdater(userId);
         generationMapper.insert(generation);
         Long generationId = generation.getId();
 
@@ -183,7 +203,7 @@ public class DocTemplateServiceImpl implements DocTemplateService {
                 index++;
                 try {
                     OneResult one = generateOne(generationId, index, item, textDigest, tablesDigest,
-                            templateUrl, workDir, ragContext, templateBaseline);
+                            templateUrl, workDir, ragContext, templateBaseline, userId);
                     docs.add(one.doc());
                     errors.addAll(one.warnings());
                 } catch (Exception e) {
@@ -227,8 +247,9 @@ public class DocTemplateServiceImpl implements DocTemplateService {
 
     @Override
     public List<GenerationHistoryRespVO> getHistory(int limit) {
+        Long userId = currentUserId();
         int size = limit <= 0 ? HISTORY_DEFAULT_LIMIT : Math.min(limit, HISTORY_MAX_LIMIT);
-        List<DocTemplateGenerationDO> generations = generationMapper.selectList(size);
+        List<DocTemplateGenerationDO> generations = generationMapper.selectList(size, userId);
         Map<Long, List<DocTemplateFileDO>> filesByGeneration = loadFilesByGeneration(generations);
         List<GenerationHistoryRespVO> result = new ArrayList<>();
         for (DocTemplateGenerationDO generation : generations) {
@@ -258,8 +279,10 @@ public class DocTemplateServiceImpl implements DocTemplateService {
 
     @Override
     public GenerationRespVO getDetail(Long id) {
+        Long userId = currentUserId();
         DocTemplateGenerationDO generation = generationMapper.selectById(id);
-        if (generation == null) {
+        // 生成记录按 creator 隔离：他人的记录一律按不存在处理，避免枚举
+        if (generation == null || !Objects.equals(generation.getCreator(), userId)) {
             throw exception(GENERATION_NOT_EXISTS);
         }
         List<DocFileRespVO> docs = new ArrayList<>();
@@ -316,7 +339,7 @@ public class DocTemplateServiceImpl implements DocTemplateService {
     private OneResult generateOne(Long generationId, int index, DocPlanResult.DocItem item,
                                   String textDigest, String tablesDigest, String templateUrl,
                                   Path workDir, String ragContext,
-                                  DocxValidateResult templateBaseline) throws IOException {
+                                  DocxValidateResult templateBaseline, Long userId) throws IOException {
         // 1. LLM 产出该份的 old → new 改写规则（重复文本须带 scope，且各位置 new 可不同）
         List<ReplacementRule> rules = aiContentService.buildReplacements(textDigest, tablesDigest, item, ragContext);
 
@@ -356,6 +379,8 @@ public class DocTemplateServiceImpl implements DocTemplateService {
         fileDO.setTag(truncate(item.getTag(), 50));
         fileDO.setSummary(truncate(item.getSummary(), 500));
         fileDO.setSort(index - 1);
+        fileDO.setCreator(userId);
+        fileDO.setUpdater(userId);
         fileMapper.insert(fileDO);
 
         DocFileRespVO vo = new DocFileRespVO();
@@ -810,9 +835,21 @@ public class DocTemplateServiceImpl implements DocTemplateService {
 
     private DocFileRespVO buildDocVO(DocTemplateFileDO file) {
         DocFileRespVO vo = buildDocSummaryVO(file);
-        InfraFileDO infraFile = file.getFileId() == null ? null : infraFileMapper.selectById(file.getFileId());
+        // 根文件即 v1；current_version_id 非空时，卡片打开的是当前版本
+        Long currentFileId = file.getFileId();
+        if (file.getCurrentVersionId() != null) {
+            DocTemplateVersionDO version = versionMapper.selectById(file.getCurrentVersionId());
+            if (version != null && !Boolean.TRUE.equals(version.getSuperseded())) {
+                currentFileId = version.getFileId();
+            }
+        }
+        InfraFileDO infraFile = currentFileId == null ? null : infraFileMapper.selectById(currentFileId);
         if (infraFile != null) {
+            vo.setFileId(currentFileId);
             vo.setSrc(freshUrl(infraFile));
+            if (infraFile.getSize() != null) {
+                vo.setSize(infraFile.getSize());
+            }
         }
         return vo;
     }

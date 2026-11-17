@@ -42,6 +42,10 @@ public class DocxMcpGatewayImpl implements DocxMcpGateway {
     private static final String TOOL_REPLACE = "docx_replace";
     private static final String TOOL_VALIDATE = "docx_validate";
     private static final String TOOL_FILL_FIELDS = "docx_fill_fields";
+    private static final String TOOL_SET_CELL = "docx_set_cell";
+    private static final String TOOL_INSERT_PARAGRAPH = "docx_insert_paragraph";
+    private static final String TOOL_DELETE_PARAGRAPH = "docx_delete_paragraph";
+    private static final String TOOL_DIFF = "docx_diff";
 
     private final ObjectProvider<ToolCallbackProvider> toolCallbackProviders;
     private final ObjectMapper objectMapper = new ObjectMapper()
@@ -145,6 +149,77 @@ public class DocxMcpGatewayImpl implements DocxMcpGateway {
                 sizeOf(result.get("filled")), sizeOf(result.get("skipped")), result.get("missed"));
         Object path = result.get("outputPath");
         return path == null ? source : path.toString();
+    }
+
+    @Override
+    public Map<String, Object> setCell(String source, String text, String location, String outputPath) {
+        Map<String, Object> args = new HashMap<>();
+        args.put("source", source);
+        args.put("text", text);
+        if (location != null && !location.isBlank()) {
+            args.put("location", location);
+        }
+        if (outputPath != null) {
+            args.put("output_path", outputPath);
+        }
+        Map<String, Object> result = readJsonMap(callTool(TOOL_SET_CELL, args), TOOL_SET_CELL);
+        if (result.get("error") != null) {
+            throw exception(GENERATE_FAILED, "单元格写入失败：" + result.get("error"));
+        }
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> insertParagraph(String source, String text, String after,
+                                               String before, String styleFrom, String outputPath) {
+        Map<String, Object> args = new HashMap<>();
+        args.put("source", source);
+        args.put("text", text);
+        if (after != null && !after.isBlank()) {
+            args.put("after", after);
+        }
+        if (before != null && !before.isBlank()) {
+            args.put("before", before);
+        }
+        if (styleFrom != null && !styleFrom.isBlank()) {
+            args.put("style_from", styleFrom);
+        }
+        if (outputPath != null) {
+            args.put("output_path", outputPath);
+        }
+        Map<String, Object> result = readJsonMap(callTool(TOOL_INSERT_PARAGRAPH, args), TOOL_INSERT_PARAGRAPH);
+        if (result.get("error") != null) {
+            throw exception(GENERATE_FAILED, "段落插入失败：" + result.get("error"));
+        }
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> deleteParagraph(String source, String location, String outputPath) {
+        Map<String, Object> args = new HashMap<>();
+        args.put("source", source);
+        args.put("location", location);
+        if (outputPath != null) {
+            args.put("output_path", outputPath);
+        }
+        Map<String, Object> result = readJsonMap(callTool(TOOL_DELETE_PARAGRAPH, args), TOOL_DELETE_PARAGRAPH);
+        if (result.get("error") != null) {
+            throw exception(GENERATE_FAILED, "段落删除失败：" + result.get("error"));
+        }
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> diff(String pathA, String pathB, String level) {
+        Map<String, Object> args = new HashMap<>();
+        args.put("path_a", pathA);
+        args.put("path_b", pathB);
+        args.put("level", level == null ? "text" : level);
+        Map<String, Object> result = readJsonMap(callTool(TOOL_DIFF, args), TOOL_DIFF);
+        if (result.get("error") != null) {
+            throw exception(GENERATE_FAILED, "文档比对失败：" + result.get("error"));
+        }
+        return result;
     }
 
     // ========== 私有方法 ==========
