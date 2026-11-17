@@ -240,7 +240,7 @@
 | 端 | 现状 | 框架 |
 | --- | --- | --- |
 | 后端 | 4 个模块 20 个 JUnit 测试类（knowledgebase 7 / lecture 7 / workflow 5 / homework 1），全部是单元测试，零 `@SpringBootTest` / MockMvc | JUnit 5 + `spring-boot-starter-test`（Mockito、AssertJ） |
-| 前端 | `frontend/tests/*.test.js` 32 个测试文件，`npm test` = `node --test`，零新增依赖 | Node 内置 `node:test` + `node:assert/strict` |
+| 前端 | `frontend/tests/*.test.js` 34 个测试文件，`npm test` = `node --test`，零新增依赖 | Node 内置 `node:test` + `node:assert/strict` |
 | docx-mcp | **零测试**（有 `.pytest_cache` 但无 test 文件） | — |
 
 > 命名陷阱：`tb-module-test` / `tb-module-test2` 是业务验证模块，不进入 `./mvnw test` 测试集。组件渲染、`src/api/` 拦截器、端到端流程仍无覆盖。
@@ -315,7 +315,7 @@
 | 范围 | 命令 | 说明 |
 | --- | --- | --- |
 | 前端 lint | `npm run lint` | `oxlint . --fix` + `eslint . --fix --cache`（`.oxlintrc.json` correctness 为 error；ESLint flat config） |
-| 前端测试 | `npm test` | `node --test "tests/*.test.js"`（32 个文件） |
+| 前端测试 | `npm test` | `node --test "tests/*.test.js"`（34 个文件） |
 | 后端构建 | `./mvnw clean install` | 全模块构建，CI 缺位下的人工门禁 |
 | 后端测试 | `./mvnw test` | 11 个测试类（§10.1） |
 

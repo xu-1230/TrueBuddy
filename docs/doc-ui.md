@@ -336,7 +336,7 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 - 模块组件：`MeetingTopBar`（Studio 顶栏）、`ScreenStage`（program monitor）、`AttendeeList`（presence）、`ChatPanel`（comms，含数字人标记）、`JoinLobby`（全屏入会）、`StatusNotice`、`StudioBackdrop`、`StudioClock`、`ControlDock`；纯函数 `utils/meeting-time.js` 有 Node 单测。
 - **顶栏读数条（2026-11-17）**：`.studio-bar` 为极简读数条，高 56px，只用一条底线与分组竖线，不保留玻璃底、圆角、阴影与图标光点；ON AIR / STANDBY 是主状态，时钟 / 在线数 / 连接状态为竖线分隔的次要读数，顶栏内 `mt-chip` 只留文字与圆点；会议号收成一行小号 mono（`ID` + 号码）；槽位按钮经 `:slotted(.mt-btn)` 压到 32px。老师控制台与学生会议室共用同一套外观。
 - 行为契约不变：路由、`?meetid=` / `?credential=1`、host/attendee token、全部 `/meeting/**` 接口、LiveKit track attach、DataChannel 聊天双写、在线名单只认房间事件（ADR-0002）、10s 轮询、`sendBeacon` 离会、讲课 BroadcastChannel 协议。
-- 验收：`npm run lint` / `npm test`（309 条）/ `npm run build` 全过；桌面 1600×1000 与移动 390×844 的明暗入口/会议中/结束幕已用本机 Chrome 做过视觉验收。真实 LiveKit 共享画面与双端联调仍需在环境可用时按 [doc-lecture.md](./doc-lecture.md) §11.2 回归。
+- 验收：`npm run lint` / `npm test`（329 条）/ `npm run build` 全过；桌面 1600×1000 与移动 390×844 的明暗入口/会议中/结束幕已用本机 Chrome 做过视觉验收。真实 LiveKit 共享画面与双端联调仍需在环境可用时按 [doc-lecture.md](./doc-lecture.md) §11.2 回归。
 
 ---
 
@@ -366,3 +366,62 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 - 撤回：chat-meta 图标 → 确认弹窗（会提示将同时丢弃之后 N 次修改）→ 目标版本及后代失效，当前版本回到上一版；成功后追加服务端落库的系统提示并把消息灰显，再重新拉取记录保证刷新前后一致。
 - `≤1024px` 时查看模式改为上下堆叠：docx 预览 `height: min(60vh, 560px)`、聊天全宽 `height: min(480px, 60vh)`；预览内部滚动。
 - 无障碍：`role="log"` + `aria-live="polite"`、按钮 / 输入区 `aria-label`、`<time>`、sr-only「AI 助手」标题；`prefers-reduced-motion` 下关闭 typing 三点与 `chat-in` 入场。
+
+---
+
+## 12. 作业批改成绩卡（`views/homework/components/ScoreCard.vue`，2026-11-17）
+
+> 版式重构见 [specs/2026-11-17-作业批改成绩卡视觉重构.md](./specs/2026-11-17-作业批改成绩卡视觉重构.md)；评分区间与自定义导出列（右栏改为 `02 评分输出`）见 [specs/2026-11-17-作业批改评分区间与自定义导出列.md](./specs/2026-11-17-作业批改评分区间与自定义导出列.md)。卡堆几何与批改链路不变。
+
+### 12.1 版式
+
+- 成绩卡是一张**成绩单**：卡头（2px 得分色顶缘 + `GRADE REPORT` + 工作流 + 文件名 + 翻阅）→ 抬头（学生 / 得分 / 印章）→ 横贯全卡的 `min–max` 刻度 → 正文（`01 材料清单` ｜ `02 评分输出`）→ 页脚（`REQUIREMENT` 批改要求 + 品牌末标）。
+- 得分是唯一主视觉：衬线超大数字 `clamp(4rem, 15.2cqw, 8.5rem)`、`/{score_max}` 小字、旋转双线印章落在同一基线上；未评分时分数为破折号、印章改虚线「待批改」、刻度隐藏，0 分仍按正常分数显示。
+- 刻度取 `min` / `pass` / `max`：光点位置为 `(score−min)/(max−min)`；及格线贴住端点（60–100、pass=max）时把「及格」并到端点标签，避免重叠；阈值线由区间计算后内联 `left`。
+- 材料清单的**公共目录只在标题下出现一次**（提交清单优先，无提交时用已读清单）；清单行 = 序号 + 文件名 + 扩展名角标，目录与公共目录不同才逐行回退；清单行之间用虚线分隔。
+- `02 评分输出` 按自定义列定义顺序渲染：每项 = 小号序号 + 字段名 + 类型短码 + 值。`string/time/file` 用衬线段落，`integer/number` 右对齐，`boolean` 显示「是 / 否」，`list` 逐项列表，`object` 格式化 JSON；缺失显示「未产出」；没有定义时给出空态说明。
+- 页脚上缘为虚线，暗示「撕下的批改要求」；页脚内容仍是本次批改的定性要求。
+
+### 12.2 颜色与 Token
+
+- 只使用 `--tb-*` 语义 Token 与 `color-mix()`；不新增全局 Token、不修改 `ui.html` / `theme.css`、不写原始色值。
+- 单一 `--tone` 由 `scoreTone(score, range)` 注入（`excellent → success` / `good → primary` / `pass → warning` / `weak → danger` / `pending → tertiary`）：顶缘、分数、印章、刻度、分组序号、已读角标全部从它派生。
+- 档位分界以及格线为基线向满分方向两等分：`< pass` 待改进；`≥ pass` 及格；`≥ pass + 50%×(max−pass)` 良好；`≥ pass + 75%×(max−pass)` 优秀。0–100/60 时仍是 80 / 90。
+- 纸张颗粒用 `--tb-noise` 伪元素以 3.5% 透明度叠加，不引入图片资源。
+
+### 12.3 自适应与动效
+
+- 卡片自身 `container-type: size`，用 `@container sheet` 按卡片宽高适配，不依赖视口断点：
+  - `max-width: 480px` 且 `min-height: 540px`：抬头与正文改单列，正文整体滚动；
+  - `max-height: 620px` / `max-height: 500px`：逐级压缩抬头与分数、隐藏刻度文字与页脚；
+  - `max-width: 460px`：整张纸滚动、卡头吸顶、隐藏文件名 / 工作流与页脚末标。
+- 正文滚动区底部用 `mask-image` 做 18px 渐隐，提示还有内容可读。
+- 入场只播一次：分区段 `translateY + opacity`、分数 900ms 计数、印章 `scale + rotate` 压印、刻度 `scaleX` 填充与光点出现；全部只动 `transform / opacity`。`prefers-reduced-motion` 下关闭动画，分数直接落终值。
+
+### 12.4 无障碍与数据契约
+
+- `<article>` 带整体读屏文案（学生 / 得分 / 第几份）；得分区 `role="group"` 的 `aria-label` 取**终值**，并带当前满分；刻度与 `/{max}` 是得分的视觉重复，对读屏隐藏；翻页按钮有 `aria-label` 与禁用态。
+- 组件只读 `record` + `fields` + `range`：`files` / `readFiles` 继续以 `?? []` 兜底，`record.custom` 由 `customRows(fields, custom)` 归一；`record.score` 只接受数字，字符串 / 空值按未评分处理；`scoreTone` / `scoreRatio` / `scoreScaleOf` 都接受区间，缺省回 0–100/60。
+- 页面数据中的 `status !== 1` 在抬头显示「批改未完成」，`errorMsg` 在无已读文件时作为空态说明；历史回看用 `taskMeta` 冻结的当次区间 / 字段，面板后续修改不影响已显示卡片。字段契约由 `tests/homework-card-fields.test.js` 锁定。
+
+---
+
+## 13. 作业批改「评分与导出设置」面板（`views/homework/components/ConfigPanel.vue`，2026-11-17）
+
+### 13.1 结构
+
+- 原「导出结果格式」一节改名为 **「评分与导出设置」**，去掉 Excel/CSV 切换（导出本轮仍为 TODO）。
+- **评分设置**沿用 `views/workflow2/components/NodeDataDrawer.vue` 的 **输入行** 形式：分组头 `评分设置` + 数量胶囊 → 列头 `变量名 / 变量值` → 三行 `score_min / score_max / pass_score`；每行只有只读变量名（mono）与老师直接填的 `el-input-number`（默认 0/100/60，允许一位小数，不强制 `.0`；类型固定为 number，不再单独显示 `num` 短码）。顶部快捷预设 `0–100 / 0–150 / 0–20 / 60–100`，点一次填三个值，之后仍可改；分节标题右侧直接显示当前 `min–max 分 · 及格 X`。两段列表下方的解释性提示已去掉，只保留校验错误。
+- **自定义导出列**沿用同一套 **输出行** 形式：分组头（名称 + 数量胶囊 + 右上角「＋」）→ 列头 `变量名 / 变量类型` → 虚线分隔的编辑行。每行 inline 输入变量名、类型，行尾是「展开描述 / 删除」两个图标键；类型下拉直接复用工作流变量类型树——`str / int / num / bool / time / obj`，`list` 读作 `[str]` 等、`file` 带元素类型；描述在行下展开（`nd-sub--stack`，单行输入）。类型字典 `views/workflow2/utils/variable-types.js` 由 NodeDataDrawer 与自定义导出列共用，不再各存一份。
+- **变量名就是 key，没有 label**：每一列都是逐学生输出，由模型按描述产出；预置 `deductions` / `comment`（描述里说明中文含义），变量名可改、可删除、按添加顺序导出；新增列变量名留空，点行尾展开键填写描述。
+
+### 13.2 校验与状态
+
+- 区间：最低分 < 最高分，及格线 ∈ [区间]；前端即时在面板内提示并禁用「开始批改」，后端 `/homework/grade` 再校验（400）。
+- 列：变量名（即 `key`，同时是模型输出键 / 成绩卡字段名 / 导出表头）1–40 字、字母/数字/下划线且不能与保留字段冲突、全表唯一；类型取工作流变量类型（`string/integer/number/boolean/time/object/list/file`；`list`/`file` 必须选元素类型），每列必须有描述。
+- 批改进行中预设、输入、添加、删除不可操作；描述仍可展开查看（展开键不参与 `grading` 禁用，描述输入本身禁用）。
+
+### 13.3 响应式与主题
+
+- 面板仍是 344px 固定宽 + `config-panel__scroll` 内部滚动；评分输入行栅格 `minmax(0,1fr) minmax(0,2.4fr)`，自定义列输出行栅格 `minmax(0,1fr) 76px 22px 22px`（类型是 cascader）；输入 / 下拉沿用面板的方角、下沉底色和 focus 环；行 hover / focus-within 用 `--tb-bg-raised` 铺满。
+- 只使用 `--tb-*` Token；行内类型短码与变量名用 mono / 次级色，暗色态自动跟随。
