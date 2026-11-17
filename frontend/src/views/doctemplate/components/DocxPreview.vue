@@ -33,6 +33,8 @@ const props = defineProps({
   src: { type: String, default: '' },
   /** 是否开启「元素选择」模式：开启后点击文档内容即可选中对应元素 */
   picking: { type: Boolean, default: false },
+  /** 当前已选中的 docx 定位列表（p:N / t:N / t:N/r:R/c:C），用于高亮同步 */
+  selectedLocators: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['pick'])
@@ -67,30 +69,35 @@ const TAG_LABELS = {
   ol: '有序列表',
 }
 
-/** 当前选中的 DOM 元素（不参与响应式，仅用于增删高亮 class） */
-let pickedEl = null
-
-function clearPicked(notify = false) {
-  if (!pickedEl) return
-  pickedEl.classList.remove('docx-picked')
-  pickedEl = null
-  if (notify) emit('pick', null)
-}
+/** locator → DOM 元素；渲染后重建，用于按父组件选中的 locator 同步高亮 */
+const locatorEls = new Map()
 
 function describeElement(el) {
   const tag = el.tagName.toLowerCase()
   const name = TAG_LABELS[tag] || tag
+  const locator = el.dataset.docxLoc || ''
+  // 合并单元格在 docx-preview DOM 里的行列坐标与 docx-mcp 逻辑网格可能不同：
+  // 前端仍用 DOM locator 做高亮，送给 LLM 时降级为表格级定位 + 单元格文本。
+  const table = el.closest('table[data-docx-loc]')
+  const hintLocator = table?.dataset.docxLoc || locator
   if (tag === 'img') {
     const alt = el.getAttribute('alt') || '未命名图片'
-    return { tag, name, label: `${name} · ${alt}`, text: alt }
+    return { tag, name, locator, hintLocator, label: `${name} · ${alt}`, text: alt }
   }
   if (tag === 'table') {
     const rows = el.rows?.length ?? 0
     const cols = el.rows?.[0]?.cells?.length ?? 0
-    return { tag, name, label: `${name} · ${rows} 行 × ${cols} 列`, text: '' }
+    return {
+      tag,
+      name,
+      locator,
+      hintLocator,
+      label: `${name} · ${rows} 行 × ${cols} 列`,
+      text: '',
+    }
   }
   const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 30)
-  return { tag, name, label: text ? `${name} · ${text}` : name, text }
+  return { tag, name, locator, hintLocator, label: text ? `${name} · ${text}` : name, text }
 }
 
 function handlePick(event) {
@@ -99,12 +106,105 @@ function handlePick(event) {
   event.preventDefault()
   const target = event.target
   if (!(target instanceof HTMLElement)) return
-  const el = target.closest(PICKABLE_SELECTOR)
-  if (!el || !bodyRef.value?.contains(el)) return
-  clearPicked()
-  el.classList.add('docx-picked')
-  pickedEl = el
+  const picked = target.closest(PICKABLE_SELECTOR)
+  if (!picked || !bodyRef.value?.contains(picked)) return
+  // 以最近的有 docx 定位的元素为准：点在单元格/表格边缘时也能落到可编辑位置
+  const el = picked.closest('[data-docx-loc]')
+  if (!el) return
   emit('pick', describeElement(el))
+}
+
+/** 父组件的选中列表是唯一真相源：按 locator 同步 docx-picked 高亮 */
+function applyHighlights() {
+  const selected = new Set(props.selectedLocators || [])
+  locatorEls.forEach((el, locator) => {
+    el.classList.toggle('docx-picked', selected.has(locator))
+  })
+}
+
+/**
+ * 给 docx-preview 渲染出的正文标 docx-mcp 定位：
+ * - 正文段落 p:N（只数 article 直属 p，跨页按顺序累加）
+ * - 表格 t:N（深度优先全局编号，含嵌套表）
+ * - 单元格 t:N/r:R/c:C，单元格内段落 .../p:P
+ * 页眉页脚不参与；footer 是 article 的兄弟节点，不会被遍历。
+ */
+function annotateLocators(container) {
+  locatorEls.clear()
+  container.querySelectorAll('[data-docx-loc]').forEach((el) => el.removeAttribute('data-docx-loc'))
+
+  let paragraphIndex = 0
+  let tableIndex = 0
+
+  const setLoc = (el, locator) => {
+    el.dataset.docxLoc = locator
+    locatorEls.set(locator, el)
+  }
+
+  const annotateCell = (cell, locator) => {
+    setLoc(cell, locator)
+    let cellParagraph = 0
+    for (const child of cell.children) {
+      if (child.tagName === 'P') {
+        setLoc(child, `${locator}/p:${cellParagraph++}`)
+      } else if (child.tagName === 'TABLE') {
+        annotateTable(child)
+      }
+    }
+  }
+
+  /** 只取本表的直接行；table.rows 可能把嵌套表的行也带出来 */
+  const directRows = (table) => {
+    const rows = []
+    for (const child of table.children) {
+      if (child.tagName === 'TR') {
+        rows.push(child)
+      } else if (child.tagName === 'THEAD' || child.tagName === 'TBODY' || child.tagName === 'TFOOT') {
+        for (const row of child.children) {
+          if (row.tagName === 'TR') rows.push(row)
+        }
+      }
+    }
+    return rows
+  }
+
+  const annotateTable = (table) => {
+    const tableLocator = `t:${tableIndex++}`
+    setLoc(table, tableLocator)
+    const occupied = new Set()
+    let rowIndex = 0
+    for (const row of directRows(table)) {
+      let column = 0
+      for (const cell of row.cells) {
+        while (occupied.has(`${rowIndex}:${column}`)) column += 1
+        const rowSpan = Math.max(1, cell.rowSpan || 1)
+        const colSpan = Math.max(1, cell.colSpan || 1)
+        for (let r = 0; r < rowSpan; r += 1) {
+          for (let c = 0; c < colSpan; c += 1) {
+            occupied.add(`${rowIndex + r}:${column + c}`)
+          }
+        }
+        annotateCell(cell, `${tableLocator}/r:${rowIndex}/c:${column}`)
+        column += colSpan
+      }
+      rowIndex += 1
+    }
+  }
+
+  const sections = container.querySelectorAll('.docx-wrapper > section.docx')
+  for (const section of sections) {
+    const article = section.querySelector(':scope > article')
+    if (!article) continue
+    for (const child of article.children) {
+      if (child.tagName === 'P') {
+        setLoc(child, `p:${paragraphIndex++}`)
+      } else if (child.tagName === 'TABLE') {
+        annotateTable(child)
+      }
+    }
+  }
+
+  applyHighlights()
 }
 
 const fileName = computed(() => {
@@ -125,13 +225,15 @@ async function loadBlob(src) {
 async function render() {
   const container = bodyRef.value
   const src = props.src
-  if (!container || !src) return
+  if (!container || !src) {
+    locatorEls.clear()
+    return
+  }
 
   const token = (renderToken += 1)
   loading.value = true
   error.value = ''
-  // 重新渲染会替换整棵 DOM，旧的选择结果随之失效
-  clearPicked(true)
+  locatorEls.clear()
   container.innerHTML = ''
 
   try {
@@ -146,6 +248,8 @@ async function render() {
       experimental: true,
       ignoreLastRenderedPageBreak: false,
     })
+    if (token !== renderToken) return
+    annotateLocators(container)
   } catch (err) {
     if (token !== renderToken) return
     console.error('[DocxPreview] 渲染文档失败：', err)
@@ -156,21 +260,14 @@ async function render() {
 }
 
 watch(() => props.src, render)
-
-// 退出选择模式时丢弃当前选中项，避免残留高亮
-watch(
-  () => props.picking,
-  (value) => {
-    if (!value) clearPicked(true)
-  },
-)
+watch(() => props.selectedLocators, applyHighlights, { deep: true })
 
 onMounted(render)
 
 onBeforeUnmount(() => {
   // 作废未完成的渲染任务并清空容器，避免残留 DOM 与内存泄漏
   renderToken += 1
-  clearPicked()
+  locatorEls.clear()
   if (bodyRef.value) bodyRef.value.innerHTML = ''
 })
 </script>
