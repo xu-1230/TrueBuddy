@@ -212,8 +212,8 @@ test('链路：合法画布点运行 → 校验通过 → 弹「输入数据」�
   assert.equal(startInputsVisible.value, true, '开始节点有声明输出 → 弹「输入数据」弹窗')
   assert.deepEqual(
     startInputsOutputs.value.map((field) => field.name),
-    ['file_tree', 'description', 'know'],
-    '弹窗按开始节点的声明收集输入（内置定义即这三个变量）',
+    ['file_tree', 'description', 'know', 'score_min', 'score_max', 'pass_score', 'custom_fields'],
+    '弹窗按开始节点的声明收集输入（文件树 / 批改要求 / 知识库 + 评分区间 / 自定义列）',
   )
   assert.equal(
     calls.conversation.length + calls.execute.length + calls.startRun.length,

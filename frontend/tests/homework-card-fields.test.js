@@ -7,8 +7,8 @@
  * **整棵子树不挂载**：页面表现是「卡堆整块消失、只剩它前面已经渲染出来的东西」，
  * 而后端日志显示批改其实全跑完了（3 轮读文件、迭代产出齐全）。
  *
- * 所以规则是：**`ScoreCard` 模板里读到的每一个 `record.xxx`，卡片映射函数都必须提供**。
- * 这个用例靠源码比对守住它 —— 与 `variable-sources.test.js` 守 `<VariableTags>` 接线同一做法。
+ * 现在的契约：`ScoreCard` 右栏按 `fields` 定义渲染 `record.custom`，固定字段只剩
+ * student / score / grade / files / readFiles；`toRecordFromGrading` 必须一次给齐。
  *
  * 运行：cd frontend && npm test
  */
@@ -60,23 +60,26 @@ test('ScoreCard 读到的每个 record 字段，卡片映射函数都必须提�
   assert.deepEqual(missing, [], `成绩卡（toRecordFromGrading）少了 ScoreCard 会读的字段：${missing.join('、')}`)
 })
 
-test('成绩卡提供三个列表字段（ScoreCard 会取 .length 与 v-for）', () => {
+test('成绩卡提供文件 / 已读 / 自定义输出三个字段（模板会遍历或渲染）', () => {
   const view = read('../src/views/homework/HomeworkGradingView.vue')
   const provided = fieldsProvidedBy(view, 'toRecordFromGrading')
 
-  for (const name of ['files', 'readFiles', 'deductions']) {
+  for (const name of ['files', 'readFiles', 'custom']) {
     assert.ok(provided.has(name), `toRecordFromGrading 必须提供 ${name}（缺了会让卡堆整块不渲染）`)
   }
 })
 
-test('ScoreCard 对三个列表字段做空值兜底：字段缺失也只是那一格空着', () => {
+test('ScoreCard 对文件字段做空值兜底，且不再直接读旧 deductions / comment', () => {
   const source = read('../src/views/homework/components/ScoreCard.vue')
 
   // 模板里读列表长度/遍历时必须带 `?? []` 兜底，不能裸取 .length
   assert.doesNotMatch(source, /record\.files\.length/)
   assert.doesNotMatch(source, /record\.readFiles\.length/)
-  assert.doesNotMatch(source, /record\.deductions\.length/)
   assert.match(source, /record\.files \?\? \[\]/)
   assert.match(source, /record\.readFiles \?\? \[\]/)
-  assert.match(source, /record\.deductions \?\? \[\]/)
+
+  // 旧固定字段已迁到 custom（由 customRows 统一兜底），卡片不应再直接读它们
+  assert.doesNotMatch(source, /record\.deductions/)
+  assert.doesNotMatch(source, /record\.comment/)
+  assert.match(source, /record\.custom/)
 })
