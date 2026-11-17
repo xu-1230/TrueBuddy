@@ -2,7 +2,7 @@
   <div class="meeting-studio meeting-console">
     <div class="meeting-console__inner">
       <MeetingTopBar
-        :title="store.meeting?.title || '模拟会议'"
+        :title="store.meeting?.title || '会议列表'"
         :meeting-no="session?.meetingNo || ''"
         sub-note="老师控制台"
         :icon="VideoCamera"
@@ -124,11 +124,11 @@
             />
           </section>
 
-          <aside class="console-body__side mt-rail">
-            <AttendeeList :attendees="store.displayAttendees" :degraded="store.degraded" />
-            <ChatPanel
-              class="console-body__chat"
+          <aside class="console-body__side">
+            <MeetingChatRail
               :messages="store.messages"
+              :attendees="store.displayAttendees"
+              :degraded="store.degraded"
               :disabled="store.ended"
               @send="handleSend"
             />
@@ -285,8 +285,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Link, Microphone, Monitor, SwitchButton, VideoCamera, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { closeMeeting, getDigitalStatus, getMeetingDetail } from '@/api/meeting'
-import AttendeeList from './components/AttendeeList.vue'
-import ChatPanel from './components/ChatPanel.vue'
+import MeetingChatRail from './components/MeetingChatRail.vue'
 import ControlDock from './components/ControlDock.vue'
 import MeetingTopBar from './components/MeetingTopBar.vue'
 import ScreenStage from './components/ScreenStage.vue'
@@ -762,11 +761,10 @@ onBeforeUnmount(() => {
 .console-entry__inner {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--tb-size-3);
   width: min(880px, 100%);
   min-height: 0;
-  padding: clamp(24px, 4vw, 64px) 0;
 }
 
 .console-entry__actions {
@@ -879,16 +877,10 @@ onBeforeUnmount(() => {
 }
 
 .console-body__side {
+  display: flex;
+  min-width: 0;
   min-height: 0;
-  padding: 12px;
-  gap: 10px;
-}
-
-.console-body__chat {
-  flex: 1;
-  min-height: 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--mt-line);
+  padding: 0;
 }
 
 .console-bottom {
@@ -1006,10 +998,6 @@ onBeforeUnmount(() => {
 
   .meeting-console__inner {
     gap: 10px;
-  }
-
-  .console-body__side {
-    padding: 10px;
   }
 
   .console-bottom .mt-btn {
