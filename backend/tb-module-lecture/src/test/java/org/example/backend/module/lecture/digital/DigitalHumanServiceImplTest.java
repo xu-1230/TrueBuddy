@@ -7,6 +7,7 @@ import org.example.backend.module.lecture.model.LectureMeetingDO;
 import org.example.backend.module.lecture.model.vo.DigitalSpeakReqVO;
 import org.example.backend.module.lecture.model.vo.DigitalStatusVO;
 import org.example.backend.module.lecture.model.vo.MeetingMessageVO;
+import org.example.backend.module.lecture.ppt.service.PptVoiceService;
 import org.example.backend.module.lecture.service.MeetingService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +43,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -74,6 +76,8 @@ class DigitalHumanServiceImplTest {
     private TtsSynthPort ttsPort;
     @Mock
     private MeetingService meetingService;
+    @Mock
+    private PptVoiceService pptVoiceService;
 
     private DigitalHumanProperties properties;
     private DigitalHumanServiceImpl service;
@@ -83,7 +87,10 @@ class DigitalHumanServiceImplTest {
         properties = new DigitalHumanProperties();
         properties.setEnabled(true);
         properties.setDashscopeApiKey("sk-test");
-        service = new DigitalHumanServiceImpl(properties, ttsPort, meetingService);
+        service = new DigitalHumanServiceImpl(properties, ttsPort, meetingService, pptVoiceService);
+        // 绝大多数用例只关心合成与落库；音色解析默认返回全局默认音色
+        lenient().when(pptVoiceService.resolveForSpeak(any(), any()))
+                .thenReturn(new PptVoiceService.VoiceSelection("longanyang", "cosyvoice-v3-flash", false, null));
     }
 
     @AfterEach
@@ -115,8 +122,8 @@ class DigitalHumanServiceImplTest {
 
     /** 合成产出 {@link #PCM}，首包耗时 1818ms（与厂商实测同量级） */
     private void stubSynthesis() {
-        when(ttsPort.synthesize(eq(TEXT), any(OutputStream.class))).thenAnswer(invocation -> {
-            ((OutputStream) invocation.getArgument(1)).write(PCM);
+        when(ttsPort.synthesize(eq(TEXT), anyString(), anyString(), any(OutputStream.class))).thenAnswer(invocation -> {
+            ((OutputStream) invocation.getArgument(3)).write(PCM);
             return new TtsSynthPort.TtsStats(1818, PCM.length);
         });
     }
@@ -152,7 +159,7 @@ class DigitalHumanServiceImplTest {
 
         service.speak(rehearsalReqVO(TEXT));
 
-        verify(ttsPort, timeout(2000)).synthesize(eq(TEXT), any(OutputStream.class));
+        verify(ttsPort, timeout(2000)).synthesize(eq(TEXT), anyString(), anyString(), any(OutputStream.class));
         verifyNoInteractions(meetingService);
     }
 
@@ -166,7 +173,7 @@ class DigitalHumanServiceImplTest {
 
         service.speak(reqVO("  " + TEXT + "  \n"));
 
-        verify(ttsPort, timeout(2000)).synthesize(eq(TEXT), any(OutputStream.class));
+        verify(ttsPort, timeout(2000)).synthesize(eq(TEXT), anyString(), anyString(), any(OutputStream.class));
         verify(meetingService, timeout(2000)).sendMessage(eq(1L), isNull(), eq("数字人"), eq(3), eq(TEXT), eq(2));
     }
 
@@ -186,12 +193,12 @@ class DigitalHumanServiceImplTest {
     @DisplayName("合成失败：事件流已建立，不再往外抛异常，也不落库")
     void synthFailureDoesNotPersist() {
         when(meetingService.requireRunningMeetingByHost(MEETING_NO, HOST_TOKEN)).thenReturn(meeting());
-        when(ttsPort.synthesize(anyString(), any(OutputStream.class)))
+        when(ttsPort.synthesize(anyString(), anyString(), anyString(), any(OutputStream.class)))
                 .thenThrow(new IllegalStateException("语音合成失败: Model not exist"));
 
         assertDoesNotThrow(() -> {
             service.speak(reqVO(TEXT));
-            verify(ttsPort, timeout(2000)).synthesize(eq(TEXT), any(OutputStream.class));
+            verify(ttsPort, timeout(2000)).synthesize(eq(TEXT), anyString(), anyString(), any(OutputStream.class));
         });
         verify(meetingService, never()).sendMessage(anyLong(), any(), anyString(), anyInt(), anyString(), anyInt());
     }
