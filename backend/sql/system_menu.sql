@@ -19,4 +19,4 @@ CREATE TABLE IF NOT EXISTS system_menu (
 
 COMMENT ON TABLE system_menu IS '菜单权限表';
 
-CREATE INDEX idx_system_menu_parent_id ON system_menu (parent_id);
+CREATE INDEX IF NOT EXISTS idx_system_menu_parent_id ON system_menu (parent_id);

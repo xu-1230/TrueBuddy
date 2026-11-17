@@ -32,7 +32,11 @@ COMMENT ON TABLE  workflow IS '工作流定义表';
 COMMENT ON COLUMN workflow.name IS '流程名称：workflowId 非纯数字时按该字段匹配';
 COMMENT ON COLUMN workflow.schema_json IS '流程定义 JSON：{nodes, edges}，含迭代节点内部 blocks / edges';
 COMMENT ON COLUMN workflow.status IS '状态：0=草稿，1=已发布';
+COMMENT ON COLUMN workflow.visibility IS '可见性：0=私有，1=公有';
 COMMENT ON COLUMN workflow.creator IS '创建人 id（system_user.id，逻辑外键）';
+
+-- 已建表的环境补列（新环境由上面的 CREATE TABLE 直接建出）
+ALTER TABLE workflow ADD COLUMN IF NOT EXISTS visibility SMALLINT NOT NULL DEFAULT 0;
 
 -- 按名称读取（仅约束未删除记录）
 CREATE INDEX IF NOT EXISTS idx_workflow_name

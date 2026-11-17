@@ -17,6 +17,10 @@ CREATE TABLE IF NOT EXISTS kb_space (
 );
 
 COMMENT ON TABLE kb_space IS '知识库空间表';
+COMMENT ON COLUMN kb_space.visibility IS '可见性：0=私有，1=公有';
+
+-- 已建表的环境补列（新环境由上面的 CREATE TABLE 直接建出）
+ALTER TABLE kb_space ADD COLUMN IF NOT EXISTS visibility SMALLINT NOT NULL DEFAULT 0;
 
 -- 空间名称唯一（仅约束未删除记录，删除后可复用同名）
-CREATE UNIQUE INDEX uk_kb_space_name ON kb_space (name) WHERE deleted = FALSE;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_kb_space_name ON kb_space (name) WHERE deleted = FALSE;

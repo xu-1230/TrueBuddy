@@ -55,7 +55,20 @@ DROP INDEX IF EXISTS idx_lecture_meeting_attendee_meeting;
 --    pg_amop 实测 jsonb_path_ops 里有 @@ 算子（PG17 起支持），所以 GIN 能用上。
 --    表当前 0 行，ALTER 不涉及重写。
 -- ---------------------------------------------------------------------------
-ALTER TABLE vector_store ALTER COLUMN metadata TYPE jsonb USING metadata::jsonb;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+          FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'vector_store'
+           AND column_name = 'metadata'
+           AND data_type = 'json'
+    ) THEN
+        ALTER TABLE vector_store ALTER COLUMN metadata TYPE jsonb USING metadata::jsonb;
+    END IF;
+END
+$$;
 CREATE INDEX IF NOT EXISTS idx_vector_store_metadata_gin
     ON vector_store USING gin (metadata jsonb_path_ops);
 

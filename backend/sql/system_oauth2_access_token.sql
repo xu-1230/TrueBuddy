@@ -18,4 +18,11 @@ CREATE TABLE IF NOT EXISTS system_oauth2_access_token (
 COMMENT ON TABLE system_oauth2_access_token IS 'OAuth2 访问令牌表';
 
 -- 访问令牌唯一
-CREATE UNIQUE INDEX uk_system_oauth2_access_token ON system_oauth2_access_token (access_token);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_system_oauth2_access_token
+    ON system_oauth2_access_token (access_token);
+
+-- 按用户清理（deleteByUserId）与过期清理的扫描列
+CREATE INDEX IF NOT EXISTS idx_system_oauth2_access_token_user_id
+    ON system_oauth2_access_token (user_id);
+CREATE INDEX IF NOT EXISTS idx_system_oauth2_access_token_expires_time
+    ON system_oauth2_access_token (expires_time);

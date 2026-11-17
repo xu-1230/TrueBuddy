@@ -33,12 +33,11 @@ COMMENT ON COLUMN kb_document_parse_block.content        IS '块的 Markdown 正
 COMMENT ON COLUMN kb_document_parse_block.text           IS '块的纯文本（LayoutVO.text），Markdown 缺失时作降级';
 COMMENT ON COLUMN kb_document_parse_block.external_id    IS '解析引擎返回的块唯一 ID（LayoutVO.uniqueId），用于溯源';
 
--- 同一文档内块顺序唯一
+-- 同一文档内块顺序唯一；按 document_id 的查询与删除走这个唯一键的最左前缀，无需再建单列索引
 CREATE UNIQUE INDEX IF NOT EXISTS uk_parse_block_doc_index
     ON kb_document_parse_block (document_id, block_index);
--- 按文档查询（拼接 Markdown / 送 AI 分片）
-CREATE INDEX IF NOT EXISTS idx_parse_block_doc
-    ON kb_document_parse_block (document_id);
+-- 旧版单列索引是上面的严格左前缀，已建库执行时顺手清掉
+DROP INDEX IF EXISTS idx_parse_block_doc;
 -- 按空间统计与过滤
 CREATE INDEX IF NOT EXISTS idx_parse_block_space
     ON kb_document_parse_block (space_id);

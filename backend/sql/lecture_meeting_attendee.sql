@@ -33,8 +33,10 @@ COMMENT ON COLUMN lecture_meeting_attendee.role IS '角色：1=老师，2=学生
 COMMENT ON COLUMN lecture_meeting_attendee.join_time IS '入会时间';
 COMMENT ON COLUMN lecture_meeting_attendee.leave_time IS '离会时间（null = 尚未显式离开，≠ 在线）';
 
-CREATE INDEX IF NOT EXISTS idx_lecture_meeting_attendee_meeting
-    ON lecture_meeting_attendee (meeting_id) WHERE deleted = FALSE;
+-- 入会重名检查（meeting_id + nickname）与按会议列表共用；旧的单列索引已被它覆盖
+CREATE INDEX IF NOT EXISTS idx_lecture_meeting_attendee_meeting_nickname
+    ON lecture_meeting_attendee (meeting_id, nickname) WHERE deleted = FALSE;
+DROP INDEX IF EXISTS idx_lecture_meeting_attendee_meeting;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_lecture_meeting_attendee_token
     ON lecture_meeting_attendee (attendee_token) WHERE deleted = FALSE;
