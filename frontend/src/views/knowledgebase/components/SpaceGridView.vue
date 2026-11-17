@@ -11,8 +11,25 @@
       </el-button>
     </div>
 
-    <div v-loading="loading" class="space-grid-view__body">
-      <el-row :gutter="16">
+    <div
+      v-loading="loading && spaces.length > 0"
+      class="space-grid-view__body"
+      :aria-busy="loading"
+    >
+      <el-row v-if="loading && !spaces.length" :gutter="16" aria-hidden="true">
+        <el-col
+          v-for="n in SKELETON_COUNT"
+          :key="n"
+          class="kb-skeleton__col"
+          :xs="24"
+          :sm="12"
+          :md="8"
+          :lg="6"
+        >
+          <SpaceCardSkeleton />
+        </el-col>
+      </el-row>
+      <el-row v-else :gutter="16">
         <el-col
           v-for="space in spaces"
           :key="space.id"
@@ -34,6 +51,7 @@
         v-if="!loading && !spaces.length"
         description="暂无知识库空间，点击创建"
       />
+      <p v-if="loading" class="kb-sr-only" role="status">正在加载知识库空间…</p>
     </div>
 
     <!-- 公有库浏览区：他人的公有空间，只读（fork 入口在共享链路打通） -->
@@ -45,8 +63,25 @@
         </div>
         <span class="kb-public__desc">他人公开的空间，只读可浏览</span>
       </div>
-      <div v-loading="publicLoading" class="kb-public__body">
-        <el-row :gutter="16">
+      <div
+        v-loading="publicLoading && publicSpaces.length > 0"
+        class="kb-public__body"
+        :aria-busy="publicLoading"
+      >
+        <el-row v-if="publicLoading && !publicSpaces.length" :gutter="16" aria-hidden="true">
+          <el-col
+            v-for="n in SKELETON_COUNT"
+            :key="n"
+            class="kb-skeleton__col"
+            :xs="24"
+            :sm="12"
+            :md="8"
+            :lg="6"
+          >
+            <SpaceCardSkeleton />
+          </el-col>
+        </el-row>
+        <el-row v-else :gutter="16">
           <el-col
             v-for="space in publicSpaces"
             :key="space.id"
@@ -67,6 +102,7 @@
         <p v-if="!publicLoading && !publicSpaces.length" class="kb-public__empty">
           暂无他人公开的知识库空间
         </p>
+        <p v-if="publicLoading" class="kb-sr-only" role="status">正在加载公有库…</p>
       </div>
     </div>
 
@@ -107,6 +143,10 @@ import { nextTick, reactive, ref } from 'vue'
 import { Collection, Plus, User } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import SpaceCard from './SpaceCard.vue'
+import SpaceCardSkeleton from './SpaceCardSkeleton.vue'
+
+/** 首屏骨架：lg 档一行 4 张；窄屏由 CSS 裁到 2 张 */
+const SKELETON_COUNT = 4
 
 defineProps({
   spaces: { type: Array, default: () => [] },
@@ -228,6 +268,26 @@ function onDelete(space) {
 
 .space-grid-view__body {
   min-height: 200px;
+}
+
+/* 读屏加载提示：视觉隐藏，不参与布局 */
+.kb-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip-path: inset(50%);
+}
+
+/* 手机上骨架只留两张，避免首屏被占位卡撑得过长 */
+@media (max-width: 767px) {
+  .kb-skeleton__col:nth-child(n + 3) {
+    display: none;
+  }
 }
 
 /* ========== 公有库浏览区 ========== */

@@ -1,6 +1,6 @@
 # doc-ui · 样式设计
 
-> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-16（主题 Ink，2026-10-25 由 Harbor 换入）
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-17（主题 Ink，2026-10-25 由 Harbor 换入）
 > 适用范围：前端全部样式与主题、动效实现，以及展示页模块（`/guides`、`/docs`）全流程（§8）与系统首页 Zone C 的 tab 双行为模型（§9）
 > 相关：[doc-conventions.md](./doc-conventions.md)（编码与组件规范）、[ui.html](./ui.html)（视觉样张）
 
@@ -181,6 +181,14 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 - 视差元素数量控制在个位数；`will-change` 仅在动画期间临时添加。
 - 长时间动画（`scrub`）需评估低端设备的掉帧风险。
 
+### 6.4 加载态（骨架屏）
+
+- 列表 / 网格类页面首屏加载用骨架屏，不用整块 `el-loading` 转圈：骨架按真实卡分层（卡壳 / 视觉区 / 文本行），尺寸对齐真实卡，数据到达后网格高度不跳。
+- 已有数据时的刷新（增删改、从子级返回）保留旧内容 + `v-loading` 轻量遮罩，不把已有卡换回骨架；骨架只在 `loading && !list.length` 时出现。
+- 骨架色走 `--tb-*` Token，流光用伪元素 `transform: translateX`（§6.3）；`prefers-reduced-motion` 下关闭动画、保留静态色块。
+- 挂载即请求的页面，`loading` 初值设为 `true`，避免先闪一帧空态；加载容器加 `aria-busy`，骨架层 `aria-hidden`，并提供 `role="status"` 的视觉隐藏文案。不使用 EP `el-skeleton`。
+- 已落地：系统首页 Zone D（`AssetCardSkeleton`）、知识库空间 / 公有库（`SpaceCardSkeleton`）、知识库文档列表与分片区（`DocumentListView` 内联骨架）。
+
 ---
 
 ## 7. 待整改汇总
@@ -273,6 +281,7 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 - **过滤态记忆**：`sessionStorage` 键 `tb-home-active-tab`（`ACTIVE_TAB_STORAGE_KEY`，键名遵守 doc-conventions §6 的 `tb-` 前缀约定）；仅接受 filter 型 key，非法值回落 `all`。
 - **信息流与资产卡**：`utils/feed.js` 的 `buildFeed` 归一三类来源；生成历史按 `docs` 展开为文件卡（key `doc-file-<fileId>`，数值条显示「本批 <docCount>」，药丸显示文件 `tag`）；知识库 / 工作流卡只展示当前登录用户自己的资产（后端列表按 `creator` 过滤，见 [adr/0006](./adr/0006-知识库与工作流归属与共享模型.md)）。
 - **空态入口**：`SystemHomeView` 的 `EMPTY_ACTIONS` 按当前 tab 给出真实可落地的 CTA（文档 → 去生成文档 / 知识库 → 去创建知识库 / 工作流 → 去创建工作流）。
+- **加载态**：Zone D 首次加载用 `AssetCardSkeleton.vue` 的分层骨架卡（卡壳 + 封面 + 标题 / 描述 / 数值条 / 时间），不使用 `el-skeleton` 与 `v-loading`。固定渲染 10 张，由容器查询按列数裁到两行（4 列 8 / 3 列 6 / 2 列 4 / 1 列 2）；流光是 `transform` 位移动画，`prefers-reduced-motion` 下关闭。`loading` 初值为 `true`，骨架结束立即切换，真卡沿用自身错峰入场；无障碍按 `aria-busy` + `aria-hidden` 骨架 + `role="status"` 读屏文案处理。
 - **交互反馈**：hover 只用阴影 / 描边 / 底色 / 透明度表达（§6.2 要求 5）；资产卡与 tab 不做位移型 hover。
 
 ---
@@ -290,7 +299,7 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 - **模块级视觉层**：只由 `views/meeting/MeetingConsoleView.vue` 与 `MeetingRoomView.vue` 引入，选择器挂在 `.meeting-studio` / `.mt-tokens` 下；**不修改** `assets/theme.css`、`ui.html` 或 `--tb-*` 全局 Token。
 - **组件只引用变量**：`--mt-*` 在本文件集中声明（表层、线、字、品牌、信号青、琥珀、固定暗场、阴影、层级、节奏、版式），组件 SFC 里不写原始色值。
 - **字体**：`public/fonts/` 自托管 Space Grotesk（Latin / Latin-Ext）与 JetBrains Mono（Latin / Latin-Ext），`@font-face` 只在本文件出现；中文回退现有 `--font-sans`。两者均为 SIL OFL 1.1，来源与许可见 `public/fonts/README.md`。
-- **入口海报**：复用 `public/hero/hero-meeting.webp`，按 `HomeHero` 的「品牌染色 + 多层蒙层 + 颗粒」处理；只用于入口屏，不铺在活动中的会议界面。
+- **入口海报**：复用 `public/hero/hero-meeting.webp`，按 `HomeHero` 的「品牌染色 + 多层蒙层 + 颗粒」处理；只用于学生入会大厅（`JoinLobby`）的海报层，学生会议室的氛围层（无海报）与结束幕仍由 `StudioBackdrop` 承担，不铺在活动中的会议界面。老师控制台（`/index/meeting`）自 2026-11-17 起不再渲染 `StudioBackdrop`，页面只保留 `--mt-bg` 底色；其空态 / 缺凭据 / 恢复中入口屏也不再显示 eyebrow、大标题与说明段落，只留操作按钮、已知会议列表与恢复 spinner。
 
 ### 10.2 明暗与固定暗场
 
@@ -298,6 +307,7 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 - 共享画面舞台 `ScreenStage` 设 `color-scheme: dark`，底为 `--tb-neutral-950`，使舞台内的 `--mt-*` 恒取暗色分支；亮色主题下舞台仍是暗场（沿用 §3.1 固定色约束）。结束幕同理。
 - 弹层通过 `.mt-tokens` 携带同一组 Token；若未来把会议弹层改为 `append-to-body`，必须确保该 class 仍在弹层根上。
 - 全幅控制台：`IndexView` 的 `FULL_BLEED_PATHS` 含 `/index/meeting`；≤1024px 单面板切换，≤820px 用 `:has(.meeting-console)` 隐藏全局侧栏，让 390px 宽度下控制台占满内容区（只影响会议控制台）。
+- 入口屏滚动：整块入口屏不再滚动；内容超高时只让「本机还能回到这些会议」列表（`.console-entry__known`）自行滚动（复用 `mt-scroll` 细滚动条），顶栏与主操作保持可见。
 
 ### 10.3 Token 摘要
 
@@ -324,5 +334,6 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 ### 10.5 组件与验收
 
 - 模块组件：`MeetingTopBar`（Studio 顶栏）、`ScreenStage`（program monitor）、`AttendeeList`（presence）、`ChatPanel`（comms，含数字人标记）、`JoinLobby`（全屏入会）、`StatusNotice`、`StudioBackdrop`、`StudioClock`、`ControlDock`；纯函数 `utils/meeting-time.js` 有 Node 单测。
+- **顶栏读数条（2026-11-17）**：`.studio-bar` 为极简读数条，高 56px，只用一条底线与分组竖线，不保留玻璃底、圆角、阴影与图标光点；ON AIR / STANDBY 是主状态，时钟 / 在线数 / 连接状态为竖线分隔的次要读数，顶栏内 `mt-chip` 只留文字与圆点；会议号收成一行小号 mono（`ID` + 号码）；槽位按钮经 `:slotted(.mt-btn)` 压到 32px。老师控制台与学生会议室共用同一套外观。
 - 行为契约不变：路由、`?meetid=` / `?credential=1`、host/attendee token、全部 `/meeting/**` 接口、LiveKit track attach、DataChannel 聊天双写、在线名单只认房间事件（ADR-0002）、10s 轮询、`sendBeacon` 离会、讲课 BroadcastChannel 协议。
 - 验收：`npm run lint` / `npm test`（309 条）/ `npm run build` 全过；桌面 1600×1000 与移动 390×844 的明暗入口/会议中/结束幕已用本机 Chrome 做过视觉验收。真实 LiveKit 共享画面与双端联调仍需在环境可用时按 [doc-lecture.md](./doc-lecture.md) §11.2 回归。

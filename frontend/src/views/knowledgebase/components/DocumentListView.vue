@@ -27,29 +27,50 @@
             </el-icon>
           </el-tooltip>
         </div>
-        <ul v-loading="loading" class="doc-list">
-          <li
-            v-for="doc in documents"
-            :key="doc.id"
-            class="doc-list__item"
-            :class="{ 'doc-list__item--active': isActive(doc) }"
-            @click="$emit('select-document', doc)"
-          >
-            <span
-              class="doc-list__icon"
-              :class="`doc-list__icon--${doc.type.toLowerCase()}`"
-              :title="doc.type"
+        <ul
+          v-loading="loading && documents.length > 0"
+          class="doc-list"
+          :aria-busy="loading"
+        >
+          <template v-if="loading && !documents.length">
+            <li
+              v-for="n in DOC_SKELETON_COUNT"
+              :key="n"
+              class="doc-list__item doc-list__item--skeleton"
+              aria-hidden="true"
             >
-              <el-icon><component :is="docIcon(doc.type)" /></el-icon>
-            </span>
-            <span class="doc-list__name" :title="doc.name">{{ doc.name }}</span>
-          </li>
+              <span class="doc-skeleton__block doc-skeleton__icon"></span>
+              <span
+                class="doc-skeleton__block doc-skeleton__line"
+                :class="`is-${((n - 1) % 3) + 1}`"
+              ></span>
+            </li>
+          </template>
+          <template v-else>
+            <li
+              v-for="doc in documents"
+              :key="doc.id"
+              class="doc-list__item"
+              :class="{ 'doc-list__item--active': isActive(doc) }"
+              @click="$emit('select-document', doc)"
+            >
+              <span
+                class="doc-list__icon"
+                :class="`doc-list__icon--${doc.type.toLowerCase()}`"
+                :title="doc.type"
+              >
+                <el-icon><component :is="docIcon(doc.type)" /></el-icon>
+              </span>
+              <span class="doc-list__name" :title="doc.name">{{ doc.name }}</span>
+            </li>
+          </template>
         </ul>
         <el-empty
           v-if="!loading && !documents.length"
           :image-size="72"
           :description="readonly ? '该空间暂无文档' : '暂无文档，点击添加'"
         />
+        <p v-if="loading" class="kb-sr-only" role="status">正在加载文档列表…</p>
       </aside>
 
       <section class="doc-detail">
@@ -66,7 +87,7 @@
                 {{ statusMeta(activeDocument).label }}
               </el-tag>
               <span class="doc-detail__divider">|</span>
-              <span>分片数：{{ chunks.length }}</span>
+              <span>分片数：{{ chunkLoading ? '—' : chunks.length }}</span>
               <el-icon
                 v-if="!readonly"
                 class="doc-detail__delete"
@@ -87,15 +108,37 @@
             show-icon
           />
 
-          <div v-loading="chunkLoading" class="chunk-list">
-            <div v-for="chunk in chunks" :key="chunk.id" class="chunk-card">
-              <MarkdownViewer :value="chunk.content" class="chunk-card__content" />
-            </div>
+          <div
+            v-loading="chunkLoading && chunks.length > 0"
+            class="chunk-list"
+            :aria-busy="chunkLoading"
+          >
+            <template v-if="chunkLoading && !chunks.length">
+              <div
+                v-for="n in CHUNK_SKELETON_COUNT"
+                :key="n"
+                class="chunk-card chunk-card--skeleton"
+                aria-hidden="true"
+              >
+                <span
+                  v-for="line in 4"
+                  :key="line"
+                  class="chunk-skeleton__block chunk-skeleton__line"
+                  :class="`is-${line}`"
+                ></span>
+              </div>
+            </template>
+            <template v-else>
+              <div v-for="chunk in chunks" :key="chunk.id" class="chunk-card">
+                <MarkdownViewer :value="chunk.content" class="chunk-card__content" />
+              </div>
+            </template>
             <el-empty
               v-if="!chunkLoading && !chunks.length"
               :image-size="90"
               description="该文档暂无分片数据"
             />
+            <p v-if="chunkLoading" class="kb-sr-only" role="status">正在加载文档分片…</p>
           </div>
         </template>
         <el-empty v-else :image-size="110" description="请选择左侧文档查看分片内容" />
@@ -149,6 +192,10 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['back', 'select-document', 'delete-document', 'add-document'])
+
+/** 文档列表 / 分片首屏骨架数量 */
+const DOC_SKELETON_COUNT = 6
+const CHUNK_SKELETON_COUNT = 3
 
 function isActive(doc) {
   return props.activeDocument && props.activeDocument.id === doc.id
@@ -459,5 +506,115 @@ function onDelete(doc) {
   line-height: 1.7;
   color: var(--tb-text-secondary);
   word-break: break-word;
+}
+
+/* ========== 加载骨架 ========== */
+.kb-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip-path: inset(50%);
+}
+
+.doc-list__item--skeleton {
+  pointer-events: none;
+}
+
+.doc-skeleton__block,
+.chunk-skeleton__block {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--tb-text-primary) 8%, var(--tb-bg-surface));
+  border-radius: var(--tb-radius-xs);
+}
+
+/* 文档列表行：30px 图标块 + 一条名称线，行高与真实文档项一致 */
+.doc-skeleton__icon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--tb-radius-md);
+}
+
+.doc-skeleton__line {
+  flex: 1;
+  max-width: 78%;
+  height: 11px;
+}
+
+.doc-skeleton__line.is-2 {
+  max-width: 58%;
+}
+
+.doc-skeleton__line.is-3 {
+  max-width: 68%;
+}
+
+/* 分片卡：四行文本占位，卡壳沿用 chunk-card */
+.chunk-card--skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.chunk-card--skeleton:hover {
+  border-color: var(--tb-border);
+  box-shadow: none;
+}
+
+.chunk-skeleton__line {
+  height: 10px;
+}
+
+.chunk-skeleton__line.is-1 {
+  width: 100%;
+}
+
+.chunk-skeleton__line.is-2 {
+  width: 94%;
+}
+
+.chunk-skeleton__line.is-3 {
+  width: 88%;
+}
+
+.chunk-skeleton__line.is-4 {
+  width: 56%;
+}
+
+/* 流光只做 transform 位移（doc-ui §6.3） */
+.doc-skeleton__block::after,
+.chunk-skeleton__block::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 24%,
+    light-dark(rgb(255 255 255 / 0.65), rgb(255 255 255 / 0.09)) 50%,
+    transparent 76%
+  );
+  animation: kb-doc-shimmer 1.4s var(--tb-ease-linear) infinite;
+  transform: translateX(-100%);
+}
+
+@keyframes kb-doc-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-skeleton__block::after,
+  .chunk-skeleton__block::after {
+    animation: none;
+    opacity: 0;
+  }
 }
 </style>
