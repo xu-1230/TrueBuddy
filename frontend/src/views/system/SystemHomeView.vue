@@ -174,7 +174,7 @@ const emptyDescription = computed(() => {
 const EMPTY_ACTIONS = {
   all: { label: '去创建知识库', to: '/index/knowledge-base' },
   knowledge: { label: '去创建知识库', to: '/index/knowledge-base' },
-  workflow: { label: '去创建工作流', to: '/index/workflow' },
+  workflow: { label: '去创建工作流', to: '/index/workflow/new' },
   doc: { label: '去生成文档', to: '/index/doc-template' },
 }
 const emptyAction = computed(() => EMPTY_ACTIONS[activeTab.value] || EMPTY_ACTIONS.all)

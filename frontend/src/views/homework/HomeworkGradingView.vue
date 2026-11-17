@@ -322,16 +322,16 @@ function workflowName(id) {
 
 /**
  * 打开画布页：不传 id 表示新建，传 id 表示查看 / 编辑该工作流。
- * 画布页按 `workflow_id` query 载入定义，保存后会把 id 写回地址栏。
+ * 画布是列表的子路径（ADR 0007）：`/index/workflow/:id` 与 `/index/workflow/new`。
  *
  * @param {string} [workflowId] 工作流 id（雪花 ID 字符串）
  */
 function openWorkflowEditor(workflowId) {
-  const target = { path: '/index/workflow' }
   if (workflowId) {
-    target.query = { workflow_id: String(workflowId) }
+    router.push({ name: 'workflow-canvas', params: { id: String(workflowId) } })
+    return
   }
-  router.push(target)
+  router.push({ name: 'workflow-new' })
 }
 
 /** 内置默认知识库：始终置于列表首位，且作为默认选中项 */

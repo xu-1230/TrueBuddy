@@ -81,7 +81,7 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     @Override
     public String saveWorkflow(WorkflowSaveReqVO reqVO) {
-        // /workflow/** 在免登录白名单内（URL 模式无法按方法拆分），写操作在服务层强制登录
+        // URL 层已要求登录（ADR 0007），服务层仍保留登录 + 归属校验作为兜底
         Long userId = currentUserId();
         if (userId == null) {
             throw unauthorized();
@@ -134,7 +134,10 @@ public class WorkflowServiceImpl implements WorkflowService {
         if (existing.getStatus() == null) {
             existing.setStatus(WorkflowConstants.STATUS_DRAFT);
         }
-        workflowRepository.update(existing);
+        if (workflowRepository.update(existing) == 0) {
+            // selectById 与 update 之间被并发删除：重试无意义，按不存在拒绝
+            throw badRequest("工作流不存在: " + id);
+        }
         log.info("[saveWorkflow] 更新工作流成功，id={}", id);
         return id;
     }
@@ -170,7 +173,7 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     @Override
     public void updateVisibility(String workflowId, Integer visibility) {
-        // /workflow/** 在免登录白名单内，写操作在服务层强制登录
+        // URL 层已要求登录（ADR 0007），服务层仍保留登录 + 归属校验作为兜底
         Long userId = currentUserId();
         if (userId == null) {
             throw unauthorized();
@@ -188,7 +191,9 @@ public class WorkflowServiceImpl implements WorkflowService {
         WorkflowDO workflow = workflowRepository.selectById(id)
                 .orElseThrow(() -> badRequest("工作流不存在: " + id));
         assertWorkflowOwner(workflow, userId, "无权修改该工作流");
-        workflowRepository.updateVisibility(id, visibility);
+        if (workflowRepository.updateVisibility(id, visibility) == 0) {
+            throw badRequest("工作流不存在: " + id);
+        }
         log.info("[updateVisibility] 工作流可见性已切换，id={}，visibility={}", id, visibility);
     }
 
@@ -201,6 +206,7 @@ public class WorkflowServiceImpl implements WorkflowService {
                     vo.setName(workflow.getName());
                     vo.setDescription(workflow.getDescription());
                     vo.setStatus(workflow.getStatus());
+                    vo.setVisibility(VISIBILITY_PUBLIC);
                     vo.setBuiltin(false);
                     vo.setStepCount(countTopLevelNodes(workflow.getSchemaJson()));
                     vo.setUpdateTime(formatTime(workflow.getUpdateTime()));
@@ -245,6 +251,58 @@ public class WorkflowServiceImpl implements WorkflowService {
         return copy.getId();
     }
 
+    @Override
+    public void renameWorkflow(String workflowId, String name) {
+        Long userId = currentUserId();
+        if (userId == null) {
+            throw unauthorized();
+        }
+        String id = trimToNull(workflowId);
+        if (id == null) {
+            throw badRequest("工作流 id 不能为空");
+        }
+        if (isBuiltin(id)) {
+            throw forbidden("内置模板不可重命名");
+        }
+        String newName = trimToNull(name);
+        if (newName == null) {
+            throw badRequest("工作流名称不能为空");
+        }
+        if (newName.length() > NAME_MAX_LENGTH) {
+            throw badRequest("工作流名称不能超过 " + NAME_MAX_LENGTH + " 个字符");
+        }
+        WorkflowDO workflow = workflowRepository.selectById(id)
+                .orElseThrow(() -> badRequest("工作流不存在: " + id));
+        assertWorkflowOwner(workflow, userId, "无权重命名该工作流");
+        if (workflowRepository.updateName(id, newName) == 0) {
+            throw badRequest("工作流不存在: " + id);
+        }
+        log.info("[renameWorkflow] 工作流已重命名，id={}，name={}", id, newName);
+    }
+
+    @Override
+    public void deleteWorkflow(String workflowId) {
+        Long userId = currentUserId();
+        if (userId == null) {
+            throw unauthorized();
+        }
+        String id = trimToNull(workflowId);
+        if (id == null) {
+            throw badRequest("工作流 id 不能为空");
+        }
+        if (isBuiltin(id)) {
+            throw forbidden("内置模板不可删除");
+        }
+        WorkflowDO workflow = workflowRepository.selectById(id)
+                .orElseThrow(() -> badRequest("工作流不存在: " + id));
+        assertWorkflowOwner(workflow, userId, "无权删除该工作流");
+        if (workflowRepository.softDelete(id) == 0) {
+            throw badRequest("工作流不存在: " + id);
+        }
+        // 会话 / 执行记录保留：历史仍可查，后续用该工作流建会话或运行会按「不存在」拒绝
+        log.info("[deleteWorkflow] 工作流已软删除，id={}，creator={}", id, userId);
+    }
+
     /** fork 副本命名：「原名（副本）」，重名时叠加序号（副本 2 / 副本 3 …），统一截到列宽内 */
     private String uniqueForkNameOf(String originName) {
         String base = originName == null || originName.isBlank() ? "未命名工作流" : originName.trim();
@@ -268,6 +326,7 @@ public class WorkflowServiceImpl implements WorkflowService {
                     vo.setName(workflow.getName());
                     vo.setDescription(workflow.getDescription());
                     vo.setStatus(workflow.getStatus());
+                    vo.setVisibility(workflow.getVisibility());
                     vo.setBuiltin(isBuiltin(workflow.getId()));
                     vo.setStepCount(countTopLevelNodes(workflow.getSchemaJson()));
                     vo.setUpdateTime(formatTime(workflow.getUpdateTime()));
@@ -315,7 +374,7 @@ public class WorkflowServiceImpl implements WorkflowService {
         return WorkflowConstants.BUILTIN_WORKFLOW_ID.equals(id);
     }
 
-    /** 当前登录用户 id；/workflow/** 是免登录白名单，匿名请求返回 null */
+    /** 当前登录用户 id；匿名请求返回 null（URL 层已要求登录，Service 保留兜底防御） */
     private Long currentUserId() {
         LoginUser loginUser = SecurityFrameworkUtils.getLoginUser();
         return loginUser == null ? null : loginUser.getId();

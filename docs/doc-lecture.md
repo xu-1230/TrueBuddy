@@ -1,7 +1,7 @@
 # doc-lecture · 智能课堂业务逻辑
 
 > 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-13
-> 适用范围：**模拟会议（§3–§11，已落地）+ PPT 讲稿优化（§12，已落地）+ 数字人语音播报（§5.7，已落地：放映页本页播放并驱动口型）**；放映/会议 × 照读/AI 现场讲词的演讲体系为**规划**（§13，未落地）
+> 适用范围：**会议（§3–§11，已落地）+ PPT 讲稿优化（§12，已落地）+ 数字人语音播报（§5.7，已落地：放映页本页播放并驱动口型）**；放映/会议 × 照读/AI 现场讲词的演讲体系为**规划**（§13，未落地）
 > 实时通道实现：**自托管 LiveKit**（部署在仓库外的 `D:\ctf\livekit`），媒体与聊天都不经过本服务
 > 相关：[doc-api.md](./doc-api.md)（会议/讲稿接口）、[doc-conventions.md](./doc-conventions.md)、[doc-integration.md](./doc-integration.md)（LiveKit / TTS 集成）、[doc-devops.md](./doc-devops.md)（LiveKit 部署）、[adr/](./adr/)（0001–0004）
 
@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | 1 | 备注区 `remark` 优化：依据 PPT 数据做 AI 演讲稿优化 | **移到后续阶段**（见 §1.3） |
 | 2 | AI 数字人：添加 AI 语音返回以及对口型 | **移到后续阶段**（见 §1.3） |
-| 3 | 模拟会议：开启会议、生成会议链接、学生入会并可发消息提问 | **本期范围** |
+| 3 | 会议：开启会议、生成会议链接、学生入会并可发消息提问 | **本期范围** |
 
 ### 1.2 本期范围（会议 MVP）
 
@@ -338,13 +338,15 @@ PPT 页(放映态) --POST /ppt/speech/speak--> tb-module-lecture
 | `src/utils/hostSession.js` | 主持人会话的本地存取（`tb-meeting-host:{会议号}`，**结束会议即删**；旧键 `sessionStorage:tb-meeting-host` 在首次进入控制台时一次性迁移）。放在 `src/utils/` 而不是某个模块目录下，因为它是 **PPT 页（建会时写）与控制台（打开时读）共用**的 |
 | `views/meeting/MeetingRoomView.vue` | 学生会议室（`/meeting/:meetingNo`，独立路由、无布局、免登录）：全屏入会大厅输名字 → stage-first 看画面 + 右侧聊天；10s 轮询兜底会议结束；结束后全屏 ENDED |
 | `views/meeting/hooks/useLiveKitRoom.js` | 房间客户端（见 §5.4） |
-| `views/meeting/components/` | `JoinLobby`（全屏入会大厅，替代已删除的 `NicknameDialog`）、`MeetingTopBar`（Studio 顶栏）、`ScreenStage`（program monitor + `defineExpose({videoRef})`，轨的 attach 由 hook 驱动）、`AttendeeList`、`ChatPanel`、`StatusNotice`、`StudioBackdrop`、`StudioClock`、`ControlDock` |
+| `views/meeting/components/` | `JoinLobby`（全屏入会大厅，替代已删除的 `NicknameDialog`）、`MeetingTopBar`（Studio 顶栏）、`ScreenStage`（program monitor + `defineExpose({videoRef})`，轨的 attach 由 hook 驱动）、`MeetingChatRail`（统一右轨：标题 / 在线头像行 + 浮层名单 / 消息流 / composer）、`StatusNotice`、`StudioBackdrop`、`StudioClock`、`ControlDock` |
 | `views/meeting/styles/meeting.css` | 纯视觉模块层：`--mt-*` Token、自托管 Space Grotesk / JetBrains Mono、环境纹理、共享原语、reduced-motion；不改变接口/路由/状态 |
 | `views/meeting/stores/meeting.js` | Pinia store：会议信息、成员、消息、共享与连接状态、`applyEvent` |
 | `src/api/meeting.js` | REST 封装（含 `sendMeetingMessage`） |
-| 路由与菜单 | `src/router/index.js` 两条路由；`views/IndexView.vue` 菜单「模拟会议」；`SidebarIcon` 的 `meeting` 图标 |
+| 路由与菜单 | `src/router/index.js` 两条路由；`views/IndexView.vue` 菜单「会议列表」；`SidebarIcon` 的 `meeting` 图标 |
 
 > **2026-11-16 视觉升级（纯表现）**：两页共用 `views/meeting/styles/meeting.css`（暗色导播台 / 日光演播室，跟随全局 `useAppearance`）；控制台改为全幅，学生入会改为全屏大厅，结束改为全屏 ENDED。接口、路由、LiveKit、10s 轮询、host/attendee 凭据与讲课 `BroadcastChannel` 协议均未改变。口径见 [specs/2026-11-16-模拟会议视觉升级.md](./specs/2026-11-16-模拟会议视觉升级.md) 与 [doc-ui.md](./doc-ui.md) §10。
+>
+> **2026-11-18 右轨重构（纯表现）**：老师控制台与学生会议室的右轨统一为 `MeetingChatRail`，参考文档模板 `AiChatPanel` 的 `--tb-*` 实底面板、用户右气泡、他人左头像+浅气泡、多行 composer 与滚到底按钮；在线成员改为头像行 + 浮层名单；连续同人消息按 5 分钟窗口合并（`utils/chat-groups.js`）。消息协议、store、发送/轮询与后端接口均未改变。口径见 [specs/2026-11-18-会议右轨参考AI聊天视觉重构.md](./specs/2026-11-18-会议右轨参考AI聊天视觉重构.md)。
 
 ---
 

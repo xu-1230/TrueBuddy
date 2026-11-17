@@ -4,7 +4,7 @@
 
     <div class="meeting-room__inner">
       <MeetingTopBar
-        :title="store.meeting?.title || '模拟会议'"
+        :title="store.meeting?.title || '会议'"
         :meeting-no="meetingNo"
         sub-note="学生会议室"
         :icon="Monitor"
@@ -40,11 +40,11 @@
           <!-- 数字人只存在于老师共享的画面里，学生端不单独渲染形象 -->
         </section>
 
-        <aside class="room-body__side mt-rail">
-          <AttendeeList :attendees="store.displayAttendees" :degraded="store.degraded" />
-          <ChatPanel
-            class="room-body__chat"
+        <aside class="room-body__side">
+          <MeetingChatRail
             :messages="store.messages"
+            :attendees="store.displayAttendees"
+            :degraded="store.degraded"
             :disabled="store.ended"
             :loading="loading"
             @send="handleSend"
@@ -87,8 +87,7 @@ import { useRoute } from 'vue-router'
 import { Monitor } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getDigitalStatus, getMeetingState, joinMeeting, leaveMeeting } from '@/api/meeting'
-import AttendeeList from './components/AttendeeList.vue'
-import ChatPanel from './components/ChatPanel.vue'
+import MeetingChatRail from './components/MeetingChatRail.vue'
 import JoinLobby from './components/JoinLobby.vue'
 import MeetingTopBar from './components/MeetingTopBar.vue'
 import ScreenStage from './components/ScreenStage.vue'
@@ -348,16 +347,10 @@ onBeforeUnmount(() => {
 }
 
 .room-body__side {
+  display: flex;
+  min-width: 0;
   min-height: 0;
-  padding: 12px;
-  gap: 10px;
-}
-
-.room-body__chat {
-  flex: 1;
-  min-height: 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--mt-line);
+  padding: 0;
 }
 
 /* 小屏切换器默认不占位（宽屏两块同时显示） */
@@ -485,10 +478,6 @@ onBeforeUnmount(() => {
 
   .meeting-room__inner {
     gap: 10px;
-  }
-
-  .room-body__side {
-    padding: 10px;
   }
 
   .room-switcher :deep(.el-segmented) {

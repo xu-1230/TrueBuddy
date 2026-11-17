@@ -39,7 +39,8 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   createSpace,
@@ -56,6 +57,10 @@ import {
 import DocumentListView from './components/DocumentListView.vue'
 import DocumentUploadView from './components/DocumentUploadView.vue'
 import SpaceGridView from './components/SpaceGridView.vue'
+import { knowledgeBaseLocation, parseKnowledgeBaseRoute } from './utils/route'
+
+const route = useRoute()
+const router = useRouter()
 
 const currentLevel = ref('space')
 const currentSpace = ref(null)
@@ -75,12 +80,22 @@ const chunkLoading = ref(false)
 // 正在 fork 的空间 id（卡片按钮 loading；单请求进行中，无并发去重需求）
 const forkingId = ref(null)
 
+// 路由 / 文档 / 分片请求令牌：快速切换时丢弃过期响应，保证地址与画面一致
+let routeToken = 0
+let documentsToken = 0
+let chunksToken = 0
+// 空间列表就绪信号：深链进入时先等两份列表载入，才能判断空间归属
+let listsReady = null
+
+/** 载入我的空间；返回值表示请求是否成功（深链归属判定要区分「不存在」与「加载失败」） */
 async function loadSpaces() {
   loading.value = true
   try {
     spaces.value = await getSpaceList()
+    return true
   } catch {
     ElMessage.error('加载空间列表失败')
+    return false
   } finally {
     loading.value = false
   }
@@ -90,12 +105,26 @@ async function loadPublicSpaces() {
   publicLoading.value = true
   try {
     publicSpaces.value = await getPublicSpaceList()
+    return true
   } catch {
     // 公有区加载失败不拖垮页面主体，静默留空
     publicSpaces.value = []
+    return false
   } finally {
     publicLoading.value = false
   }
+}
+
+/** 并行载入我的空间与公有库；解析出各自成败供深链归属判定等待 */
+function loadAllSpaceLists() {
+  listsReady = Promise.all([loadSpaces(), loadPublicSpaces()]).then(
+    ([ownedOk, publicOk]) => ({ ownedOk, publicOk }),
+  )
+  return listsReady
+}
+
+function ensureSpaceLists() {
+  return listsReady ?? loadAllSpaceLists()
 }
 
 async function loadDocuments(spaceId) {
@@ -110,13 +139,17 @@ async function loadDocuments(spaceId) {
 }
 
 async function loadChunks(documentId) {
+  const token = ++chunksToken
   chunkLoading.value = true
   try {
-    chunks.value = await getChunkList(documentId)
+    const list = await getChunkList(documentId)
+    if (token !== chunksToken) return
+    chunks.value = list
   } catch {
+    if (token !== chunksToken) return
     ElMessage.error('加载文档分片失败')
   } finally {
-    chunkLoading.value = false
+    if (token === chunksToken) chunkLoading.value = false
   }
 }
 
@@ -176,42 +209,17 @@ async function handleForkSpace(space) {
   }
 }
 
-async function handleOpenSpace(space) {
-  isPublicReadonly.value = false
-  currentSpace.value = space
-  currentLevel.value = 'document'
-  currentDocument.value = null
-  chunks.value = []
-  await loadDocuments(space.id)
-  // 默认选中第一篇文档，右栏直接展示其分片
-  if (documents.value.length) {
-    handleSelectDocument(documents.value[0])
-  }
+// 点击空间只改地址，载入交给 URL watcher；自己的与公有走同一条路径
+function handleOpenSpace(space) {
+  navigate(knowledgeBaseLocation(space.id))
 }
 
-// 打开他人的公有空间：只读浏览，不提供任何写入口
-async function handleOpenPublicSpace(space) {
-  isPublicReadonly.value = true
-  currentSpace.value = space
-  currentLevel.value = 'document'
-  currentDocument.value = null
-  chunks.value = []
-  await loadDocuments(space.id)
-  if (documents.value.length) {
-    handleSelectDocument(documents.value[0])
-  }
+function handleOpenPublicSpace(space) {
+  navigate(knowledgeBaseLocation(space.id))
 }
 
 function handleBackToSpace() {
-  currentLevel.value = 'space'
-  currentSpace.value = null
-  currentDocument.value = null
-  isPublicReadonly.value = false
-  documents.value = []
-  chunks.value = []
-  // 空间内文档数量可能已变化，刷新空间列表（自己的 + 公有区的）
-  loadSpaces()
-  loadPublicSpaces()
+  navigate(knowledgeBaseLocation())
 }
 
 function handleSelectDocument(doc) {
@@ -273,9 +281,109 @@ async function handleDeleteDocument(doc) {
   }
 }
 
-onMounted(() => {
-  loadSpaces()
-  loadPublicSpaces()
+/* ---------- URL → 页面状态（?space= 为当前打开的空间） ---------- */
+
+/** 规范化跳转：同地址不发请求，避免 redundant navigation */
+function navigate(location, { replace = false } = {}) {
+  const target = router.resolve(location).fullPath
+  if (target === route.fullPath) return Promise.resolve()
+  return replace ? router.replace(location) : router.push(location)
+}
+
+/** 回到空间列表：清空空间内状态（列表数据由 URL watcher 重新拉取） */
+function resetToSpaceList() {
+  currentLevel.value = 'space'
+  currentSpace.value = null
+  currentDocument.value = null
+  isPublicReadonly.value = false
+  documents.value = []
+  chunks.value = []
+  documentsToken++
+  chunksToken++
+  chunkLoading.value = false
+}
+
+/** URL 指向的空间落状态；readonly 由归属判定结果传入 */
+async function applySpace(space, readonly, token) {
+  isPublicReadonly.value = readonly
+  currentSpace.value = space
+  currentLevel.value = 'document'
+  currentDocument.value = null
+  documents.value = []
+  chunks.value = []
+  chunksToken++
+  chunkLoading.value = false
+  loading.value = true
+  const docToken = ++documentsToken
+  try {
+    const list = await getDocumentList(space.id)
+    if (docToken !== documentsToken || token !== routeToken) return
+    documents.value = list
+  } catch {
+    if (docToken !== documentsToken || token !== routeToken) return
+    ElMessage.error('加载文档列表失败')
+  } finally {
+    if (docToken === documentsToken) loading.value = false
+  }
+  if (docToken !== documentsToken || token !== routeToken) return
+  // 默认选中第一篇文档，右栏直接展示其分片（文档选择不进 URL）
+  if (documents.value.length) {
+    handleSelectDocument(documents.value[0])
+  }
+}
+
+/**
+ * 路由变化 → 载入 / 复位。
+ * 深链进入时先等两份空间列表就绪：先查「我的空间」（可写），再查公有库（只读）。
+ */
+async function syncFromRoute(rawSpace) {
+  const token = ++routeToken
+  const { spaceId, hasInvalidSpace } = parseKnowledgeBaseRoute({ space: rawSpace })
+
+  if (!spaceId) {
+    resetToSpaceList()
+    if (hasInvalidSpace) {
+      ElMessage.warning('知识库地址无效，已返回空间列表')
+      await navigate(knowledgeBaseLocation(), { replace: true })
+      return
+    }
+    await loadAllSpaceLists()
+    return
+  }
+
+  const { ownedOk, publicOk } = await ensureSpaceLists()
+  if (token !== routeToken) return
+
+  const owned = spaces.value.find((item) => item.id === spaceId)
+  const shared = owned ? null : publicSpaces.value.find((item) => item.id === spaceId)
+  const space = owned || shared
+  if (!space) {
+    if (!ownedOk || !publicOk) {
+      // 暂时性失败：保留深链地址，回落到空间列表，刷新后可重试
+      resetToSpaceList()
+      return
+    }
+    ElMessage.warning('知识库不存在或无权访问，已返回空间列表')
+    await navigate(knowledgeBaseLocation(), { replace: true })
+    return
+  }
+  await applySpace(space, Boolean(shared), token)
+}
+
+// 首次挂载、点击空间、前后退都走同一条路径
+watch(
+  () => route.query.space,
+  (rawSpace) => {
+    syncFromRoute(rawSpace)
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  // 页面卸载后丢弃在途响应
+  routeToken++
+  documentsToken++
+  chunksToken++
 })
 </script>
 

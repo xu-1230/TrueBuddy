@@ -15,7 +15,7 @@
 | DashScope CosyVoice | 语音流式合成（原生 WebSocket → 48kHz 单声道 16bit PCM） | lecture（digital） | `tb-module-lecture/.../digital/CosyVoiceTtsSynth` |
 | 阿里云 DocMind 文档智能 | 知识库文档解析（Advance 直传文件流） | knowledgebase | `service/parse/docmind/DocMindParseGateway` |
 | MinIO | 对象存储（上传、生成产物、预签名 URL） | infra（被全模块复用） | `tb-module-infra/.../MinioFileStorageService` |
-| LiveKit（自托管） | 模拟会议实时媒体与聊天 DataChannel | lecture（livekit 签令牌/删房间）+ 前端 `livekit-client` | `tb-module-lecture/.../livekit/LiveKitTokenService` |
+| LiveKit（自托管） | 会议实时媒体与聊天 DataChannel | lecture（livekit 签令牌/删房间）+ 前端 `livekit-client` | `tb-module-lecture/.../livekit/LiveKitTokenService` |
 | docx-mcp（Python，stdio） | docx 读写工具服务（解析 / 替换 / 校验 / 填字段） | doctemplate | `DocxMcpGateway(Impl)` + `docx-mcp/main.py` |
 
 ## 2. LLM（DeepSeek）
@@ -26,7 +26,7 @@
 ## 3. Embedding 与向量检索（pgvector）
 
 - `text-embedding-v3`（1024 维）+ Spring AI pgvector VectorStore：`index-type=hnsw`、`distance-type=COSINE_DISTANCE`、`initialize-schema=true`。
-- 唯一检索入口现状：`KbDocumentServiceImpl.searchBySpace`（单路向量召回 + spaceId 过滤，异常静默返回空串）；唯一消费方是 doctemplate 的 RAG 上下文。检索链增强属**规划**，见 doc-knowledgebase.md。
+- 唯一检索入口现状：`KbDocumentServiceImpl.searchBySpace`（单空间）/ `searchBySpaces`（多空间，`spaceId in [...]` 过滤，异常静默返回空串）；唯一消费方是 doctemplate 的 RAG 上下文（现按多选空间调用 `searchBySpaces`）。检索链增强属**规划**，见 doc-knowledgebase.md。
 
 ## 4. TTS（CosyVoice）
 

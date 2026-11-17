@@ -36,7 +36,7 @@
 | --- | --- | --- |
 | `views/ppt/styles/animation.css` | 精简版 animate.css（`.animate__animated` 与关键帧） | `views/ppt/index.vue` |
 | `views/ppt/styles/prosemirror.css` | `.ProseMirror-static` 富文本静态样式 | `views/ppt/index.vue` |
-| `views/meeting/styles/meeting.css` | 模拟会议模块视觉层：`--mt-*` Token、自托管字体、共享原语、环境纹理、局部层级、reduced-motion（见 §10） | `views/meeting/MeetingConsoleView.vue`、`views/meeting/MeetingRoomView.vue` |
+| `views/meeting/styles/meeting.css` | 会议模块视觉层：`--mt-*` Token、自托管字体、共享原语、环境纹理、局部层级、reduced-motion（见 §10） | `views/meeting/MeetingConsoleView.vue`、`views/meeting/MeetingRoomView.vue` |
 
 约定：模块级 CSS 文件只放在该模块的 `styles/` 目录，只由模块入口引入；`src/assets/` 只放**全局**资源（`fonts.css` 字体变量、`theme.css` 设计 Token），不放模块级样式。
 
@@ -59,7 +59,7 @@
 | 主色 | 全站统一为 `--tb-primary` = Ink 墨蓝 `#2b4a80`（暗色 `#3f68ab`）；`views/{doctemplate,homework}/components/SquircleButton.vue` 因内部用 JS `mixHex()` 派生侧壁色，改为传 Ink 定值 `#2b4a80` / `#24406f`（两份副本仍未合并，见 §7） |
 | 主题与明暗切换 | **已全站落地**：`html[data-theme="ink"]` + `html[data-appearance="light\|dark"]` + `html.dark`（EP 暗色包开关）；三个切换入口：`components/NavbarItem.vue`、`views/IndexView.vue` 侧栏页脚、`views/LoginView.vue` 右上角；状态由 `composables/useAppearance.js` 维护（记忆 + 跟随系统 + 多标签同步），首帧防闪由 `index.html` 内联脚本完成 |
 | Element Plus 变量 | `--el-*` 映射到**语义变量**（`--el-bg-color: var(--tb-bg-surface)` 等），因此 EP 表单 / 下拉 / 弹层 / 分页随明暗切换；EP 未覆盖的变量由官方暗色包（`theme-chalk/dark/css-vars.css`）铺底 |
-| 固定色区块（刻意不随主题） | ① PPT 全屏放映台 `views/ppt/screen/ScreenView.vue`、`components/screen/ScreenSlideList.vue` 用 `--tb-neutral-950`；② 登录页品牌展示台 `components/LoginShowcase.vue` **跟随全局明暗**（不再容器级 `color-scheme: dark`）：文字、描边与 `--stage-*` 装饰全部由语义变量派生，亮色下是暖纸上的浅色画板、暗色下是深墨蓝画板，内部代表幻灯片的 `.preview` 仍反切 `color-scheme: light` 恒为纸白（见 §3.3 约定 3）。**底色画在父层 `views/LoginView.vue` 的 `.stage` 上**：亮色为 `--tb-paper-bg` + 9% 主色光晕 + 底部暖调下沉（不再是港湾夜蓝），暗色为 `#1f232d → #12141a`，原因见 §3.2 第 7 条；文档页 `views/guides/DocsView.vue` 的品牌展示台仍用 `light-dark(neutral-900, neutral-950)`；③ 文件类型色块与装饰标签条（`knowledgebase` 的 MD 紫 `#8b5cf6`、`#a78bfa`）保留字面量；④ `components/MarkdownViewer.vue` 的代码高亮色相不变，另建 `--md-hl-*` 双态映射；⑤ **模拟会议的画面舞台** `views/meeting/components/ScreenStage.vue` 用 `--tb-neutral-950`（底）+ `--tb-neutral-400`（占位文字）——与放映台同理：共享出去的是别人的屏幕内容，底色必须固定为暗，否则白底 PPT 在亮色主题下刺眼、暗色主题下又整块发白。作业批改的卡堆舞台**不在**此列：它只靠语义 Token，随全局主题自适应；⑥ **模拟会议模块视觉层**（`views/meeting/styles/meeting.css`）的固定暗场舞台与结束幕，保持共享内容在明暗主题下都落在深色画布上（见 §10） |
+| 固定色区块（刻意不随主题） | ① PPT 全屏放映台 `views/ppt/screen/ScreenView.vue`、`components/screen/ScreenSlideList.vue` 用 `--tb-neutral-950`；② 登录页品牌展示台 `components/LoginShowcase.vue` **跟随全局明暗**（不再容器级 `color-scheme: dark`）：文字、描边与 `--stage-*` 装饰全部由语义变量派生，亮色下是暖纸上的浅色画板、暗色下是深墨蓝画板，内部代表幻灯片的 `.preview` 仍反切 `color-scheme: light` 恒为纸白（见 §3.3 约定 3）。**底色画在父层 `views/LoginView.vue` 的 `.stage` 上**：亮色为 `--tb-paper-bg` + 9% 主色光晕 + 底部暖调下沉（不再是港湾夜蓝），暗色为 `#1f232d → #12141a`，原因见 §3.2 第 7 条；文档页 `views/guides/DocsView.vue` 的品牌展示台仍用 `light-dark(neutral-900, neutral-950)`；③ 文件类型色块与装饰标签条（`knowledgebase` 的 MD 紫 `#8b5cf6`、`#a78bfa`）保留字面量；④ `components/MarkdownViewer.vue` 的代码高亮色相不变，另建 `--md-hl-*` 双态映射；⑤ **会议的画面舞台** `views/meeting/components/ScreenStage.vue` 用 `--tb-neutral-950`（底）+ `--tb-neutral-400`（占位文字）——与放映台同理：共享出去的是别人的屏幕内容，底色必须固定为暗，否则白底 PPT 在亮色主题下刺眼、暗色主题下又整块发白。作业批改的卡堆舞台**不在**此列：它只靠语义 Token，随全局主题自适应；⑥ **会议模块视觉层**（`views/meeting/styles/meeting.css`）的固定暗场舞台与结束幕，保持共享内容在明暗主题下都落在深色画布上（见 §10） |
 | PPT 幻灯片内容 | 保持数据驱动、不随 UI 主题变化：`mock/theme.js`（`themeColor #5b9bd5`）、`mock/slides.js`、`hooks/useSlideBackgroundStyle.js`、`utils/**`、`components/element/**`、`components/thumbnail/Thumbnail*`、`styles/prosemirror.css`；仅 UI 外壳（`index.vue` / 放映壳 / 缩略列表 / `ElementOutline.vue`）已 Token 化 |
 | 页面级深浅区块 | 首页 `.section--light` / `.section--dark` 收敛为「交替区块 / 基底区块」两个角色（`--hv-alt` / `--tb-bg-page`）；`homework` 的页面级主题变量别名（`--primary: var(--tb-primary)` 等）已**删除**，页面直接引用 `var(--tb-*)`，原 `--el-color-primary*` 与 `--el-border-radius-base` 覆盖亦已移除；`doctemplate` 仍保留该兼容别名层（见 §7） |
 | `light-dark()` | `assets/theme.css` 全量使用（语义变量、阴影、EP 色阶）；页面级固定深色区与 `MarkdownViewer` 的 `--md-hl-*` 亦使用；`views/TestView.vue` 的手写 `light-dark()` 已收敛为 Token 引用 |
@@ -82,7 +82,7 @@
 
 ### 3.3 主题统一（已全站落地）
 
-**现状**：Ink 主题（墨蓝 · 书卷文档，2026-10-25 由 Harbor 靛蓝切换）已在 `src/assets/theme.css` 落地，并且**全部页面与全局组件均已完成迁移**——首页（`views/guides/HomeView.vue`）、文档页（`guides/DocsView.vue`）、登录注册（`LoginView.vue` + `components/{LoginForm,RegisterForm,ForgetPasswordForm,LoginShowcase}.vue`）、内页外壳（`IndexView.vue`）、系统首页（`views/system/**`）、文档模板（`views/doctemplate/**`）、作业批改（`views/homework/**`）、知识库（`views/knowledgebase/**`）、PPT UI 外壳（`views/ppt/index.vue`、放映壳、缩略列表）、模拟会议（`views/meeting/**`，舞台底色见 §3.1）、工作流（`views/workflow2/**`）、测试页（`TestView.vue`）与 `components/MarkdownViewer.vue`。
+**现状**：Ink 主题（墨蓝 · 书卷文档，2026-10-25 由 Harbor 靛蓝切换）已在 `src/assets/theme.css` 落地，并且**全部页面与全局组件均已完成迁移**——首页（`views/guides/HomeView.vue`）、文档页（`guides/DocsView.vue`）、登录注册（`LoginView.vue` + `components/{LoginForm,RegisterForm,ForgetPasswordForm,LoginShowcase}.vue`）、内页外壳（`IndexView.vue`）、系统首页（`views/system/**`）、文档模板（`views/doctemplate/**`）、作业批改（`views/homework/**`）、知识库（`views/knowledgebase/**`）、PPT UI 外壳（`views/ppt/index.vue`、放映壳、缩略列表）、会议（`views/meeting/**`，舞台底色见 §3.1）、工作流（`views/workflow2/**`）、测试页（`TestView.vue`）与 `components/MarkdownViewer.vue`。
 
 层级与命名（`assets/theme.css` 内自下而上）：
 
@@ -103,7 +103,7 @@
    配套技法（已实测）：容器上写 `color-scheme: dark`（配 `data-appearance="dark"` 作语义标记）时，`light-dark()` 会**按容器**解析——页面亮色时容器内自动取深色一套，因此「局部固定深色」也无需硬编码任何颜色；不写这行则完全跟随全局主题。`views/homework/HomeworkGradingView.vue` 的 `.stage` 选后者，并在注释里留了这行开关。
 4. 变量命名、色板取值与形态参数以 [ui.html](./ui.html) 为**唯一视觉样张**：七套主题的色阶、圆角 / 描边 / 阴影 / 动效参数与组件外观均在该文件内对齐；二者不一致时先改样张，再改代码。
 5. 页面级「兼容别名」：`views/doctemplate/DocTemplateView.vue` 根类仍保留 `--primary / --primary-dark / --primary-soft / --accent*` 这组变量名（取值全部指向 Token）；`views/homework/HomeworkGradingView.vue` 的这层别名已删除，页面直接引用 `var(--tb-*)`，可作为彻底直连的参照实现（见 §7）。
-6. 刻意保留的固定色：放映台与品牌展示台（固定深色）、文件类型色块与装饰标签条、首页 A2 入口卡与 Zone B 媒体卡的固定墨蓝媒体层（底色 / 染色 / 图片滤镜不随主题变亮）、`MarkdownViewer` 的代码高亮色相、模拟会议模块的 `--mt-*` 视觉层（固定暗场舞台/结束幕，见 §10）。这些区域的语义不随明暗变化，取值方式见 §3.1 表格。
+6. 刻意保留的固定色：放映台与品牌展示台（固定深色）、文件类型色块与装饰标签条、首页 A2 入口卡与 Zone B 媒体卡的固定墨蓝媒体层（底色 / 染色 / 图片滤镜不随主题变亮）、`MarkdownViewer` 的代码高亮色相、会议模块的 `--mt-*` 视觉层（固定暗场舞台/结束幕，见 §10）。这些区域的语义不随明暗变化，取值方式见 §3.1 表格。
 7. **不支持 `light-dark()` 的内核**：由 `assets/theme.css` 末尾的 `@supports not (color: light-dark(…))` 块降级为亮色取值（同时覆盖 `--el-*` 色阶）。
 
 ---
@@ -169,7 +169,7 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 
 要求：
 
-1. 动效只作用于展示型页面；**业务页面（表单、表格、画布）不加入场动效**。唯一例外是认证入口页 `views/LoginView.vue`：允许一次 `opacity + 10px` 位移、时长 `--tb-dur-4` 的淡入（不做滚动编排、不遮挡首屏可读性、`prefers-reduced-motion` 下整体关闭）；表单三态之间的切换属于**用户触发的过渡**，不算入场动效，故用 `--tb-dur-2/3` 的淡入淡出。**模拟会议入口屏**（控制台空态/缺凭据/恢复中、学生入会大厅）与结束幕同样允许一次同量级的 reveal；会议中的界面不做页面入场，只做状态/操作触发与可关闭的环境动效（见 §10.4）。
+1. 动效只作用于展示型页面；**业务页面（表单、表格、画布）不加入场动效**。唯一例外是认证入口页 `views/LoginView.vue`：允许一次 `opacity + 10px` 位移、时长 `--tb-dur-4` 的淡入（不做滚动编排、不遮挡首屏可读性、`prefers-reduced-motion` 下整体关闭）；表单三态之间的切换属于**用户触发的过渡**，不算入场动效，故用 `--tb-dur-2/3` 的淡入淡出。**会议入口屏**（控制台空态/缺凭据/恢复中、学生入会大厅）与结束幕同样允许一次同量级的 reveal；会议中的界面不做页面入场，只做状态/操作触发与可关闭的环境动效（见 §10.4）。
 2. 必须在组件卸载时清理：`ScrollTrigger.getAll().forEach((t) => t.kill())`；GSAP timeline 亦需 `kill()`。
 3. 尊重无障碍：动效不得阻塞首屏内容可读性，滚动触发以「进入视口」为起点。
 4. PPT 模块的动画体系独立：使用 `views/ppt/configs/animation.js` 定义的动画名与 `animate__` 前缀，时长通过 CSS 变量 `--animate-duration` 控制，与页面级 GSAP 动效**互不混用**。
@@ -290,7 +290,7 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 
 ---
 
-## 10. 模拟会议视觉层（`views/meeting/styles/meeting.css`，2026-11-16）
+## 10. 会议视觉层（`views/meeting/styles/meeting.css`，2026-11-16）
 
 > 完整口径、行为契约与验收项见 [specs/2026-11-16-模拟会议视觉升级.md](./specs/2026-11-16-模拟会议视觉升级.md)。
 
@@ -333,10 +333,11 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 
 ### 10.5 组件与验收
 
-- 模块组件：`MeetingTopBar`（Studio 顶栏）、`ScreenStage`（program monitor）、`AttendeeList`（presence）、`ChatPanel`（comms，含数字人标记）、`JoinLobby`（全屏入会）、`StatusNotice`、`StudioBackdrop`、`StudioClock`、`ControlDock`；纯函数 `utils/meeting-time.js` 有 Node 单测。
+- 模块组件：`MeetingTopBar`（Studio 顶栏）、`ScreenStage`（program monitor）、`MeetingChatRail`（统一右轨：标题 / 在线头像行 + 浮层名单 / 消息流 / composer）、`JoinLobby`（全屏入会）、`StatusNotice`、`StudioBackdrop`、`StudioClock`、`ControlDock`；纯函数 `utils/meeting-time.js`、`utils/chat-groups.js` 有 Node 单测。
+- **右轨视觉（2026-11-18）**：参考 `AiChatPanel` 的 `--tb-*` 实底圆角面板；自己右中性气泡 + 「我」，他人左头像 + 姓名 + 角色 pill + 浅气泡，数字人魔法图标 + 局部青色；多行自增高 composer + 圆形发送 + 滚到底按钮；连续同人消息 5 分钟窗口合并。`mt-rail` 玻璃外壳与 `AttendeeList` / `ChatPanel` 两段式已移除。
 - **顶栏读数条（2026-11-17）**：`.studio-bar` 为极简读数条，高 56px，只用一条底线与分组竖线，不保留玻璃底、圆角、阴影与图标光点；ON AIR / STANDBY 是主状态，时钟 / 在线数 / 连接状态为竖线分隔的次要读数，顶栏内 `mt-chip` 只留文字与圆点；会议号收成一行小号 mono（`ID` + 号码）；槽位按钮经 `:slotted(.mt-btn)` 压到 32px。老师控制台与学生会议室共用同一套外观。
 - 行为契约不变：路由、`?meetid=` / `?credential=1`、host/attendee token、全部 `/meeting/**` 接口、LiveKit track attach、DataChannel 聊天双写、在线名单只认房间事件（ADR-0002）、10s 轮询、`sendBeacon` 离会、讲课 BroadcastChannel 协议。
-- 验收：`npm run lint` / `npm test`（329 条）/ `npm run build` 全过；桌面 1600×1000 与移动 390×844 的明暗入口/会议中/结束幕已用本机 Chrome 做过视觉验收。真实 LiveKit 共享画面与双端联调仍需在环境可用时按 [doc-lecture.md](./doc-lecture.md) §11.2 回归。
+- 验收：`npm run lint` / `npm test`（358 条）/ `npm run build` 全过；桌面 1600×1000 与移动 390×844 的明暗入口/会议中/结束幕已用本机 Chrome 做过视觉验收。真实 LiveKit 共享画面与双端联调仍需在环境可用时按 [doc-lecture.md](./doc-lecture.md) §11.2 回归。
 
 ---
 

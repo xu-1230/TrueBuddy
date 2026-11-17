@@ -48,7 +48,7 @@ import service from './index'
 /**
  * 生成文档（以模板为基底复刻多份同版式文档）
  * POST /doc-template/generate
- * @param {{ templateFileId: number, spaceId?: string, description: string, quality?: string }} data
+ * @param {{ templateFileId: number, spaceIds?: string[], description: string, quality?: string }} data
  * @returns {Promise<GenerationVO>}
  */
 export function generateDoc(data) {

@@ -62,7 +62,7 @@ defineProps({
       />
     </g>
 
-    <!-- 模拟会议：屏幕 + 两位参会者 -->
+    <!-- 会议：屏幕 + 两位参会者 -->
     <g v-else-if="name === 'meeting'" class="tb-icon__shape">
       <path
         d="M4.6 5h14.8v10.4H4.6V5Zm1.6 1.6v7.2h11.6V6.6H6.2Z"

@@ -48,8 +48,8 @@ backend/tb-module-workflow/
 
 执行入口（`ChatController`，`@RequestMapping("/chat")`）与定义读写（`WorkflowController`，`@RequestMapping("/workflow")`）
 分属两条前缀。后端 `context-path` 为 `/api`，故完整路径为 `/api/chat` 与 `/api/workflow/*`。
-**执行没有挂在 `/workflow` 下是有意的**：`/workflow/**` 在 `tb.security.permit-all-urls` 里免登录，
-而 `/chat` 要求登录（会话与执行实例都要记 `creator`）。
+**两条前缀都要求登录**：`/workflow/**` 自 2026-11-17 起移出免登录白名单（ADR 0007），
+定义类接口不再匿名可达；执行链路（会话 / 执行实例）同样记 `creator` 并按用户隔离。
 
 | # | 方法 | 路径 | 入参 | 返回 | 语义 |
 | --- | --- | --- | --- | --- | --- |
@@ -59,10 +59,12 @@ backend/tb-module-workflow/
 | 4 | GET | `/workflow/text` | 无 | `void` | 同步 `invoke` classpath 定义一次并把终态打印到控制台，仅供联调，不是业务接口 |
 | 5 | POST | `/workflow/save` | 请求体：`{id, name, description, schemaJson}`（`id` 空 = 新建、非空 = 更新） | `CommonResult<String>` | 保存工作流定义，返回**字符串**形式的雪花 id |
 | 6 | GET | `/workflow/detail` | `@RequestParam("workflow_id") workflowId` | `CommonResult<WorkflowDetailRespVO>` | 工作流详情（含 `schemaJson` 画布字符串；`visibility` / `mine` / `builtin` 一并下发，画布页据此呈现只读形态，前端不猜归属） |
-| 7 | GET | `/workflow/list` | 无 | `CommonResult<List<WorkflowVO>>` | 工作流列表（**不含** `schemaJson`，按更新时间倒序；**按 creator 过滤**——登录用户只见自己的 + builtin，匿名只见 builtin，见 §6.3） |
-| 8 | PUT | `/workflow/visibility` | `@RequestParam("workflow_id") workflowId`、`@RequestParam("visibility") visibility`（0=私有/1=公有） | `CommonResult<Boolean>` | 切换可见性（**仅创建者**，builtin 拒绝；非法值 `code = 400`） |
-| 9 | GET | `/workflow/public-list` | 无 | `CommonResult<List<PublicWorkflowVO>>` | 他人公有工作流列表（画布页「公有库」浏览区；**不含** `schemaJson`，带 `creatorName`；匿名可见全部公有行——`/workflow/**` 免登录白名单是 URL 级现状，见 §6.3） |
+| 7 | GET | `/workflow/list` | 无 | `CommonResult<List<WorkflowVO>>` | 工作流列表（**不含** `schemaJson`，按更新时间倒序；含 `visibility` / `builtin` / `stepCount`；**要求登录**，**按 creator 过滤** = 自己的 + builtin，见 §6.3） |
+| 8 | PUT | `/workflow/visibility` | `@RequestParam("workflow_id") workflowId`、`@RequestParam("visibility") visibility`（0=私有/1=公有） | `CommonResult<Boolean>` | 切换可见性（**仅创建者**，builtin 拒绝；非法值 `code = 400`；更新影响 0 行按不存在 400） |
+| 9 | GET | `/workflow/public-list` | 无 | `CommonResult<List<PublicWorkflowVO>>` | 他人公有工作流列表（列表页「公有库」；**不含** `schemaJson`，带 `creatorName`；**要求登录**，只返回他人的公有行） |
 | 10 | POST | `/workflow/fork` | `@RequestParam("workflow_id") workflowId` | `CommonResult<String>` | fork 为当前用户的独立副本（他人公有流运行的唯一前置通道），返回副本 id |
+| 11 | DELETE | `/workflow/delete` | `@RequestParam("workflow_id") workflowId` | `CommonResult<Boolean>` | 软删除本人工作流（**仅创建者**，builtin 拒绝）；会话 / 执行记录不级联，后续用该工作流运行按「不存在」拒绝 |
+| 12 | PUT | `/workflow/rename` | `@RequestParam("workflow_id") workflowId`、`@RequestParam("name") name` | `CommonResult<Boolean>` | 重命名本人工作流（**仅创建者**，builtin 拒绝；名称 trim 后非空且 ≤100 字符；只改名称，不触碰画布定义） |
 
 > **已废弃**：`POST /workflow/run` 与 `POST /workflow/resume`（执行语义已合并进 `/chat`），
 > 事件协议与载荷改造见 §2.2，人工确认节点的中断载荷见 §4.3。
@@ -83,8 +85,8 @@ backend/tb-module-workflow/
   `data.outputs` 声明的变量名；后端以 `addStateUpdate(Map.of("__human_feedback__", values))` 注入状态，
   人工确认节点的 `apply` 再按 `state[节点id][变量名]` 回写。**不学 Coze 把表单拼成「标签:值」文本**。
 - **事件流响应不设超时**：`/chat` 使用 `new SseEmitter(0L)`。
-- **`/chat` 要求登录**：它**不在** `tb.security.permit-all-urls` 白名单里（这也是它没有挂在 `/workflow`
-  前缀下的原因——`/workflow/**` 是免登录的）。会话与执行实例都要记 `creator`。
+- **`/chat` 与 `/workflow/**` 都要求登录**：`/workflow/**` 自 ADR 0007 起移出 `tb.security.permit-all-urls`；
+  会话与执行实例都要记 `creator`。前端 `/index` 父路由声明 `requiresAuth`，未登录跳 `/login?redirect=…`。
 - **校验失败返回统一返回体而非事件流**：会话不存在、工作流不存在、并发执行、续跑缺少中断点等一律抛
   `ServiceException`，由 `GlobalExceptionHandler` 转成 `CommonResult` JSON（`code = 400`）；
   客户端须按 `Content-Type` 判断收到的是事件流还是错误体。建图 / 执行期的异常发生在流已建立之后，
@@ -204,7 +206,7 @@ data: {"conversation_id":"…","execute_id":"…"}
 
 | # | 触发 | 更新 |
 | --- | --- | --- |
-| 1 | 点击「运行」 | 先做运行前校验、再建会话（地址栏没有 `workflow_id` 时直接拦住并提示先保存）；提交前投影画布字段（节点 `id` / `type` / `position` / `data` / `blocks` / `edges`，边 `id` / `source` / `target`），剔除 Vue Flow 运行时字段；画布全部节点置 `running`，清空上一次产出 |
+| 1 | 点击「运行」 | 先做运行前校验、再建会话（新画布尚未落库时直接拦住并提示先保存；运行按路由 `:id` 读取已保存定义）；提交前投影画布字段（节点 `id` / `type` / `position` / `data` / `blocks` / `edges`，边 `id` / `source` / `target`），剔除 Vue Flow 运行时字段；画布全部节点置 `running`，清空上一次产出 |
 | 2 | `conversation.chat.created` | 记录 `conversation_id` / `execute_id` / `chat_id`（见 §2.4） |
 | 3 | `conversation.message.completed`（`content_type=verbose`） | 该节点置 `done`，产出取 `content.data.state[content.data.node]` |
 | 4 | `conversation.message.completed`（`content_type=card`） | 该节点置 `waiting`、`waitLabel` 取卡片 `title`，卡片数据一并存进运行态；画布页据此**自动弹出表单弹窗**（`HumanCardDialog`） |
@@ -504,7 +506,7 @@ data: {"conversation_id":"…","execute_id":"…"}
 - **保存口径**：`id` 为空走新建（应用生成雪花 ID），非空走更新；`schema_json` 整体存入，**不做版本管理**，保存即覆盖当前记录。
 - **校验**：`name` 必填且 ≤100 字符，`description` ≤500 字符，`schemaJson` 必须是合法 JSON 且连线 `id` 非空、全图唯一（复用 `WorkflowProcessLoader#parse`）；失败返回 `code = 400`，`message` 可直接展示。
 - **id 全程按 String 传递**：19 位雪花 ID 超出 JS 安全整数范围，入参与出参的 `id` 都是字符串（`WorkflowSaveReqVO#id` 与各 VO 的 `id` 字段均为 `String`），仓库层写入时用 `CAST(? AS BIGINT)` 显式转换。
-- **列表不返回 `schemaJson`**（画布可能很大），但服务端会读取它统计 `stepCount`；`WorkflowVO` / `WorkflowDetailRespVO` 都带 `builtin`（是否内置模板，按固定 id 判定）与 `stepCount`（顶层节点数，迭代体子块不计入），供前端下拉分组与「N 个步骤」展示。
+- **列表不返回 `schemaJson`**（画布可能很大），但服务端会读取它统计 `stepCount`；`WorkflowVO` / `WorkflowDetailRespVO` 都带 `builtin`（是否内置模板，按固定 id 判定）与 `stepCount`（顶层节点数，迭代体子块不计入）；**`WorkflowVO` 另带 `visibility`**（列表卡片渲染与切换），详情另带 `mine`。
 - **内置模板**：`WorkflowDefinitionInitializer`（`ApplicationRunner`）每次启动读取 `resources/workflow/standard-grading.json`，与库内固定 id（`1000000000000000001`）的 `schema_json` 对比；不同则按固定 id `upsert`（软删行恢复、表内已有其它工作流也补内置行），schema 相同则跳过。内置模板在 UI 层禁止保存修改，因此 seed 是唯一源码；非内置工作流完全不受影响。初始化失败只告警、不阻断启动。区间与自定义导出列的结构见 [specs/2026-11-17-作业批改评分区间与自定义导出列.md](./specs/2026-11-17-作业批改评分区间与自定义导出列.md) §4。
 - **与执行链路的关系**：`WorkflowServiceImpl#getProcess`（第 60~68 行）对**数字 id 读 `workflow` 表的 `schema_json`**（读库路径每次都查库，改定义立即生效），只有非数字 id（联调用的 `"text"`）回落 classpath `text.json`（该路径进程内首次读取后缓存，改文件需重启）。因此**运行时的定义以库内记录为准**。
 - 索引：`idx_workflow_name ON workflow(name) WHERE deleted = FALSE`（**非唯一**，fork 副本命名防撞靠应用层循环 `selectIdByName`，重试上限 99 次）。
@@ -516,14 +518,17 @@ data: {"conversation_id":"…","execute_id":"…"}
 
 | # | 能力 | 现状实现 |
 | --- | --- | --- |
-| 1 | 列表 creator 过滤 | `listWorkflows` / 首页卡片 / 批改页工作流下拉共用 `selectListVisible(creatorId)`：登录用户只见**自己的 + builtin**；匿名（`/workflow/**` 免登录白名单是 URL 级现状，URL 模式无法按方法拆分）只查 `SELECT_LIST_BUILTIN_ONLY`，**看不到任何私有流**——列表过滤在查询侧完成，即数据安全边界 |
-| 2 | 可见性切换 | `PUT /workflow/visibility`：仅创建者（非创建者 `code = 403`）；builtin 固定 id 同样拒绝；`visibility` 取值非 0/1 按 400 拒绝 |
-| 3 | detail 归属下发 | `/workflow/detail` 返回 `visibility` / `mine`（当前登录用户是否创建者）/ `builtin`；画布页 `!mine && !builtin` 即只读形态（连线、删节点、加节点、保存全部禁用，运行按钮提示 fork），**前端不猜归属** |
+| 1 | 列表 creator 过滤 | `listWorkflows` / 首页卡片 / 批改页工作流下拉共用 `selectListVisible(creatorId)`：登录用户只见**自己的 + builtin**；`/workflow/**` 自 ADR 0007 起要求登录，匿名分支（`SELECT_LIST_BUILTIN_ONLY`）保留为 Service 兜底，不再是产品入口——列表过滤在查询侧完成，即数据安全边界 |
+| 2 | 可见性切换 | `PUT /workflow/visibility`：仅创建者（非创建者 `code = 403`）；builtin 固定 id 同样拒绝；`visibility` 取值非 0/1 按 400 拒绝；更新影响 0 行按不存在 400 |
+| 3 | detail 归属下发 | `/workflow/detail` 返回 `visibility` / `mine`（当前登录用户是否创建者）/ `builtin`；画布页 **`!mine` 即只读**（连线、删节点、加节点、保存全部禁用）。builtin 只读但可运行；他人公有流的运行按钮提示先 fork，**前端不猜归属** |
 | 4 | 直跑闸 | `ChatServiceImpl.createConversation` 与 `chat()` **双入口**过 `assertWorkflowRunnable`：`own OR builtin` 才放行，否则 `code = 403` 提示「请先 fork 为自己的副本」（见 §2.1 强制约定） |
-| 5 | 公有库浏览区 | `GET /workflow/public-list`：`visibility=1` 且**非本人创建**（匿名时没有「本人」，返回全部公有行）；带 `creatorName`（JOIN system_user，nickname 缺失降级 username），**不回传 schemaJson** |
-| 6 | fork | `POST /workflow/fork`：闸为 `own OR public`（内置模板**显式拒绝**——builtin 是系统资产，不产出个人副本）；新雪花 id，拷 `name`（「原名（副本）」起、重名追加「（副本 2）」、超长先截断基底再接后缀）/`description`/`schema_json`，副本 `status=0 草稿`、`visibility=0 私有`、`creator=当前用户`；fork 成功后前端直接打开副本（`mine=true` 即刻可编辑可运行，完成「添加为自己的」闭环） |
+| 5 | 公有库浏览区 | `GET /workflow/public-list`：`visibility=1` 且**非本人创建**（要求登录；匿名分支仅保留兜底）；带 `creatorName`（JOIN system_user，nickname 缺失降级 username），**不回传 schemaJson**；入口在列表页「公有库」区，画布内不再提供抽屉 |
+| 6 | fork | `POST /workflow/fork`：闸为 `own OR public`（内置模板**显式拒绝**——builtin 是系统资产，不产出个人副本）；新雪花 id，拷 `name`（「原名（副本）」起、重名追加「（副本 2）」、超长先截断基底再接后缀）/`description`/`schema_json`，副本 `status=0 草稿`、`visibility=0 私有`、`creator=当前用户`。列表页 fork 后留在列表并刷新；只读画布内 fork 后 `replace` 到副本画布 |
+| 7 | 软删除 | `DELETE /workflow/delete`：仅创建者、builtin 拒绝、登录必需；只翻 `deleted` 标记，会话 / 执行记录保留，后续用该工作流建会话或运行按「不存在」拒绝 |
+| 8 | 重命名 | `PUT /workflow/rename`：仅创建者、builtin 拒绝、登录必需；名称 trim 后非空且 ≤100 字符；只改 `name` / `update_time`，不触碰 `schema_json`；名称不强制唯一（与保存对话框一致） |
+| 9 | 前端入口与路由 | `/index/workflow` = 列表（我的工作流 + 公有库）；`/index/workflow/:id` = 画布；`/index/workflow/new` = 新画布。旧 `?workflow_id=` 兼容路径已废弃（ADR 0007）；`/index` 整体要求登录 |
 
-**现状记录**：`/workflow/public-list` 对匿名开放（白名单现状 + 查询侧过滤的推导结果）；`workflow.name` 无唯一索引，fork 副本命名循环只是整洁性措施（重名也能插入成功）。
+**现状记录**：`/workflow/public-list` 的匿名分支随白名单移除而不可达，Service 保留 null 兜底；`workflow.name` 无唯一索引，fork 副本命名循环只是整洁性措施（重名也能插入成功）。
 
 ---
 
@@ -544,7 +549,7 @@ data: {"conversation_id":"…","execute_id":"…"}
 | 9 | 卡片与答案的落库 | 卡片 / 答案 / 用户提交**只走 SSE**，不落库 | 前端「刷新后能回显中断卡片与历史」 | **已接受的取舍**：刷新 / 换设备后卡片不可回显；要做回显需新增会话消息表（一期明确不做，见 §2.5） |
 | 10 | `message.delta` | 保留事件名但**不发送** | 逐字流式输出 | 接入真模型后再发；前端已按「有 delta 就逐字渲染、没有就整段渲染」实现 |
 | 11 | 中断的持久性 | 中断点（`interruptions`）与 `MemorySaver` 检查点都只存内存 | 跨进程重启可续跑 | **已接受的取舍**：服务重启后该会话续跑返回 400，需重新发起执行 |
-| 12 | 归属共享的权限落点 | `/workflow/**` 整体在免登录白名单（URL 级），新加的 `/visibility`、`/fork`、`/public-list` 因此**匿名可达**；归属与直跑校验全部做在 **Service 层**（未登录 `currentUserId() == null` → 401 / 非本人 → 403），`/chat` 与 `/chat/conversation` 本身要求登录 | 权限边界应在服务端成立而非依赖 URL | **现状可接受**：写路径（visibility/fork）匿名必然 401；public-list 匿名可见是 §6.3 记录的现状。若未来要按方法收口白名单，属独立变更 |
+| 12 | 归属共享的权限落点 | **已整改（ADR 0007）**：`/workflow/**` 移出免登录白名单，`/index` 父路由 `requiresAuth`；归属与直跑校验仍保留在 **Service 层**（未登录 401 / 非本人 403）作为兜底 | 权限边界应在服务端成立而非依赖 URL | — |
 
 ---
 

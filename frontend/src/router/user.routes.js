@@ -36,6 +36,8 @@ export const userRoutes = [
     name: "index",
     component: () => import("../views/IndexView.vue"),
     redirect: "/index/home",
+    // 用户端后台整体要求登录（ADR 0007）：列表 / 详情 / 编辑都按 creator 取数，匿名没有可展示的归属数据
+    meta: { requiresAuth: true },
     children: [
       { path: "home", name: "system-home", component: () => import("../views/system/SystemHomeView.vue") },
       // 文档模板生成：:id? 对应「某次生成」，?file= 对应「该次生成中的某份文档」（见 views/doctemplate/utils/route.js）
@@ -43,10 +45,13 @@ export const userRoutes = [
       { path: "homework-grading", name: "homework-grading", component: () => import("../views/homework/HomeworkGradingView.vue") },
       { path: "knowledge-base", name: "knowledge-base", component: () => import("../views/knowledgebase/KnowledgeBaseView.vue") },
       { path: "ppt", name: "ppt", component: () => import("../views/ppt/index.vue") },
-      // 模拟会议：老师控制台（建会、看名单与聊天、共享屏幕）
+      // 会议：老师控制台（建会、看名单与聊天、共享屏幕）
       { path: "meeting", name: "meeting-console", component: () => import("../views/meeting/MeetingConsoleView.vue") },
-      // 工作流编排：画布页（workflow2）
-      { path: "workflow", name: "workflow", component: () => import("../views/workflow2/WorkflowView.vue") },
+      // 工作流：模块入口是列表（我的 + 公有库），画布与新建是子路径（ADR 0007）
+      { path: "workflow", name: "workflow", component: () => import("../views/workflow2/WorkflowListView.vue") },
+      // 新建画布放在 :id 前，避免被动态段吞掉
+      { path: "workflow/new", name: "workflow-new", component: () => import("../views/workflow2/WorkflowView.vue") },
+      { path: "workflow/:id", name: "workflow-canvas", component: () => import("../views/workflow2/WorkflowView.vue") },
     ],
   },
   {

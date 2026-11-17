@@ -53,12 +53,12 @@ load()
   <div class="admin-page">
     <PageHeader
       title="工作流列表"
-      description="批改工作流的定义台账。画布编辑仍在用户端 /index/workflow 完成，这里只做总览与入口。"
+      description="批改工作流的定义台账。列表与画布编辑在用户端 /index/workflow 完成，这里只做总览与入口。"
       :demo="usingMock"
     >
       <template #actions>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
-        <el-button type="primary" @click="openCanvas">打开画布</el-button>
+        <el-button type="primary" @click="openCanvas">工作流列表</el-button>
       </template>
     </PageHeader>
 

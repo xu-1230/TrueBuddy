@@ -30,6 +30,7 @@ import org.example.backend.module.infra.model.InfraFileDO;
 import org.example.backend.module.infra.model.vo.FileUploadRespVO;
 import org.example.backend.module.infra.service.FileService;
 import org.example.backend.module.infra.service.MinioFileStorageService;
+import org.example.backend.module.knowledgebase.model.vo.SpaceRespVO;
 import org.example.backend.module.knowledgebase.service.KbDocumentService;
 import org.example.backend.module.knowledgebase.service.KbSpaceService;
 import org.springframework.stereotype.Service;
@@ -44,9 +45,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -155,11 +158,12 @@ public class DocTemplateServiceImpl implements DocTemplateService {
             throw exception(TEMPLATE_TYPE_UNSUPPORTED);
         }
 
-        // 3. 落「生成中」记录，返回任务 id
-        Long spaceId = parseSpaceId(reqVO.getSpaceId());
+        // 3. 落「生成中」记录，返回任务 id（知识库只存多值 space_ids）
+        List<Long> spaceIds = resolveSpaceIds(reqVO);
         DocTemplateGenerationDO generation = new DocTemplateGenerationDO();
         generation.setTemplateFileId(reqVO.getTemplateFileId());
-        generation.setSpaceId(spaceId);
+        generation.setSpaceIds(spaceIds.isEmpty() ? null
+                : spaceIds.stream().map(String::valueOf).collect(Collectors.joining(",")));
         generation.setDescription(reqVO.getDescription());
         generation.setQuality(reqVO.getQuality());
         generation.setDocCount(0);
@@ -186,8 +190,8 @@ public class DocTemplateServiceImpl implements DocTemplateService {
                     generationId, tablesDigest.length(), textDigest.length(),
                     templateBaseline == null ? null : templateBaseline.getStructure());
 
-            // 6. 知识库检索增强（未选择或选择默认知识库时为空）
-            String ragContext = kbDocumentService.searchBySpace(spaceId, reqVO.getDescription(), RAG_TOP_K);
+            // 6. 知识库检索增强（多选空间一次检索；未选择或选择默认知识库时为空）
+            String ragContext = kbDocumentService.searchBySpaces(spaceIds, reqVO.getDescription(), RAG_TOP_K);
 
             // 7. LLM 规划：份数 + 每份主题定位与自检关键词
             DocPlanResult plan = aiContentService.plan(reqVO.getDescription(), outline, tablesDigest,
@@ -742,17 +746,46 @@ public class DocTemplateServiceImpl implements DocTemplateService {
         }
     }
 
-    /** 解析知识库空间 id：空 / "default" 表示不启用检索 */
-    private Long parseSpaceId(String spaceId) {
-        if (spaceId == null || spaceId.isBlank() || DEFAULT_SPACE_ID.equalsIgnoreCase(spaceId.trim())) {
-            return null;
+    /**
+     * 解析并收口知识库选择：只读多值 spaceIds，且只保留当前用户自己的空间。
+     *
+     * <p>生成页的知识库下拉来自 {@code getSpaceList}（只列本人空间），但请求体可以被构造，
+     * 这里再做一次归属过滤，避免「知道他人空间 id 就能检索其私有内容」。
+     */
+    private List<Long> resolveSpaceIds(GenerateReqVO reqVO) {
+        List<Long> parsed = parseSpaceIds(reqVO.getSpaceIds());
+        if (parsed.isEmpty()) {
+            return List.of();
         }
-        try {
-            return Long.valueOf(spaceId.trim());
-        } catch (NumberFormatException e) {
-            log.warn("[parseSpaceId] 非法空间 id，已忽略检索增强: {}", spaceId);
-            return null;
+        Set<Long> owned = kbSpaceService.getSpaceList().stream()
+                .map(SpaceRespVO::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        List<Long> allowed = parsed.stream().filter(owned::contains).toList();
+        if (allowed.size() < parsed.size()) {
+            log.warn("[resolveSpaceIds] 已忽略非本人或不存在知识库: {}",
+                    parsed.stream().filter(id -> !owned.contains(id)).toList());
         }
+        return allowed;
+    }
+
+    /** 从多值请求中解析候选空间 id（去重、忽略 default / 非法值；尚未做归属过滤） */
+    private List<Long> parseSpaceIds(List<String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        for (String value : raw) {
+            if (value == null || value.isBlank() || DEFAULT_SPACE_ID.equalsIgnoreCase(value.trim())) {
+                continue;
+            }
+            try {
+                ids.add(Long.valueOf(value.trim()));
+            } catch (NumberFormatException e) {
+                log.warn("[parseSpaceIds] 非法空间 id，已忽略: {}", value);
+            }
+        }
+        return new ArrayList<>(ids);
     }
 
     /** 生成结果文件名：<标题>.docx（去除非法字符，超长截断） */
@@ -779,7 +812,7 @@ public class DocTemplateServiceImpl implements DocTemplateService {
         GenerationHistoryRespVO vo = new GenerationHistoryRespVO();
         vo.setId(generation.getId());
         vo.setTitle(truncate(collapse(generation.getDescription()), 20));
-        vo.setKb(spaceName(generation.getSpaceId()));
+        vo.setKb(kbNames(generation));
         vo.setType("模板生成");
         vo.setTime(generation.getCreateTime() == null ? "" : generation.getCreateTime().format(TIME_FORMATTER));
         vo.setStatus(statusText(generation.getStatus()));
@@ -800,12 +833,37 @@ public class DocTemplateServiceImpl implements DocTemplateService {
         return docs;
     }
 
-    private String spaceName(Long spaceId) {
-        if (spaceId == null) {
+    /** 历史记录的知识库展示：只读多值 space_ids（存量由迁移回填） */
+    private String kbNames(DocTemplateGenerationDO generation) {
+        List<Long> ids = splitSpaceIds(generation.getSpaceIds());
+        if (ids.isEmpty()) {
             return "默认知识库";
         }
-        String name = kbSpaceService.getSpaceName(spaceId);
-        return name == null ? "默认知识库" : name;
+        String names = ids.stream()
+                .map(kbSpaceService::getSpaceName)
+                .filter(Objects::nonNull)
+                .filter(name -> !name.isBlank())
+                .collect(Collectors.joining("、"));
+        return names.isBlank() ? "默认知识库" : names;
+    }
+
+    /** 逗号分隔的空间 id → Long 列表；非法片段静默跳过 */
+    private List<Long> splitSpaceIds(String spaceIds) {
+        if (spaceIds == null || spaceIds.isBlank()) {
+            return List.of();
+        }
+        return Stream.of(spaceIds.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .map(value -> {
+                    try {
+                        return Long.valueOf(value);
+                    } catch (NumberFormatException e) {
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     private String statusText(Integer status) {

@@ -31,10 +31,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 工作流归属地基的 Service 接缝锁定（ADR 0006）。
+ * 工作流归属地基的 Service 接缝锁定（ADR 0006 / 0007）。
  *
- * <p>为什么锁在这一层：{@code /workflow/**} 在免登录白名单里，URL 层拦不住跨账号读写，
- * 「列表只暴露我的 + builtin、写操作登录 + 归属校验」这条口径必须在这里锁死。
+ * <p>为什么锁在这一层：{@code /workflow/**} 自 2026-11-17 起移出免登录白名单（ADR 0007），
+ * 但 Service 仍保留「未登录 401 / 非本人 403」的兜底；「列表只暴露我的 + builtin、
+ * 写操作登录 + 归属校验」这条口径必须在这里锁死，不能只依赖 URL 层或前端。
  *
  * <p>登录上下文用 {@code mockStatic(SecurityFrameworkUtils)} 注入，不启动 Spring、不碰数据库。
  */
@@ -103,10 +104,12 @@ class WorkflowServiceImplTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getId()).isEqualTo("201");
         assertThat(result.get(0).getBuiltin()).isFalse();
+        // 列表卡片需要可见性标签与切换入口：列表项必须带 visibility
+        assertThat(result.get(0).getVisibility()).isZero();
     }
 
     @Test
-    @DisplayName("列表：匿名（免登录白名单）只查 builtin")
+    @DisplayName("列表：匿名（Service 兜底）只查 builtin")
     void listWorkflows_anonymous_queriesBuiltinOnly() {
         when(workflowRepository.selectListVisible(null)).thenReturn(List.of(workflow(BUILTIN_ID, 1L)));
 
@@ -169,10 +172,22 @@ class WorkflowServiceImplTest {
     void saveWorkflow_updateOwn_updates() {
         loginAs(USER_ID);
         when(workflowRepository.selectById("201")).thenReturn(Optional.of(workflow("201", USER_ID)));
+        when(workflowRepository.update(any(WorkflowDO.class))).thenReturn(1);
 
         workflowService.saveWorkflow(saveReq("201"));
 
         verify(workflowRepository).update(any(WorkflowDO.class));
+    }
+
+    @Test
+    @DisplayName("保存：更新影响 0 行（并发删除）按不存在拒绝")
+    void saveWorkflow_updateAffectsNoRow_badRequest() {
+        loginAs(USER_ID);
+        when(workflowRepository.selectById("201")).thenReturn(Optional.of(workflow("201", USER_ID)));
+        when(workflowRepository.update(any(WorkflowDO.class))).thenReturn(0);
+
+        assertThatThrownBy(() -> workflowService.saveWorkflow(saveReq("201")))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(400));
     }
 
     @Test
@@ -229,6 +244,7 @@ class WorkflowServiceImplTest {
     void updateVisibility_owner_updates() {
         loginAs(USER_ID);
         when(workflowRepository.selectById("201")).thenReturn(Optional.of(workflow("201", USER_ID)));
+        when(workflowRepository.updateVisibility("201", 1)).thenReturn(1);
 
         workflowService.updateVisibility("201", 1);
 
@@ -292,7 +308,7 @@ class WorkflowServiceImplTest {
     }
 
     @Test
-    @DisplayName("公有库列表：匿名（免登录白名单）传 null，由查询侧兜底")
+    @DisplayName("公有库列表：匿名（Service 兜底）传 null，由查询侧兜底")
     void listPublicWorkflows_anonymous_passesNull() {
         when(workflowRepository.selectListPublic(null)).thenReturn(List.of());
 
@@ -381,5 +397,163 @@ class WorkflowServiceImplTest {
                 .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(400));
 
         verify(workflowRepository, never()).insert(any());
+    }
+
+    @Test
+    @DisplayName("重命名：创建者本人只改名称")
+    void renameWorkflow_owner_updatesName() {
+        loginAs(USER_ID);
+        when(workflowRepository.selectById("201")).thenReturn(Optional.of(workflow("201", USER_ID)));
+        when(workflowRepository.updateName("201", "新名字")).thenReturn(1);
+
+        workflowService.renameWorkflow("201", " 新名字 ");
+
+        verify(workflowRepository).updateName("201", "新名字");
+    }
+
+    @Test
+    @DisplayName("重命名：非创建者拒绝")
+    void renameWorkflow_notOwner_throwsForbidden() {
+        loginAs(USER_ID);
+        when(workflowRepository.selectById("201")).thenReturn(Optional.of(workflow("201", OTHER_ID, 1)));
+
+        assertThatThrownBy(() -> workflowService.renameWorkflow("201", "新名字"))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(403));
+
+        verify(workflowRepository, never()).updateName(any(), any());
+    }
+
+    @Test
+    @DisplayName("重命名：内置模板拒绝")
+    void renameWorkflow_builtin_throwsForbidden() {
+        loginAs(USER_ID);
+
+        assertThatThrownBy(() -> workflowService.renameWorkflow(BUILTIN_ID, "新名字"))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(403));
+
+        verify(workflowRepository, never()).selectById(any());
+        verify(workflowRepository, never()).updateName(any(), any());
+    }
+
+    @Test
+    @DisplayName("重命名：空名称按 400 拒绝")
+    void renameWorkflow_blankName_badRequest() {
+        loginAs(USER_ID);
+
+        assertThatThrownBy(() -> workflowService.renameWorkflow("201", "   "))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(400));
+
+        verify(workflowRepository, never()).updateName(any(), any());
+    }
+
+    @Test
+    @DisplayName("重命名：名称超过 100 字符按 400 拒绝")
+    void renameWorkflow_tooLong_badRequest() {
+        loginAs(USER_ID);
+
+        assertThatThrownBy(() -> workflowService.renameWorkflow("201", "x".repeat(101)))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(400));
+
+        verify(workflowRepository, never()).updateName(any(), any());
+    }
+
+    @Test
+    @DisplayName("重命名：匿名请求按 401 拒绝")
+    void renameWorkflow_anonymous_throwsUnauthorized() {
+        assertThatThrownBy(() -> workflowService.renameWorkflow("201", "新名字"))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(401));
+
+        verify(workflowRepository, never()).updateName(any(), any());
+    }
+
+    @Test
+    @DisplayName("重命名：工作流不存在按 400 拒绝")
+    void renameWorkflow_notExists_badRequest() {
+        loginAs(USER_ID);
+        when(workflowRepository.selectById("201")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> workflowService.renameWorkflow("201", "新名字"))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(400));
+
+        verify(workflowRepository, never()).updateName(any(), any());
+    }
+
+    @Test
+    @DisplayName("重命名：更新影响 0 行（并发删除）按不存在拒绝")
+    void renameWorkflow_affectsNoRow_badRequest() {
+        loginAs(USER_ID);
+        when(workflowRepository.selectById("201")).thenReturn(Optional.of(workflow("201", USER_ID)));
+        when(workflowRepository.updateName("201", "新名字")).thenReturn(0);
+
+        assertThatThrownBy(() -> workflowService.renameWorkflow("201", "新名字"))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(400));
+    }
+
+    @Test
+    @DisplayName("删除：创建者本人软删除，会话 / 执行记录不级联")
+    void deleteWorkflow_owner_softDeletes() {
+        loginAs(USER_ID);
+        when(workflowRepository.selectById("201")).thenReturn(Optional.of(workflow("201", USER_ID)));
+        when(workflowRepository.softDelete("201")).thenReturn(1);
+
+        workflowService.deleteWorkflow("201");
+
+        verify(workflowRepository).softDelete("201");
+    }
+
+    @Test
+    @DisplayName("删除：非创建者拒绝（即使该流已公有）")
+    void deleteWorkflow_notOwner_throwsForbidden() {
+        loginAs(USER_ID);
+        when(workflowRepository.selectById("201")).thenReturn(Optional.of(workflow("201", OTHER_ID, 1)));
+
+        assertThatThrownBy(() -> workflowService.deleteWorkflow("201"))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(403));
+
+        verify(workflowRepository, never()).softDelete(any());
+    }
+
+    @Test
+    @DisplayName("删除：内置模板拒绝")
+    void deleteWorkflow_builtin_throwsForbidden() {
+        loginAs(USER_ID);
+
+        assertThatThrownBy(() -> workflowService.deleteWorkflow(BUILTIN_ID))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(403));
+
+        verify(workflowRepository, never()).selectById(any());
+        verify(workflowRepository, never()).softDelete(any());
+    }
+
+    @Test
+    @DisplayName("删除：匿名请求按 401 拒绝")
+    void deleteWorkflow_anonymous_rejectedAsUnauthorized() {
+        assertThatThrownBy(() -> workflowService.deleteWorkflow("201"))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(401));
+
+        verify(workflowRepository, never()).softDelete(any());
+    }
+
+    @Test
+    @DisplayName("删除：工作流不存在按 400 拒绝")
+    void deleteWorkflow_notExists_badRequest() {
+        loginAs(USER_ID);
+        when(workflowRepository.selectById("201")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> workflowService.deleteWorkflow("201"))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(400));
+
+        verify(workflowRepository, never()).softDelete(any());
+    }
+
+    @Test
+    @DisplayName("删除：软删除影响 0 行（并发删除）按不存在拒绝")
+    void deleteWorkflow_affectsNoRow_badRequest() {
+        loginAs(USER_ID);
+        when(workflowRepository.selectById("201")).thenReturn(Optional.of(workflow("201", USER_ID)));
+        when(workflowRepository.softDelete("201")).thenReturn(0);
+
+        assertThatThrownBy(() -> workflowService.deleteWorkflow("201"))
+                .isInstanceOfSatisfying(ServiceException.class, e -> assertThat(e.getCode()).isEqualTo(400));
     }
 }

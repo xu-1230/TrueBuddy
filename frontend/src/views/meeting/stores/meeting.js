@@ -28,7 +28,7 @@ export const useMeetingStore = defineStore('meeting', () => {
   const ended = ref(false)
   /**
    * 当前端上身份：判定「这条消息是不是我发的」的唯一依据。
-   * 由页面在入会 / 初始化时注入，避免 ChatPanel 拿 `attendeeId === selfId` 猜
+   * 由页面在入会 / 初始化时注入，避免展示层拿 `attendeeId === selfId` 猜
    * （老师发言在库里 attendeeId 恒为 null，比对会碰巧成立，见 utils/chat.js）。
    */
   const selfIdentity = ref({ selfId: null, isHost: false })

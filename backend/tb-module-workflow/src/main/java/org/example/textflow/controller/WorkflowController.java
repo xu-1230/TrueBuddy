@@ -16,6 +16,7 @@ import org.example.textflow.tool.WorkflowToolCallbacks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -133,6 +134,30 @@ public class WorkflowController {
     @PostMapping("/fork")
     public CommonResult<String> fork(@RequestParam("workflow_id") String workflowId) {
         return success(workflowService.forkWorkflow(workflowId));
+    }
+
+    /**
+     * 重命名本人工作流（builtin 拒绝；只改名称，不触碰画布定义）。
+     *
+     * @param workflowId 工作流 id（雪花 ID 字符串）
+     * @param name 新名称（trim 后非空，≤100 字符）
+     */
+    @PutMapping("/rename")
+    public CommonResult<Boolean> rename(@RequestParam("workflow_id") String workflowId,
+                                        @RequestParam("name") String name) {
+        workflowService.renameWorkflow(workflowId, name);
+        return success(true);
+    }
+
+    /**
+     * 软删除本人工作流（builtin 拒绝；会话 / 执行记录不级联）。
+     *
+     * @param workflowId 工作流 id（雪花 ID 字符串）
+     */
+    @DeleteMapping("/delete")
+    public CommonResult<Boolean> delete(@RequestParam("workflow_id") String workflowId) {
+        workflowService.deleteWorkflow(workflowId);
+        return success(true);
     }
 
 }
