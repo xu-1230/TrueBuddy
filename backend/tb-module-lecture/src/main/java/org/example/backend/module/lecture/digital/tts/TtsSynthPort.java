@@ -15,12 +15,14 @@ public interface TtsSynthPort {
      *
      * <p>本方法<b>阻塞</b>到合成结束；调用方需在另一线程消费 {@code pcm}，否则管道缓冲写满会死锁。
      *
-     * @param text 待播文本
-     * @param pcm  PCM 落点，由调用方负责关闭
+     * @param text  待播文本
+     * @param voice 音色编码（内置音色或复刻音色的 voice_id）
+     * @param model TTS 模型（内置音色用全局配置；复刻音色用创建时的模型）
+     * @param pcm   PCM 落点，由调用方负责关闭
      * @return 合成统计
      * @throws IllegalStateException 厂商报错、超时或一个字节都没合成出来
      */
-    TtsStats synthesize(String text, OutputStream pcm);
+    TtsStats synthesize(String text, String voice, String model, OutputStream pcm);
 
     /**
      * @param firstChunkMs 首个音频块到达耗时（毫秒），-1 表示没拿到

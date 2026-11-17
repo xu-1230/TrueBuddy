@@ -35,6 +35,12 @@
             AI 优化全部备注
           </el-button>
         </el-tooltip>
+        <!-- 数字人与声音设置：形象 / 音色的选择与复刻都在这个弹窗里 -->
+        <el-tooltip content="数字人与声音设置" placement="bottom" :show-after="300">
+          <el-button class="ppt-settings-btn" circle @click="settingsVisible = true">
+            <el-icon><Setting /></el-icon>
+          </el-button>
+        </el-tooltip>
       </div>
       <input
         ref="fileInputRef"
@@ -211,19 +217,6 @@
             class="digital-human-drag"
             :style="avatarHandleStyle"
           />
-
-          <!-- 形象切换：点一下按登记表顺序换下一个，加载不出来的自动跳过 -->
-          <button
-            type="button"
-            class="avatar-switch"
-            :class="{ 'is-loading': switchingAvatar }"
-            :disabled="switchingAvatar"
-            :title="`当前：${currentAvatarLabel}，点击切换下一个`"
-            @click="switchAvatar"
-          >
-            <el-icon class="avatar-switch__icon"><Refresh /></el-icon>
-            <span class="avatar-switch__label">{{ currentAvatarLabel }}</span>
-          </button>
         </div>
       </div>
     </div>
@@ -275,6 +268,15 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 数字人与声音设置：选形象 / 选音色 / 复刻音色 -->
+    <AvatarVoiceSettingsDialog
+      v-model="settingsVisible"
+      :current-avatar="currentAvatarId"
+      :current-voice="selectedVoiceCode || ''"
+      :save-handler="handleSettingsSave"
+      @voice-deleted="handleVoiceDeleted"
+    />
   </div>
 </template>
 
@@ -283,7 +285,7 @@ import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUnmounted
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  CaretLeft, CaretRight, DocumentChecked, FullScreen, Microphone, Minus, Monitor, Plus, Refresh, UploadFilled, VideoCamera, VideoPlay,
+  CaretLeft, CaretRight, DocumentChecked, FullScreen, Microphone, Minus, Monitor, Plus, Setting, UploadFilled, VideoCamera, VideoPlay,
 } from '@element-plus/icons-vue'
 import * as PIXI from 'pixi.js'
 import { Live2DModel } from 'pixi-live2d-display/cubism4'
@@ -292,18 +294,17 @@ import { useSlidesStore } from './stores/slides'
 import { useScreenStore } from './stores/screen'
 import { useRoute, useRouter } from 'vue-router'
 import { VIEWPORT_SIZE } from './configs/canvas'
-import { AVATAR_MODEL_IDS, DEFAULT_AVATAR_MODEL, FALLBACK_AVATAR_MODEL, applyFraming, getAvatarModelConfig, loadAvatarModel, resolveMouthParamId } from './configs/avatar'
+import { AVATAR_MODELS, DEFAULT_AVATAR_MODEL, FALLBACK_AVATAR_MODEL, applyFraming, getAvatarModelConfig, loadAvatarModel, resolveMouthParamId } from './configs/avatar'
 import useScreening from './hooks/useScreening'
 
 import './styles/prosemirror.css'
 import './styles/animation.css'
 
-import { optimizeSpeech } from '@/api/ppt'
+import { getAvatarPreference, narrateSpeech, optimizeSpeech, saveAvatarPreference } from '@/api/ppt'
 import { createMeeting } from '@/api/meeting'
 import { readHostSession, writeHostSession } from '@/utils/hostSession'
 import { readEventStream } from '@/utils/event-stream'
 import { createLessonRunner } from './utils/lesson-runner'
-import { narrateSpeech } from '@/api/ppt'
 import { createSpeechPlayer } from './utils/speech-player'
 import { buildSpeechPages, extractSlideTitle, htmlToPlainText } from './utils/slide-text'
 import ThumbnailSlide from './components/thumbnail/ThumbnailSlide.vue'
@@ -312,6 +313,7 @@ import ScreenView from './screen/ScreenView.vue'
 import AiSparkIcon from './components/ai/AiSparkIcon.vue'
 import AiRemarkDialog from './components/ai/AiRemarkDialog.vue'
 import AiRemarkBatchDialog from './components/ai/AiRemarkBatchDialog.vue'
+import AvatarVoiceSettingsDialog from './components/settings/AvatarVoiceSettingsDialog.vue'
 
 if (typeof window !== 'undefined' && typeof window.Buffer === 'undefined') {
   window.Buffer = { isBuffer: () => false }
@@ -350,7 +352,7 @@ watch(() => route.query.screen, enterScreeningByQuery)
 // ② 本页「试听本页」：彩排时没有控制台，直接念当前页的讲稿。
 // 「停止」= 掐断请求：后端合成随之取消（写不出去即停），播放器也立刻安静。
 
-/** 播报接口：与讲稿生成同口径（`/ppt/**` 免登录，故带 `/api` 前缀走 Vite 代理） */
+/** 播报接口：`/ppt/speech/speak` 是唯一免登录的 `/ppt/**` 接口（带 `/api` 前缀走 Vite 代理） */
 const SPEAK_PATH = '/api/ppt/speech/speak'
 /** 播报总线：一个会议一条频道，与主持人凭据的存储键同形（`tb-meeting-host:{会议号}`） */
 const CHANNEL_PREFIX = 'tb-meeting:'
@@ -359,6 +361,13 @@ const CHANNEL_PREFIX = 'tb-meeting:'
 const speaking = ref(false)
 /** 数字人口型开合度 0–1：由**本页正在播的音频**算出（不是远端哪条轨） */
 const mouthLevel = ref(0)
+
+/** 设置弹窗是否打开 */
+const settingsVisible = ref(false)
+/** 当前选中的音色编码；null = 使用后端配置的默认音色 */
+const selectedVoiceCode = ref(null)
+/** 音色回退提示只弹一次：讲课队列每段都发 speak，不能每段都弹 */
+let voiceFallbackNotified = false
 
 const speechPlayer = createSpeechPlayer({
   onLevel: (level) => {
@@ -381,6 +390,96 @@ function stopSpeaking() {
   speakAbort = null
   speechPlayer.stop()
   speaking.value = false
+}
+
+/**
+ * 后端回退到默认音色时提示一次。
+ *
+ * <p>「不存在 / 无权限」说明偏好已经失效：顺手把服务端偏好回退到默认音色，
+ * 避免下一节课继续用同一段失效配置；「音色库暂时不可用」只提示，不擅自清掉选择。
+ */
+function notifyVoiceFallback(payload) {
+  if (voiceFallbackNotified) return
+  voiceFallbackNotified = true
+  const reason = payload?.voiceFallbackReason
+  const message = reason === 'forbidden'
+    ? '所选复刻音色不可用（可能不属于当前账号），已改用默认音色'
+    : reason === 'lookup_failed'
+      ? '音色库暂时不可用，已改用默认音色'
+      : '所选音色不可用，已改用默认音色'
+  ElMessage.warning(message)
+  if ((reason === 'not_found' || reason === 'forbidden') && selectedVoiceCode.value) {
+    selectedVoiceCode.value = null
+    saveAvatarPreference({
+      avatarModelCode: currentAvatarId.value || null,
+      voiceCode: null,
+    }).catch((error) => console.warn('[数字人] 回退音色偏好失败', error))
+  }
+}
+
+/**
+ * 读取当前用户的形象/音色偏好。
+ *
+ * <p>偏好读不到（401 由 axios 拦截器处理；其余失败）时不阻断页面：返回 null 让
+ * Live2D 走默认形象，音色保持 null（后端用全局默认音色）。
+ */
+async function loadAvatarPreference() {
+  try {
+    const preference = await getAvatarPreference()
+    selectedVoiceCode.value = preference?.voiceCode || null
+    return preference?.avatarModelCode || null
+  } catch (error) {
+    console.warn('[数字人] 读取数字人/音色偏好失败，使用默认配置', error)
+    return null
+  }
+}
+
+/**
+ * 设置弹窗的保存：先加载形象，成功后才写偏好（全有或全无）。
+ *
+ * <p>如果偏好写入失败，把形象退回保存前的那个，避免「界面已经换了、下次打开又变回去」。
+ *
+ * @param {{ avatarModelCode: string|null, voiceCode: string|null }} payload
+ */
+async function handleSettingsSave({ avatarModelCode, voiceCode } = {}) {
+  const previousAvatar = currentAvatarId.value
+  const nextAvatar = avatarModelCode || DEFAULT_AVATAR_MODEL
+  if (!AVATAR_MODELS[nextAvatar]) {
+    throw new Error('当前版本不支持该数字人形象')
+  }
+  const avatarChanged = nextAvatar !== previousAvatar
+
+  if (avatarChanged) {
+    const mounted = await mountAvatar(nextAvatar)
+    if (!mounted) throw new Error('数字人形象加载失败，请稍后重试')
+  }
+
+  try {
+    const saved = await saveAvatarPreference({
+      avatarModelCode: avatarModelCode || null,
+      voiceCode: voiceCode || null,
+    })
+    selectedVoiceCode.value = saved?.voiceCode || null
+    voiceFallbackNotified = false
+    return saved
+  } catch (error) {
+    if (avatarChanged) {
+      try {
+        await mountAvatar(previousAvatar)
+      } catch (revertError) {
+        console.error('[数字人] 偏好保存失败后回退形象也失败', revertError)
+      }
+    }
+    throw error
+  }
+}
+
+/** 设置弹窗删除了当前已保存的复刻音色：后端已清空偏好，前端同步回退 */
+function handleVoiceDeleted(voiceCode) {
+  if (selectedVoiceCode.value === voiceCode) {
+    selectedVoiceCode.value = null
+  }
+  voiceFallbackNotified = false
 }
 
 /**
@@ -409,11 +508,20 @@ async function speakStream(text, { keepAudio = false } = {}) {
   const hostToken = meetingNo ? readHostSession(meetingNo)?.hostToken : ''
   try {
     await readEventStream(SPEAK_PATH, {
-      body: { text: content, meetingNo: meetingNo || undefined, hostToken: hostToken || undefined },
+      body: {
+        text: content,
+        meetingNo: meetingNo || undefined,
+        hostToken: hostToken || undefined,
+        voiceCode: selectedVoiceCode.value || undefined,
+      },
       signal: controller.signal,
       onEvent: (event, payload) => {
         if (event === 'chunk') {
           speechPlayer.feed(payload)
+          return
+        }
+        if (event === 'status' && payload?.voiceFallback) {
+          notifyVoiceFallback(payload)
           return
         }
         if (event === 'error') {
@@ -677,7 +785,7 @@ watch([canvasPercentage, viewportRatio], updateViewport)
 
 let canvasResizeObserver = null
 
-onMounted(() => {
+onMounted(async () => {
   updateViewport()
   canvasResizeObserver = new ResizeObserver(updateViewport)
   if (canvasWrapRef.value) canvasResizeObserver.observe(canvasWrapRef.value)
@@ -686,7 +794,9 @@ onMounted(() => {
   window.addEventListener('resize', handleLive2DViewportChange)
   document.addEventListener('fullscreenchange', handleLive2DViewportChange)
   window.visualViewport?.addEventListener('resize', handleLive2DViewportChange)
-  initLive2D()
+  // 先读偏好再初始化：避免「先加载默认形象、再切到偏好形象」的二次加载/闪烁
+  const preferredAvatar = await loadAvatarPreference()
+  await initLive2D(preferredAvatar)
   requestAnimationFrame(resizeLive2DStage)
 })
 // 放在 beforeUnmount：此时 canvas 仍在 DOM 中，PIXI 可安全释放渲染器与 WebGL 上下文
@@ -1121,8 +1231,6 @@ let live2dDisposed = false // 卸载标记：阻断「组件已卸载后才 reso
 let mouthParamId = null // 当前模型真正的嘴部参数 ID，加载后探测一次并复用
 
 const currentAvatarId = ref(DEFAULT_AVATAR_MODEL) // 当前挂在舞台上的形象
-const switchingAvatar = ref(false) // 切换进行中：防止连点把加载流程叠起来
-const currentAvatarLabel = computed(() => getAvatarModelConfig(currentAvatarId.value).label)
 
 // 放映时数字人的拖拽位移，相对「贴右 + 垂直居中」的默认盒子；编辑模式下不生效
 const avatarDragOffset = ref({ x: 0, y: 0 })
@@ -1315,28 +1423,30 @@ const destroyLive2D = () => {
 /**
  * 按「首选形象 → 兜底形象」的顺序找一只能加载的模型。
  *
- * 首选是 DeepSeek 鲸鱼娘：先读 public/live2d/deepseek-whale（跑过 fetch 脚本才有），
- * 没有再走 jsDelivr。两处都拿不到就退回仓库里一定有的 Haru，
+ * 候选顺序：偏好形象（若前端认识）→ 默认形象 Wanko → 兜底 Haru。
+ * 默认形象读 public/live2d/Wanko（示例模型，随仓库分发）；两处都拿不到就退回 Haru，
  * 保证放映现场不出现一块空白 —— 断网时至少还有个人站在那儿念稿。
  */
-const loadPreferredAvatar = async () => {
-  try {
-    return await loadAvatarModel(createLive2DModel, DEFAULT_AVATAR_MODEL)
-  }
-  catch (e) {
-    console.error(`[数字人] ${DEFAULT_AVATAR_MODEL} 加载失败，回退 ${FALLBACK_AVATAR_MODEL}`, e)
-  }
+const loadPreferredAvatar = async (preferredId = null) => {
+  const candidates = []
+  if (preferredId && AVATAR_MODELS[preferredId]) candidates.push(preferredId)
+  candidates.push(DEFAULT_AVATAR_MODEL, FALLBACK_AVATAR_MODEL)
 
-  try {
-    return await loadAvatarModel(createLive2DModel, FALLBACK_AVATAR_MODEL)
+  let lastError = null
+  for (const id of new Set(candidates)) {
+    try {
+      return await loadAvatarModel(createLive2DModel, id)
+    }
+    catch (e) {
+      lastError = e
+      console.error(`[数字人] ${id} 加载失败`, e)
+    }
   }
-  catch (e) {
-    console.error('[数字人] 兜底形象也加载失败，右侧面板保持空白', e)
-    return null
-  }
+  console.error('[数字人] 所有候选形象都加载失败，右侧面板保持空白', lastError)
+  return null
 }
 
-const initLive2D = async () => {
+const initLive2D = async (preferredId = null) => {
   if (live2dDisposed || app || !canvasRef.value) return
 
   viewportSize.value = { width: window.innerWidth, height: window.innerHeight }
@@ -1349,7 +1459,7 @@ const initLive2D = async () => {
     autoDensity: true,
   })
 
-  const loaded = await loadPreferredAvatar()
+  const loaded = await loadPreferredAvatar(preferredId)
 
   // 加载期间组件可能已卸载：此时 app 已销毁，丢弃模型而不是挂到失效实例上
   if (!loaded || live2dDisposed || !app) {
@@ -1359,8 +1469,8 @@ const initLive2D = async () => {
 
   model = loaded.model
   currentAvatarId.value = loaded.id
-  if (loaded.id !== DEFAULT_AVATAR_MODEL) {
-    console.warn(`[数字人] 当前显示的是兜底形象 ${loaded.id}，DeepSeek 鲸鱼娘未能加载`)
+  if (preferredId && loaded.id !== preferredId) {
+    console.warn(`[数字人] 偏好形象 ${preferredId} 未能加载，已回退 ${loaded.id}`)
   }
   // 放映时按全屏舞台里的 400×800 盒子摆放；编辑时按侧栏取景
   placeAvatar()
@@ -1386,6 +1496,8 @@ const initLive2D = async () => {
  * @returns {Promise<boolean>} 是否挂载成功
  */
 const mountAvatar = async (id) => {
+  // 目录里可能选了前端还不认识的编码：宁可报错，也不能让 getAvatarModelConfig 静默回退成默认模型
+  if (!AVATAR_MODELS[id]) throw new Error(`当前版本不支持该数字人形象：${id}`)
   if (!app || live2dDisposed) return false
 
   const loaded = await loadAvatarModel(createLive2DModel, id)
@@ -1413,38 +1525,6 @@ const mountAvatar = async (id) => {
   }
 
   return true
-}
-
-/**
- * 按登记表顺序切到下一个形象。
- *
- * 用一个形象要过「本地文件 → CDN」两关，任何一关拿到模型就算数；
- * 两关都失败的（例如没跑过取模型脚本）直接跳过，最多转一圈回到原点，
- * 免得用户点了按钮却像没反应。
- */
-const switchAvatar = async () => {
-  if (switchingAvatar.value || !app) return
-  switchingAvatar.value = true
-
-  const start = AVATAR_MODEL_IDS.indexOf(currentAvatarId.value)
-  try {
-    for (let step = 1; step <= AVATAR_MODEL_IDS.length; step++) {
-      const id = AVATAR_MODEL_IDS[(start + step) % AVATAR_MODEL_IDS.length]
-      try {
-        if (await mountAvatar(id)) {
-          currentAvatarId.value = id
-          return
-        }
-      }
-      catch (e) {
-        console.warn(`[数字人] ${id} 加载失败，跳过`, e)
-      }
-    }
-    ElMessage.warning('没有可以加载的形象，请确认 public/live2d 下的模型文件是否完整')
-  }
-  finally {
-    switchingAvatar.value = false
-  }
 }
 
 /** 拖动时至少留这么多像素留在视口内，避免把数字人拖丢找不回来 */
@@ -1846,64 +1926,6 @@ const resetAvatarDrag = () => {
   display: block;
 }
 
-/* 形象切换：贴在数字人面板底部 */
-.avatar-switch {
-  position: absolute;
-  left: 50%;
-  /* canvas 固定 800 高，比面板高时底部会溢出视口，按钮得往上让一点 */
-  bottom: 28px;
-  transform: translateX(-50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: calc(100% - 32px);
-  padding: 7px 14px;
-  border: none;
-  border-radius: 999px;
-  /* 面板底色是浅色，浅底浅边框的按钮完全看不见，直接用深色实心胶囊 */
-  background: color-mix(in oklab, var(--tb-text-primary) 82%, transparent);
-  backdrop-filter: blur(6px);
-  box-shadow: 0 2px 12px rgb(0 0 0 / 20%);
-  color: #fff;
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.18s, transform 0.18s;
-
-  /* 放映模式下父级 pointer-events: none，这里必须自己收回来，否则点不到 */
-  pointer-events: auto;
-}
-
-.avatar-switch:hover:not(:disabled) {
-  background: var(--tb-primary);
-  transform: translateX(-50%) translateY(-1px);
-}
-
-.avatar-switch:disabled {
-  cursor: progress;
-}
-
-.avatar-switch__icon {
-  font-size: 14px;
-}
-
-/* 加载中让图标转起来，比只改鼠标样式更能说明「正在换」 */
-.avatar-switch.is-loading .avatar-switch__icon {
-  animation: avatar-switch-spin 1s linear infinite;
-}
-
-@keyframes avatar-switch-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.avatar-switch__label {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
 /* 放映模式下：canvas 固定为全屏舞台，模型在 Pixi 内部移动；canvas 本身不参与 CSS 位移 */
 .digital-human-placeholder.screening-mode {
   position: fixed;
@@ -1935,10 +1957,5 @@ const resetAvatarDrag = () => {
 
 .digital-human-placeholder.screening-mode.is-dragging .digital-human-drag {
   cursor: grabbing;
-}
-
-/* 放映时只让数字人上屏：切换按钮属于编辑期控件，不给观众看到 */
-.digital-human-placeholder.screening-mode .avatar-switch {
-  display: none;
 }
 </style>

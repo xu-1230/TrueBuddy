@@ -28,6 +28,12 @@
             <artifactId>tb-common</artifactId>
             <version>${revision}</version>
         </dependency>
+        <!-- 登录用户上下文：音色库/偏好接口按 creator 隔离 -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-spring-boot-starter-security</artifactId>
+            <version>${revision}</version>
+        </dependency>
         <!-- 数据访问：与 tb-module-homework 保持一致，使用 MyBatis 注解 Mapper（无 XML） -->
         <dependency>
             <groupId>org.mybatis.spring.boot</groupId>
@@ -36,6 +42,12 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+        </dependency>
+        <!-- 文件存储：声音复刻样本上传/读取（MinIO + infra_file） -->
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>tb-module-infra</artifactId>
+            <version>${revision}</version>
         </dependency>
         <!-- 实时通道：媒体与聊天都交给自托管的 LiveKit（见 docs/16），因此不引入 WebSocket starter；
              令牌签发用项目已有的 Hutool 手写 HS256，房间管理用 Twirp HTTP 直调 -->

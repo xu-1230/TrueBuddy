@@ -15,6 +15,14 @@ public class DigitalSpeakReqVO {
     /** 要播报的文本（讲稿正文） */
     private String text;
 
+    /**
+     * 音色编码，可空：为空时用全局默认音色。
+     *
+     * <p>内置音色所有人可用；复刻音色只有创建者可用（公开的 speak 接口可能没有登录用户，
+     * 这种情况会回退默认音色）。
+     */
+    private String voiceCode;
+
     /** 会议号，可空：为空即彩排试听，不落库 */
     private String meetingNo;
 

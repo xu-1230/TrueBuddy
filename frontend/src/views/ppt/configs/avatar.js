@@ -70,8 +70,8 @@ export const AVATAR_MODELS = {
 /** 切换顺序：直接沿用登记表的键顺序，改表即改顺序 */
 export const AVATAR_MODEL_IDS = Object.keys(AVATAR_MODELS)
 
-/** 放映页默认形象：换成 DeepSeek 鲸鱼娘 */
-export const DEFAULT_AVATAR_MODEL = 'DeepSeekWhale'
+/** 放映页默认形象：Wanko（示例）；偏好为空时使用 */
+export const DEFAULT_AVATAR_MODEL = 'Wanko'
 
 /**
  * 鲸鱼娘加载不出来时的兜底形象。
