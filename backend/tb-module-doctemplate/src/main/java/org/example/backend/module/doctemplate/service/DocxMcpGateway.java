@@ -79,4 +79,49 @@ public interface DocxMcpGateway {
      */
     String fillFields(String source, Map<String, String> fields, String outputPath, boolean overwrite);
 
+    /**
+     * docx_set_cell：写入单元格文本（保留单元格原有格式，支持 \n 多段）。
+     *
+     * @param source     文档来源
+     * @param text       要写入的文本
+     * @param location   单元格路径，如 t:0/r:1/c:2
+     * @param outputPath 目标路径
+     * @return 结构化结果
+     */
+    Map<String, Object> setCell(String source, String text, String location, String outputPath);
+
+    /**
+     * docx_insert_paragraph：在锚点段落前/后插入段落（不传锚点则追加到文末）。
+     *
+     * @param source     文档来源
+     * @param text       段落文本（支持 \n 多段）
+     * @param after      后置锚点（p:N）
+     * @param before     前置锚点（p:N）
+     * @param styleFrom  格式来源段落（p:N）
+     * @param outputPath 目标路径
+     * @return 结构化结果
+     */
+    Map<String, Object> insertParagraph(String source, String text, String after,
+                                        String before, String styleFrom, String outputPath);
+
+    /**
+     * docx_delete_paragraph：删除一个段落。
+     *
+     * @param source     文档来源
+     * @param location   段落路径（p:N 或 t:N/r:R/c:C/p:P）
+     * @param outputPath 目标路径
+     * @return 结构化结果
+     */
+    Map<String, Object> deleteParagraph(String source, String location, String outputPath);
+
+    /**
+     * docx_diff：文本级/格式级比对，用于证明修改只落在预期位置、页面设置未变。
+     *
+     * @param pathA 修改前文档
+     * @param pathB 修改后文档
+     * @param level text / format
+     * @return 结构化 diff 结果
+     */
+    Map<String, Object> diff(String pathA, String pathB, String level);
+
 }

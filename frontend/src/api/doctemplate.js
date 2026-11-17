@@ -79,3 +79,49 @@ export function getGenerationHistory(limit) {
 export function getGenerationDetail(id) {
   return service({ url: '/doc-template/detail', method: 'get', params: { id } })
 }
+
+/**
+ * AI 编辑的 SSE 地址。
+ * fetch 不经过 axios 实例，需要带 `/api` 前缀；撤回流是普通 POST，走 axios 不加前缀。
+ */
+export const DOC_CHAT_API = {
+  chat: '/api/doc-template/chat',
+  undo: '/doc-template/chat/undo',
+}
+
+/**
+ * 撤回某次编辑：目标版本及后代失效，当前版本回到父版本。
+ * @param {{ rootFileId: number, targetVersionId: number }} data
+ * @returns {Promise<{ rootFileId: number, src: string, discardedVersionIds: number[], notice: object|null }>}
+ */
+export function undoDocEdit(data) {
+  return service({ url: '/doc-template/chat/undo', method: 'post', data })
+}
+
+/**
+ * @typedef {Object} ChatMessageVO
+ * @property {number} id
+ * @property {'user'|'assistant'|'system'} role
+ * @property {string} content
+ * @property {Array<{type:string,text?:string,items?:string[]}>|null} blocks
+ * @property {Array<{locator:string,tag?:string,label?:string,text?:string}>|null} selections
+ * @property {number|null} versionId
+ * @property {boolean} superseded
+ * @property {boolean} error
+ * @property {string} createTime
+ */
+
+/**
+ * 获取某文档（根文件/工作区）的 AI 聊天记录，按时间正序。
+ * 需登录；后端按根文件 creator 隔离。
+ * @param {number|string} rootFileId
+ * @param {number} [limit] 默认 200，上限 500
+ * @returns {Promise<ChatMessageVO[]>}
+ */
+export function getDocChatHistory(rootFileId, limit) {
+  return service({
+    url: '/doc-template/chat/history',
+    method: 'get',
+    params: limit ? { rootFileId, limit } : { rootFileId },
+  })
+}

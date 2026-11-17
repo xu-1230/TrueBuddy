@@ -175,7 +175,7 @@ spring:
 
 ## 7. 接口规范
 
-接口清单以 [../docs/doc-api.md](../docs/doc-api.md) §2.5 为唯一权威来源，当前为 **15 个 Controller / 43 个接口**（实时媒体与聊天由自托管 LiveKit 承载，不经过本服务）：
+接口清单以 [../docs/doc-api.md](../docs/doc-api.md) §2.5 为唯一权威来源，当前为 **16 个 Controller / 56 个接口**（实时媒体与聊天由自托管 LiveKit 承载，不经过本服务）：
 
 | 模块 | 前缀 | 接口数 | 代表接口 |
 |------|------|--------|----------|
@@ -183,7 +183,7 @@ spring:
 | 登录 | `/system/auth` | 1 | `POST /system/auth/login`（`@PermitAll`） |
 | 文档解析验证 | `/test2` | 2 | `GET /test2/ping`、`GET /test2/read-pptx` |
 | 文件 | `/infra/file` | 1 | `POST /infra/file/upload`（multipart） |
-| 文档模板 | `/doc-template` | 3 | `generate` / `history` / `detail` |
+| 文档模板 | `/doc-template` | 6 | `generate` / `history` / `detail` / `chat`（SSE）/ `chat/undo` / `chat/history`；整组要求登录并按 creator 隔离 |
 | 知识库空间 | `/knowledge-base/space` | 4 | `list` / `create` / `update` / `delete` |
 | 知识库文档 | `/knowledge-base/document` | 7 | `list` / `create` / `upload` / `parse-status` / `vectorize` / `delete` / `abandon` |
 | 知识库分片 | `/knowledge-base/chunk` | 1 | `GET /knowledge-base/chunk/list` |

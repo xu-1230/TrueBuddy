@@ -5,6 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.example.backend.framework.common.exception.ServiceException;
 import org.example.backend.module.doctemplate.config.DocTemplateProperties;
+import org.example.backend.module.doctemplate.model.vo.ChatHistoryMessage;
+import org.example.backend.module.doctemplate.model.vo.ChatSelection;
+import org.example.backend.module.doctemplate.model.vo.DocEditBlock;
+import org.example.backend.module.doctemplate.model.vo.DocEditOperation;
+import org.example.backend.module.doctemplate.model.vo.DocEditPlan;
 import org.example.backend.module.doctemplate.model.vo.DocPlanResult;
 import org.example.backend.module.doctemplate.model.vo.ReplacementRule;
 import org.example.backend.module.doctemplate.prompt.AiPromptConstants;
@@ -32,6 +37,12 @@ public class AiContentServiceImpl implements AiContentService {
     private static final int MAX_OUTLINE_CHARS = 4000;
     /** 提示词中检索内容的最大字符数 */
     private static final int MAX_RAG_CHARS = 4000;
+    /** 编辑聊天：送入模型的最近会话消息条数 / 字符数 */
+    private static final int MAX_CHAT_HISTORY = 12;
+    private static final int MAX_CHAT_HISTORY_CHARS = 4000;
+    /** 编辑聊天：选区数量 / 单次操作条数上限 */
+    private static final int MAX_CHAT_SELECTIONS = 5;
+    private static final int MAX_EDIT_OPERATIONS = 40;
 
     /** docx_replace 支持的 scope 键白名单（非法键仅丢弃 scope，不丢弃整条规则） */
     private static final Set<String> ALLOWED_SCOPE_KEYS = Set.of(
@@ -108,6 +119,132 @@ public class AiContentServiceImpl implements AiContentService {
                 truncate(textDigest, properties.getMaxTextChars(), "正文段落清单"));
         String response = chat(AiPromptConstants.FIXUP_SYSTEM, user);
         return parseRules(response, item, "buildFixups");
+    }
+
+    @Override
+    public DocEditPlan edit(String instruction, String textDigest, String tablesDigest,
+                            List<ChatSelection> selections, List<ChatHistoryMessage> history,
+                            List<String> errors) {
+        String feedback = errors == null || errors.isEmpty()
+                ? ""
+                : "\n\n## 上次校验错误（必须修正）\n- " + String.join("\n- ", errors);
+        String user = AiPromptConstants.EDIT_USER.formatted(
+                nullToEmpty(instruction) + feedback,
+                formatSelections(selections),
+                formatHistory(history),
+                truncate(textDigest, properties.getMaxTextChars(), "正文段落清单"),
+                truncate(tablesDigest, properties.getMaxDigestChars(), "表格段落清单"));
+        String response = chat(AiPromptConstants.EDIT_SYSTEM, user);
+        DocEditPlan plan;
+        try {
+            plan = objectMapper.readValue(extractJson(response, '{'), DocEditPlan.class);
+        } catch (Exception e) {
+            log.warn("[edit] 编辑结果解析失败: {}", e.getMessage());
+            throw exception(AI_RESPONSE_INVALID, "编辑结果解析失败：" + e.getMessage());
+        }
+        sanitizeEditPlan(plan);
+        return plan;
+    }
+
+    /** 选中元素 → 提示词清单（最多 5 个；为空时明确按全文处理） */
+    private String formatSelections(List<ChatSelection> selections) {
+        if (selections == null || selections.isEmpty()) {
+            return "（无，按全文处理）";
+        }
+        StringBuilder builder = new StringBuilder();
+        int count = 0;
+        for (ChatSelection selection : selections) {
+            if (selection == null || selection.getLocator() == null || selection.getLocator().isBlank()) {
+                continue;
+            }
+            if (count >= MAX_CHAT_SELECTIONS) {
+                break;
+            }
+            builder.append("- [").append(selection.getLocator().trim()).append("] ")
+                    .append(nullToEmpty(selection.getLabel()).trim());
+            String text = nullToEmpty(selection.getText()).trim();
+            if (!text.isEmpty()) {
+                builder.append(" ｜ 原文摘要：").append(truncate(text, 120, "选中元素摘要"));
+            }
+            builder.append('\n');
+            count++;
+        }
+        return count == 0 ? "（无，按全文处理）" : builder.toString();
+    }
+
+    /** 会话历史 → 提示词清单（最近 12 条 / 4000 字符） */
+    private String formatHistory(List<ChatHistoryMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return "（无）";
+        }
+        List<ChatHistoryMessage> tail = history.size() <= MAX_CHAT_HISTORY
+                ? history
+                : history.subList(history.size() - MAX_CHAT_HISTORY, history.size());
+        StringBuilder builder = new StringBuilder();
+        for (ChatHistoryMessage message : tail) {
+            if (message == null || message.getContent() == null || message.getContent().isBlank()) {
+                continue;
+            }
+            String role = "assistant".equalsIgnoreCase(message.getRole()) ? "assistant" : "user";
+            builder.append(role).append(": ").append(message.getContent().trim()).append('\n');
+        }
+        String text = builder.toString();
+        return text.length() <= MAX_CHAT_HISTORY_CHARS
+                ? text
+                : text.substring(text.length() - MAX_CHAT_HISTORY_CHARS);
+    }
+
+    /** 清洗模型返回：只保留 p/ul 回复块与合法 op，限制操作条数 */
+    private void sanitizeEditPlan(DocEditPlan plan) {
+        if (plan == null) {
+            throw exception(AI_RESPONSE_INVALID, "编辑结果为空");
+        }
+        List<DocEditBlock> reply = new ArrayList<>();
+        if (plan.getReply() != null) {
+            for (DocEditBlock block : plan.getReply()) {
+                if (block == null) {
+                    continue;
+                }
+                String type = nullToEmpty(block.getType()).trim();
+                if ("p".equals(type)) {
+                    String text = nullToEmpty(block.getText()).trim();
+                    if (!text.isEmpty()) {
+                        DocEditBlock cleaned = new DocEditBlock();
+                        cleaned.setType("p");
+                        cleaned.setText(text);
+                        reply.add(cleaned);
+                    }
+                } else if ("ul".equals(type) && block.getItems() != null) {
+                    List<String> items = new ArrayList<>();
+                    for (String item : block.getItems()) {
+                        if (item != null && !item.isBlank()) {
+                            items.add(item.trim());
+                        }
+                    }
+                    if (!items.isEmpty()) {
+                        DocEditBlock cleaned = new DocEditBlock();
+                        cleaned.setType("ul");
+                        cleaned.setItems(items);
+                        reply.add(cleaned);
+                    }
+                }
+            }
+        }
+        List<DocEditOperation> operations = new ArrayList<>();
+        if (plan.getOperations() != null) {
+            for (DocEditOperation operation : plan.getOperations()) {
+                if (operation == null || operation.getOp() == null || operation.getOp().isBlank()) {
+                    continue;
+                }
+                operation.setOp(operation.getOp().trim());
+                operations.add(operation);
+                if (operations.size() >= MAX_EDIT_OPERATIONS) {
+                    break;
+                }
+            }
+        }
+        plan.setReply(reply);
+        plan.setOperations(operations);
     }
 
     // ========== 私有方法 ==========

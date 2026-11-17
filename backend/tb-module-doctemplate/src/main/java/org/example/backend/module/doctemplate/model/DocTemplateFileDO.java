@@ -28,6 +28,8 @@ public class DocTemplateFileDO {
     private String summary;
     /** 展示顺序（0 起） */
     private Integer sort;
+    /** 当前版本 id（doc_template_version.id；null 表示根文件本身即 v1） */
+    private Long currentVersionId;
     /** 创建时间 */
     private LocalDateTime createTime;
     /** 更新时间 */

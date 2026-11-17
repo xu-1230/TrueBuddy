@@ -308,22 +308,27 @@
                 <el-icon><Document /></el-icon>
                 {{ activeDoc.name }}
               </span>
-              <span v-if="pickedElement" class="viewer__picked" :title="pickedElement.label">
-                <el-icon><Mouse /></el-icon>
-                <span class="viewer__picked-text">{{ pickedElement.label }}</span>
-              </span>
             </div>
             <div class="viewer__canvas">
               <DocxPreview
                 v-if="activeDoc"
-                :key="activeDoc.id"
+                :key="activeDoc.src"
                 :src="activeDoc.src"
                 :picking="picking"
+                :selected-locators="selectedLocators"
                 @pick="handlePick"
               />
             </div>
           </div>
-          <AiChatPanel :document-name="activeDoc ? activeDoc.name : ''" />
+          <AiChatPanel
+            :root-file-id="activeDoc ? activeDoc.id : null"
+            :document-name="activeDoc ? activeDoc.name : ''"
+            :selections="selections"
+            :can-edit="hasToken"
+            @remove-selection="removeSelection"
+            @clear-selections="clearSelections"
+            @version-changed="handleVersionChanged"
+          />
         </div>
         </Transition>
       </section>
@@ -423,6 +428,7 @@ import {
 import { getSpaceList } from '@/api/knowledgebase'
 import { uploadFile as uploadTemplateFile } from '@/api/file'
 import { generateDoc, getGenerationDetail, getGenerationHistory } from '@/api/doctemplate'
+import { getToken } from '@/utils/auth'
 import SquircleButton from './components/SquircleButton.vue'
 import DocxPreview from './components/DocxPreview.vue'
 import AiChatPanel from './components/AiChatPanel.vue'
@@ -549,6 +555,7 @@ const selectedKnowledgeBase = computed(
 )
 
 async function loadKnowledgeBases() {
+  if (!hasToken) return
   kbLoading.value = true
   try {
     knowledgeBases.value = await getSpaceList()
@@ -560,6 +567,10 @@ async function loadKnowledgeBases() {
 }
 
 onMounted(() => {
+  if (!hasToken) {
+    ElMessage.warning('请先登录后再使用文档模板')
+    return
+  }
   loadKnowledgeBases()
   loadHistory()
 })
@@ -654,6 +665,10 @@ function mapDoc(doc, index) {
 
 /* ---------- 操作 ---------- */
 async function handleGenerate() {
+  if (!hasToken) {
+    ElMessage.warning('请先登录后再生成文档')
+    return
+  }
   if (!canGenerate.value) {
     ElMessage.warning('请先上传模板文档并填写描述')
     return
@@ -718,21 +733,26 @@ const activeDoc = ref(null)
 
 /* 文档元素选择：由查看区工具栏的鼠标按钮切换，命中与高亮由 DocxPreview 负责 */
 const picking = ref(false)
-const pickedElement = ref(null)
+const MAX_SELECTIONS = 5
+/** 当前多选元素：真正的选中态在父组件，DocxPreview 按 locator 同步高亮 */
+const selections = ref([])
+const selectedLocators = computed(() => selections.value.map((item) => item.locator))
+/** 文档模板接口已按 creator 隔离并要求登录；未登录时只展示登录提示 */
+const hasToken = Boolean(getToken())
 
 /** 仅改本地视图状态；对外入口一律走 URL（openDoc / closeViewer） */
 function openDocState(doc) {
   activeDoc.value = doc
   viewing.value = true
   picking.value = false
-  pickedElement.value = null
+  selections.value = []
 }
 
 function closeViewerState() {
   viewing.value = false
   activeDoc.value = null
   picking.value = false
-  pickedElement.value = null
+  selections.value = []
 }
 
 function findDocById(fileId) {
@@ -759,7 +779,38 @@ function togglePicking() {
 }
 
 function handlePick(payload) {
-  pickedElement.value = payload
+  if (!payload?.locator) return
+  const index = selections.value.findIndex((item) => item.locator === payload.locator)
+  if (index >= 0) {
+    selections.value.splice(index, 1)
+    return
+  }
+  if (selections.value.length >= MAX_SELECTIONS) {
+    ElMessage.warning(`最多选择 ${MAX_SELECTIONS} 个元素`)
+    return
+  }
+  selections.value.push({ ...payload })
+}
+
+function removeSelection(locator) {
+  selections.value = selections.value.filter((item) => item.locator !== locator)
+}
+
+function clearSelections() {
+  selections.value = []
+}
+
+/**
+ * 编辑 / 撤回完成后后端返回当前版本文件地址：
+ * 只更新预览 src（结果卡不展示版本），并清空已失效的选区。
+ */
+function handleVersionChanged(payload) {
+  const src = payload?.src
+  if (!src || !activeDoc.value) return
+  activeDoc.value.src = src
+  const item = resultDocs.value.find((doc) => doc.id === activeDoc.value.id)
+  if (item) item.src = src
+  selections.value = []
 }
 
 
@@ -769,6 +820,10 @@ const historyRecords = ref([])
 const historyLoading = ref(false)
 
 async function loadHistory() {
+  if (!hasToken) {
+    historyRecords.value = []
+    return
+  }
   historyLoading.value = true
   try {
     historyRecords.value = await getGenerationHistory(HISTORY_LIMIT)
@@ -851,6 +906,16 @@ function resetLoadedGeneration() {
 
 /** 拉取某次生成的详情并落状态；失败按确定性 / 暂时性分层处理 */
 async function loadGeneration(generationId, fileId, hasInvalidFile) {
+  if (!hasToken) {
+    generationLoading.value = false
+    generationLoadError.value = '请先登录后查看生成记录'
+    resultDocs.value = []
+    activeGenerationId.value = null
+    activeGenerationStatus.value = null
+    activeGenerationError.value = ''
+    closeViewerState()
+    return
+  }
   const token = ++loadToken
   generationLoading.value = true
   generationLoadError.value = ''
@@ -1899,32 +1964,6 @@ onBeforeUnmount(() => {
 }
 
 
-
-/* 已选中的文档元素 */
-.viewer__picked {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-width: 0;
-  max-width: 240px;
-  padding: 2px 9px;
-  border-radius: 0;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--primary-dark);
-  background: var(--primary-soft);
-  border: 1px solid var(--primary-soft-2);
-}
-
-.viewer__picked .el-icon {
-  flex: 0 0 auto;
-}
-
-.viewer__picked-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .viewer__canvas {
   flex: 1;

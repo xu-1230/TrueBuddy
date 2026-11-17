@@ -11,14 +11,31 @@
         aria-label="AI 对话消息"
         @scroll.passive="updateScrollState"
       >
-        <div class="chat-day" aria-hidden="true">今天</div>
+        <div v-if="historyLoading && !messages.length" class="chat-system">正在加载聊天记录…</div>
+
+        <div v-if="messages.length" class="chat-day" aria-hidden="true">{{ dayLabel }}</div>
+
+        <div v-if="!messages.length && !historyLoading && !historyError" class="chat-system">
+          {{ emptyHint }}
+        </div>
+
+        <div v-if="!messages.length && !historyLoading && historyError" class="chat-system">
+          {{ historyError }}
+        </div>
 
         <template v-for="message in messages" :key="message.id">
           <div v-if="message.role === 'system'" class="chat-system">
             {{ message.content }}
           </div>
 
-          <div v-else class="chat-msg" :class="`chat-msg--${message.role}`">
+          <div
+            v-else
+            class="chat-msg"
+            :class="[
+              `chat-msg--${message.role}`,
+              { 'chat-msg--invalid': message.superseded, 'chat-msg--error': message.error },
+            ]"
+          >
             <span
               v-if="message.role === 'assistant'"
               class="chat-msg__avatar"
@@ -28,9 +45,19 @@
             </span>
 
             <div class="chat-msg__content">
-              <div v-if="message.role === 'user'" class="chat-msg__bubble">
-                {{ message.content }}
-              </div>
+              <template v-if="message.role === 'user'">
+                <div v-if="message.selections?.length" class="chat-selections">
+                  <span
+                    v-for="selection in message.selections"
+                    :key="selection.locator"
+                    class="chat-selection"
+                    :title="selection.label"
+                  >
+                    {{ selection.label }}
+                  </span>
+                </div>
+                <div class="chat-msg__bubble">{{ message.content }}</div>
+              </template>
 
               <template v-else>
                 <template v-if="Array.isArray(message.content)">
@@ -47,26 +74,45 @@
               </template>
 
               <div class="chat-meta">
-                <span v-if="message.role === 'user'" class="chat-delivered">
-                  <el-icon :size="10"><Check /></el-icon>
-                  已送达
-                </span>
-                <time class="chat-time" :datetime="formatIso(message.at)">
-                  {{ formatClock(message.at) }}
-                </time>
+                <template v-if="message.role === 'user'">
+                  <span class="chat-delivered">
+                    <el-icon :size="10"><Check /></el-icon>
+                    已送达
+                  </span>
+                  <time class="chat-time" :datetime="formatIso(message.at)">
+                    {{ formatClock(message.at) }}
+                  </time>
+                </template>
+                <template v-else>
+                  <time class="chat-time" :datetime="formatIso(message.at)">
+                    {{ formatClock(message.at) }}
+                  </time>
+                  <span v-if="message.superseded" class="chat-invalid">已失效</span>
+                  <button
+                    v-else-if="message.versionId"
+                    type="button"
+                    class="chat-undo"
+                    :disabled="undoing || streaming || historyLoading"
+                    :aria-label="`撤回这次修改（${formatClock(message.at)}）`"
+                    title="撤回这次修改"
+                    @click="handleUndo(message)"
+                  >
+                    <el-icon :size="12"><RefreshLeft /></el-icon>
+                  </button>
+                </template>
               </div>
             </div>
           </div>
         </template>
 
-        <div v-if="typing" class="chat-msg chat-msg--assistant" aria-label="AI 正在回复">
+        <div v-if="streaming" class="chat-msg chat-msg--assistant">
           <span class="chat-msg__avatar" aria-hidden="true">
             <el-icon :size="14"><MagicStick /></el-icon>
           </span>
           <span class="chat-typing" aria-hidden="true">
             <span></span><span></span><span></span>
           </span>
-          <span class="ai-chat__sr-only">AI 正在回复</span>
+          <span class="chat-stage">{{ stageText || '正在处理…' }}</span>
         </div>
       </div>
 
@@ -84,13 +130,33 @@
 
     <footer class="ai-chat__composer-wrap">
       <div class="ai-chat__composer">
+        <div v-if="selections?.length" class="ai-chat__selections">
+          <span
+            v-for="selection in selections"
+            :key="selection.locator"
+            class="ai-chat__selection"
+            :title="selection.label"
+          >
+            <span class="ai-chat__selection-label">{{ selection.label }}</span>
+            <button
+              type="button"
+              class="ai-chat__selection-remove"
+              :aria-label="`移除选中元素：${selection.label}`"
+              @click="$emit('remove-selection', selection.locator)"
+            >
+              ×
+            </button>
+          </span>
+        </div>
+
         <textarea
           ref="inputRef"
           v-model="draft"
           class="ai-chat__input"
           rows="1"
+          :disabled="!canEdit"
           :aria-label="`就${documentName || '参考文档'}向 AI 提问`"
-          placeholder="就参考文档提问…"
+          :placeholder="inputPlaceholder"
           @input="resizeInput"
           @keydown.enter.exact.prevent="send"
         ></textarea>
@@ -109,7 +175,7 @@
       </div>
 
       <div class="ai-chat__hint">
-        <span class="ai-chat__status">模拟对话</span>
+        <span class="ai-chat__status">AI 编辑</span>
         <span class="ai-chat__keys">Enter 发送 · Shift + Enter 换行</span>
       </div>
     </footer>
@@ -118,154 +184,90 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowDownBold, ArrowUpBold, Check, MagicStick } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  ArrowDownBold,
+  ArrowUpBold,
+  Check,
+  MagicStick,
+  RefreshLeft,
+} from '@element-plus/icons-vue'
+import { readEventStream } from '@/utils/event-stream'
+import { DOC_CHAT_API, getDocChatHistory, undoDocEdit } from '@/api/doctemplate'
+import { toChatMessage, toChatMessages } from '../utils/chat-history'
 
 const props = defineProps({
-  /** 当前正在查看的参考文档名，用于上下文 chip 与 mock 文案 */
+  /** 根文件 id（doc_template_file.id，即工作区） */
+  rootFileId: { type: [Number, String], default: null },
+  /** 当前正在查看的参考文档名 */
   documentName: { type: String, default: '' },
+  /** 已选中的文档元素（上下文提示，可为空） */
+  selections: { type: Array, default: () => [] },
+  /** 是否登录；未登录时只能查看，不能编辑 */
+  canEdit: { type: Boolean, default: false },
 })
 
-/** 输入框最多自动增长到 5 行，超过后内部滚动 */
+const emit = defineEmits(['remove-selection', 'clear-selections', 'version-changed'])
+
 const INPUT_MAX_LINES = 5
-/** 距底部小于该距离视为「在底部附近」，新消息自动跟随 */
 const NEAR_BOTTOM_PX = 48
+const MAX_HISTORY = 12
+const HISTORY_LIMIT = 200
 
 let messageSeed = 0
-let replyTimer = null
-const nextId = () => (messageSeed += 1)
+const nextId = () => `local-${(messageSeed += 1)}`
 
-const minute = 60 * 1000
-
-/** 把字符串或结构化块数组统一交给模板渲染 */
-function buildInitialMessages(documentName) {
-  const name = documentName || '参考文档'
-  const now = Date.now()
-
-  return [
-    {
-      id: nextId(),
-      role: 'system',
-      content: `已加载《${name}》，可以开始评审。`,
-      at: null,
-    },
-    {
-      id: nextId(),
-      role: 'assistant',
-      at: now - 5 * minute,
-      content: [
-        {
-          type: 'p',
-          text: '我先按「结构完整性 → 版式 → 表述」三层做了一轮检查，下面三点可以直接落地。',
-        },
-        {
-          type: 'ul',
-          items: [
-            '结构：教学目标、学情分析、重难点、教学过程、板书设计、教学反思六个部分齐全。',
-            '版式：课中实施表格的两列偏窄，建议加宽「教师活动 / 学生活动」，避免长句折行。',
-            '表述：教学目标里的「了解 / 熟悉」建议改成可观测的行为动词，便于评价。',
-          ],
-        },
-      ],
-    },
-    {
-      id: nextId(),
-      role: 'user',
-      content: '先帮我改教学反思，控制在 3 条以内。',
-      at: now - 4 * minute,
-      delivered: true,
-    },
-    {
-      id: nextId(),
-      role: 'assistant',
-      at: now - 3 * minute,
-      content: [
-        { type: 'p', text: '可以，保留原意、压到 3 条：' },
-        {
-          type: 'ul',
-          items: [
-            '分层练习完成度较好，下一步补充迁移场景的变式题。',
-            'SQL Server 2012 演示环节时间偏紧，可把建库步骤前置为课前预习。',
-            '板书与课堂小结的对应关系再明确一些，减少重复表述。',
-          ],
-        },
-        { type: 'p', text: '如果你希望更贴近原文档的语气，我也可以再给一版更书面的表述。' },
-      ],
-    },
-    {
-      id: nextId(),
-      role: 'user',
-      content: '顺便看看板书设计有没有漏项。',
-      at: now - 2 * minute,
-      delivered: true,
-    },
-    {
-      id: nextId(),
-      role: 'assistant',
-      at: now - 1 * minute,
-      content: [
-        {
-          type: 'p',
-          text: '板书覆盖了三级目录，但「迁移用户数据库」这一块缺要点标注。建议在第三级目录下补：',
-        },
-        {
-          type: 'ul',
-          items: ['迁移前的兼容性检查', '备份与还原顺序', '迁移后的验证 SQL'],
-        },
-        { type: 'p', text: '其余结构完整，可以直接使用。' },
-      ],
-    },
-  ]
-}
-
-/** 用户提问后的演示回复池（按顺序循环） */
-const MOCK_REPLIES = [
-  [
-    { type: 'p', text: '我按当前版面再看一遍，优先改这三处：' },
-    {
-      type: 'ul',
-      items: [
-        '把「教学反思」里的长句拆成短句，每条只保留一个改进动作。',
-        '课中实施表格的「教师活动 / 学生活动」列宽再均衡一些。',
-        '板书设计与课堂小结的对应关系补一句过渡说明。',
-      ],
-    },
-    { type: 'p', text: '这些改动不会动到原文档的结构，可以直接在生成结果里替换。' },
-  ],
-  [
-    { type: 'p', text: '可以，这一版我更偏向「少改但改准」：' },
-    {
-      type: 'ul',
-      items: [
-        '教学目标统一用可观测动词，避免「了解 / 熟悉」这类模糊表述。',
-        '教学反思压到 3 条以内，按「完成度 → 问题 → 下一步」排序。',
-        '迁移用户数据库补上兼容性检查和验证 SQL 两个要点。',
-      ],
-    },
-  ],
-  [
-    { type: 'p', text: '我核对了结构、版式、表述三层，结论是：' },
-    {
-      type: 'ul',
-      items: [
-        '结构：六个部分齐全，不需要增删章节。',
-        '版式：表格列宽和段间距需要微调。',
-        '表述：个别动词可以更具体，其余可以直接使用。',
-      ],
-    },
-    { type: 'p', text: '如果要继续，我可以只给「修改前 / 修改后」对照版。' },
-  ],
-]
-
-const messages = ref(buildInitialMessages(props.documentName))
+const messages = ref([])
 const draft = ref('')
-const typing = ref(false)
+const streaming = ref(false)
+const stageText = ref('')
+const undoing = ref(false)
+const historyLoading = ref(false)
+const historyError = ref('')
+let historySeq = 0
 const listRef = ref(null)
 const inputRef = ref(null)
-const replyIndex = ref(0)
 const isNearBottom = ref(true)
 const showScrollToBottom = ref(false)
+let abortController = null
 
-const canSend = computed(() => Boolean(draft.value.trim()) && !typing.value)
+const canSend = computed(
+  () =>
+    props.canEdit &&
+    !streaming.value &&
+    !undoing.value &&
+    !historyLoading.value &&
+    Boolean(draft.value.trim()) &&
+    Boolean(props.rootFileId),
+)
+
+/** 顶部日期分隔：取最早一条带时间的消息；加载到历史记录时不误标「今天」 */
+const dayLabel = computed(() => {
+  const first = messages.value.find((message) => message.at)
+  if (!first) return '今天'
+  const date = new Date(first.at)
+  const now = new Date()
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  return sameDay ? '今天' : `${date.getMonth() + 1}月${date.getDate()}日`
+})
+
+const emptyHint = computed(() => {
+  if (!props.canEdit) {
+    return '请先登录后再编辑文档。'
+  }
+  const name = props.documentName || '参考文档'
+  return `已加载《${name}》。可以直接描述修改要求，或先在左侧选择元素缩小范围。`
+})
+
+const inputPlaceholder = computed(() => {
+  if (!props.canEdit) return '登录后可编辑文档'
+  return props.selections?.length
+    ? '描述要如何修改选中的元素…'
+    : '描述修改要求，未选择元素时按全文处理…'
+})
 
 function formatClock(timestamp) {
   if (!timestamp) return ''
@@ -287,7 +289,6 @@ function updateScrollState() {
   showScrollToBottom.value = !isNearBottom.value
 }
 
-/** force=true 用于发送消息 / 切换文档 / 点击回底按钮，无条件滚到底 */
 function scrollToBottom(force = false) {
   nextTick(() => {
     const el = listRef.value
@@ -298,7 +299,6 @@ function scrollToBottom(force = false) {
   })
 }
 
-/** 输入框自增长：先归零再按 scrollHeight 取高，超过 5 行后内部滚动 */
 function resizeInput() {
   const el = inputRef.value
   if (!el) return
@@ -314,72 +314,265 @@ function resizeInput() {
   nextTick(updateScrollState)
 }
 
-function clearReplyTimer() {
-  if (!replyTimer) return
-  window.clearTimeout(replyTimer)
-  replyTimer = null
+/** 把结构化消息展平成送给 LLM 的历史文本 */
+function flattenContent(content) {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((block) => {
+      if (block?.type === 'ul') {
+        return (block.items || []).map((item) => `- ${item}`).join('\n')
+      }
+      return block?.text || ''
+    })
+    .filter(Boolean)
+    .join('\n')
 }
 
-function send() {
+/** 只把当前有效的 user/assistant 消息送给模型；失效/错误消息不参与 */
+function buildHistory() {
+  return messages.value
+    .filter(
+      (message) =>
+        (message.role === 'user' || message.role === 'assistant') &&
+        !message.superseded &&
+        !message.error,
+    )
+    .slice(-MAX_HISTORY)
+    .map((message) => ({ role: message.role, content: flattenContent(message.content) }))
+    .filter((message) => message.content.trim())
+}
+
+function addErrorMessage(message) {
+  messages.value.push({
+    id: nextId(),
+    role: 'assistant',
+    content: [{ type: 'p', text: message }],
+    at: Date.now(),
+    error: true,
+    versionId: null,
+  })
+  ElMessage.error(message)
+  scrollToBottom()
+}
+
+function handleStreamEvent(event, payload) {
+  if (event === 'status') {
+    stageText.value = payload?.message || '正在处理…'
+    scrollToBottom()
+    return
+  }
+  if (event === 'assistant') {
+    const reply = Array.isArray(payload?.reply) ? payload.reply : []
+    messages.value.push({
+      id: nextId(),
+      role: 'assistant',
+      content: reply.length ? reply : [{ type: 'p', text: '已处理。' }],
+      at: Date.now(),
+      versionId: payload?.versionId ?? null,
+      summary: payload?.summary || '',
+    })
+    streaming.value = false
+    stageText.value = ''
+    scrollToBottom()
+    return
+  }
+  if (event === 'version') {
+    if (payload?.src) emit('version-changed', { src: payload.src })
+    return
+  }
+  if (event === 'error') {
+    addErrorMessage(payload?.message || '修改失败')
+    streaming.value = false
+    stageText.value = ''
+    return
+  }
+  if (event === 'done') {
+    streaming.value = false
+    stageText.value = ''
+    scrollToBottom()
+  }
+}
+
+async function send() {
   if (!canSend.value) return
-  const text = draft.value.trim()
-  if (!text) return
+  const rootFileId = props.rootFileId
+  if (!rootFileId) {
+    ElMessage.warning('文档尚未就绪')
+    return
+  }
+  const instruction = draft.value.trim()
+  const history = buildHistory()
+  // 单元格/合并单元格用表格级 hintLocator 作为 LLM 上下文，文本仍保留具体选中内容
+  const selected = (props.selections || []).map((selection) => ({
+    locator: selection.hintLocator || selection.locator,
+    tag: selection.tag,
+    label: selection.label,
+    text: selection.text,
+  }))
 
   messages.value.push({
     id: nextId(),
     role: 'user',
-    content: text,
+    content: instruction,
     at: Date.now(),
     delivered: true,
+    selections: selected,
   })
   draft.value = ''
+  emit('clear-selections')
   nextTick(resizeInput)
-  typing.value = true
   scrollToBottom(true)
 
-  clearReplyTimer()
-  replyTimer = window.setTimeout(() => {
-    const reply = MOCK_REPLIES[replyIndex.value % MOCK_REPLIES.length]
-    replyIndex.value += 1
-    messages.value.push({
-      id: nextId(),
-      role: 'assistant',
-      content: reply,
-      at: Date.now(),
+  streaming.value = true
+  stageText.value = '正在分析…'
+  abortController?.abort()
+  abortController = new AbortController()
+  try {
+    await readEventStream(DOC_CHAT_API.chat, {
+      body: { rootFileId, instruction, selections: selected, history },
+      signal: abortController.signal,
+      onEvent: handleStreamEvent,
     })
-    typing.value = false
-    replyTimer = null
+  } catch (error) {
+    if (error?.name !== 'AbortError') {
+      addErrorMessage(error?.message || '修改失败')
+    }
+  } finally {
+    streaming.value = false
+    stageText.value = ''
+    abortController = null
     scrollToBottom()
-  }, 1000)
+  }
 }
 
-function resetConversation() {
-  clearReplyTimer()
-  messages.value = buildInitialMessages(props.documentName)
-  draft.value = ''
-  typing.value = false
-  replyIndex.value = 0
-  isNearBottom.value = true
-  showScrollToBottom.value = false
-  nextTick(() => {
-    resizeInput()
-    scrollToBottom(true)
-  })
+async function handleUndo(message) {
+  if (
+    !message?.versionId ||
+    undoing.value ||
+    streaming.value ||
+    historyLoading.value ||
+    !props.rootFileId
+  )
+    return
+  const rootFileId = props.rootFileId
+  const index = messages.value.indexOf(message)
+  if (index < 0) return
+  const laterEdits = messages.value
+    .slice(index + 1)
+    .filter(
+      (item) => item.role === 'assistant' && item.versionId && !item.superseded && !item.error,
+    ).length
+
+  try {
+    await ElMessageBox.confirm(
+      laterEdits
+        ? `撤回将同时丢弃之后 ${laterEdits} 次修改，确定？`
+        : '确定撤回这次修改？',
+      '撤回修改',
+      {
+        type: 'warning',
+        confirmButtonText: '撤回',
+        cancelButtonText: '取消',
+      },
+    )
+  } catch {
+    return
+  }
+  // 确认框期间可能已切换文档
+  if (String(props.rootFileId) !== String(rootFileId)) return
+
+  undoing.value = true
+  try {
+    const result = await undoDocEdit({ rootFileId, targetVersionId: message.versionId })
+    emit('version-changed', { src: result?.src })
+
+    // 先本地置失效并用服务端提示补齐，保证响应即时；随后以服务端记录为准重新加载
+    const latestIndex = messages.value.indexOf(message)
+    if (latestIndex >= 0) {
+      messages.value.slice(latestIndex).forEach((item) => {
+        item.superseded = true
+      })
+      const notice = result?.notice ? toChatMessage(result.notice) : null
+      messages.value.push(
+        notice || {
+          id: nextId(),
+          role: 'system',
+          content: laterEdits
+            ? `已撤回到上一版，之后 ${laterEdits} 条修改消息已失效。`
+            : '已撤回到上一版。',
+          at: null,
+        },
+      )
+      scrollToBottom(true)
+    }
+    await loadHistory()
+    ElMessage.success('已撤回本次修改')
+  } catch (error) {
+    ElMessage.error(error?.message || '撤回失败')
+  } finally {
+    undoing.value = false
+  }
+}
+
+/** 按当前根文件加载历史；请求令牌防止切换文档后旧响应串档 */
+async function loadHistory() {
+  const rootFileId = props.rootFileId
+  const seq = (historySeq += 1)
+  historyError.value = ''
+  if (!rootFileId || !props.canEdit) {
+    messages.value = []
+    historyLoading.value = false
+    return
+  }
+  historyLoading.value = true
+  try {
+    const rows = await getDocChatHistory(rootFileId, HISTORY_LIMIT)
+    if (seq !== historySeq || String(props.rootFileId) !== String(rootFileId)) return
+    messages.value = toChatMessages(rows)
+    nextTick(() => scrollToBottom(true))
+  } catch (error) {
+    if (seq !== historySeq) return
+    historyError.value = error?.message || '聊天记录加载失败'
+    ElMessage.warning(historyError.value)
+  } finally {
+    if (seq === historySeq) historyLoading.value = false
+  }
 }
 
 watch(
-  () => props.documentName,
-  () => resetConversation(),
+  () => props.rootFileId,
+  () => {
+    historySeq += 1
+    abortController?.abort()
+    abortController = null
+    messages.value = []
+    draft.value = ''
+    streaming.value = false
+    stageText.value = ''
+    undoing.value = false
+    historyLoading.value = false
+    historyError.value = ''
+    isNearBottom.value = true
+    showScrollToBottom.value = false
+    nextTick(() => {
+      resizeInput()
+      scrollToBottom(true)
+    })
+    loadHistory()
+  },
+  { immediate: true },
 )
 
 onMounted(() => {
-  nextTick(() => {
-    resizeInput()
-    scrollToBottom(true)
-  })
+  nextTick(resizeInput)
 })
 
-onBeforeUnmount(clearReplyTimer)
+onBeforeUnmount(() => {
+  historySeq += 1
+  abortController?.abort()
+  abortController = null
+})
 </script>
 
 <style scoped>
@@ -465,6 +658,10 @@ onBeforeUnmount(clearReplyTimer)
   justify-content: flex-end;
 }
 
+.chat-msg--invalid {
+  opacity: 0.55;
+}
+
 .chat-msg__avatar {
   flex: none;
   display: inline-flex;
@@ -516,6 +713,10 @@ onBeforeUnmount(clearReplyTimer)
   margin-bottom: 0;
 }
 
+.chat-msg--error .chat-block {
+  color: var(--tb-danger);
+}
+
 .chat-list {
   padding-left: 1.15em;
 }
@@ -555,6 +756,88 @@ onBeforeUnmount(clearReplyTimer)
   font-variant-numeric: tabular-nums;
 }
 
+.chat-invalid {
+  color: var(--tb-text-tertiary);
+}
+
+.chat-undo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--tb-radius-sm);
+  background: transparent;
+  color: var(--tb-text-tertiary);
+  cursor: pointer;
+  transition:
+    color var(--tb-dur-2) var(--tb-motion-ease),
+    background var(--tb-dur-2) var(--tb-motion-ease);
+}
+
+.chat-undo:hover:not(:disabled) {
+  color: var(--tb-primary-text);
+  background: var(--tb-primary-soft);
+}
+
+.chat-undo:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 选区 chips（composer 与用户消息共用外观） */
+.chat-selections,
+.ai-chat__selections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.chat-selection,
+.ai-chat__selection {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-bg-raised);
+  color: var(--tb-text-secondary);
+  font-size: var(--tb-text-2xs);
+  line-height: 1.5;
+}
+
+.chat-selection {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-chat__selection-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-chat__selection-remove {
+  flex: none;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--tb-text-tertiary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ai-chat__selection-remove:hover {
+  color: var(--tb-danger);
+}
+
 .chat-typing {
   display: inline-flex;
   align-items: center;
@@ -576,6 +859,12 @@ onBeforeUnmount(clearReplyTimer)
 
 .chat-typing span:nth-child(3) {
   animation-delay: 0.3s;
+}
+
+.chat-stage {
+  padding-top: 6px;
+  color: var(--tb-text-tertiary);
+  font-size: var(--tb-text-2xs);
 }
 
 /* ========== 滚到底按钮 ========== */
@@ -648,6 +937,10 @@ onBeforeUnmount(clearReplyTimer)
 
 .ai-chat__input::placeholder {
   color: var(--tb-text-tertiary);
+}
+
+.ai-chat__input:disabled {
+  cursor: not-allowed;
 }
 
 .ai-chat__actions {
