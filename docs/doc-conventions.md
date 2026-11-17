@@ -244,7 +244,7 @@
 | 端 | 现状 | 框架 |
 | --- | --- | --- |
 | 后端 | 4 个模块 22 个 JUnit 测试类（knowledgebase 8 / lecture 7 / workflow 5 / homework 2），全部是单元测试，零 `@SpringBootTest` / MockMvc | JUnit 5 + `spring-boot-starter-test`（Mockito、AssertJ） |
-| 前端 | `frontend/tests/*.test.js` 38 个测试文件，`npm test` = `node --test`，零新增依赖 | Node 内置 `node:test` + `node:assert/strict` |
+| 前端 | `frontend/tests/*.test.js` 40 个测试文件，`npm test` = `node --test`，零新增依赖 | Node 内置 `node:test` + `node:assert/strict` |
 | docx-mcp | **零测试**（有 `.pytest_cache` 但无 test 文件） | — |
 
 > 命名陷阱：`tb-module-test` / `tb-module-test2` 是业务验证模块，不进入 `./mvnw test` 测试集。组件渲染、`src/api/` 拦截器、端到端流程仍无覆盖。
