@@ -94,11 +94,17 @@ defineEmits(['open'])
 .showcase-card.has-media {
   --entry-shade: 26 44 78;
   --entry-on-media: #ffffff;
+  /* 固定深色媒体位（doc-ui §3.3 约定 6）：两套主题共用同一支墨蓝，不随品牌色变亮 */
+  --entry-base-from: #2b4a80;
+  --entry-base-to: #1a2c4e;
+  --entry-tint-from: #1c3057;
+  --entry-tint-to: #2b4a80;
+  --entry-img-filter: brightness(1.02) saturate(1.02);
 
   position: relative; /* 基类无定位，媒体层与角标都要锚在这里 */
   color: var(--entry-on-media);
-  /* 兜底底色与主推卡同一支主色，图片未解码时不会闪白 */
-  background: linear-gradient(150deg, var(--tb-primary) 0%, rgb(var(--entry-shade)) 100%);
+  /* 兜底底色取固定墨蓝，图片未解码时不会闪白，也不随主题变亮 */
+  background: linear-gradient(150deg, var(--entry-base-from) 0%, var(--entry-base-to) 100%);
   isolation: isolate;
 }
 
@@ -115,14 +121,14 @@ defineEmits(['open'])
   object-fit: cover;
   /* 位图主体在右半，左侧留白供文字落位 */
   object-position: 72% 50%;
-  filter: light-dark(brightness(1.12) saturate(1.02), brightness(1.05));
+  filter: var(--entry-img-filter);
 }
 
-/* 品牌染色：把整帧色相拉到主色上、只留明暗，与首页其它媒体位归到同一色系 */
+/* 品牌染色：把整帧色相拉到固定墨蓝上、只留明暗，两套主题保持同一支颜色 */
 .showcase-card__tint {
   position: absolute;
   inset: 0;
-  background: linear-gradient(140deg, var(--tb-primary-active) 0%, var(--tb-primary) 100%);
+  background: linear-gradient(140deg, var(--entry-tint-from) 0%, var(--entry-tint-to) 100%);
   mix-blend-mode: color;
   opacity: 0.66;
 }

@@ -2215,6 +2215,12 @@ onBeforeUnmount(() => {
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .stage-body--viewing .ai-chat {
+    animation: none;
+  }
+}
+
 /* ================= 响应式 ================= */
 @media (max-width: 1024px) {
   .doc-studio {
@@ -2253,6 +2259,17 @@ onBeforeUnmount(() => {
 
   .stage {
     min-height: 520px;
+  }
+
+  /* 查看模式：380px 聊天列在 1024px 以下会挤压 docx 预览，改为上下堆叠 */
+  .stage-body--viewing {
+    flex-direction: column;
+  }
+
+  .stage-body--viewing .viewer {
+    flex: 0 0 auto;
+    height: min(60vh, 560px);
+    min-height: 420px;
   }
 }
 

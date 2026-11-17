@@ -19,8 +19,11 @@ CREATE TABLE IF NOT EXISTS "system_user" (
 
 COMMENT ON TABLE "system_user" IS '用户表';
 
+-- 已建表的环境删除废弃列（新环境由上面的 CREATE TABLE 直接不带该列）
+ALTER TABLE "system_user" DROP COLUMN IF EXISTS sex;
+
 -- 用户名唯一
-CREATE UNIQUE INDEX uk_system_user_username ON "system_user" (username);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_system_user_username ON "system_user" (username);
 
 -- 邮箱唯一（PostgreSQL 允许多个 NULL，未填邮箱的账号不受影响）
 CREATE UNIQUE INDEX IF NOT EXISTS uk_system_user_email ON "system_user" (email);

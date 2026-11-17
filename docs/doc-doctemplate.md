@@ -1,6 +1,6 @@
 # doc-doctemplate · 模板文档复刻业务逻辑
 
-> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-13
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-17
 > 适用范围：`tb-module-doctemplate` 的生成链路、docx-mcp 工具协作与前端流程
 > 相关：[doc-api.md](./doc-api.md)（接口清单）、[doc-database.md](./doc-database.md)（表结构）、[doc-integration.md](./doc-integration.md)（MCP / LLM / MinIO）、[doc-knowledgebase.md](./doc-knowledgebase.md)（检索增强）
 
@@ -72,7 +72,7 @@
 
 | 项 | 现状 | 规划 |
 | --- | --- | --- |
-| `components/AiChatPanel.vue` | 回复来自前端写死的回复池（演示态） | 接入真实 SSE 流式对话（复用 workflow 的 SSE 读取封装） |
+| `components/AiChatPanel.vue` | 纯前端 mock：结构化 `p` / `ul` 评审对话 + 循环回复池；切换文档重置；视觉与交互见 [doc-ui.md](./doc-ui.md) §11 | 接入真实 SSE 流式对话（复用 workflow 的 SSE 读取封装） |
 | 导出 | `quality` 档位仅作生成参数；`doc_template_file.type`（WORD/PDF/MARKDOWN）已预留 | 导出能力落地 |
 | 管理端 | `/admin/doc-template/{templates,records,inspections}` 三页为前端 mock，业务接口未实现 | 与后端真实数据打通 |
 | 历史 / 详情越权 | `getHistory` / `getDetail` 未按 `creator` 过滤，`/doc-template/**` 在放行白名单内；`/index/doc-template/:id` 可枚举访问任意生成记录 | 按登录用户 `creator` 过滤并调整白名单，或改用不可枚举 id |

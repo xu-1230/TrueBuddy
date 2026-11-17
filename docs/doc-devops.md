@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | 后端 tb-server | `8086`，context-path `/api` | SSE 请求不超时（`request-timeout: -1ms`），`DispatcherType.ASYNC` 放行 |
 | 前端 dev server | `5173` | Vite 代理 `/api` → `8086`；LiveKit 信令不走代理、直连 7880 |
-| PostgreSQL + pgvector | `127.0.0.1:5432/tb` | pgvector HNSW / COSINE，`initialize-schema: true`（向量表由 Spring AI 自动建） |
+| PostgreSQL + pgvector | `127.0.0.1:5432/tb` | pgvector HNSW / COSINE，`initialize-schema: true`（向量表可由 `vector_store.sql` 预建，或由 Spring AI 自动建） |
 | MinIO | `http://localhost:9000` | 桶 `test-bucket`（默认值） |
 | LiveKit（自托管） | `7880`（信令）/ `7881`（TCP 兜底）/ UDP 50000-50100 | 仓库外 `D:\ctf\livekit`，见 §7 |
 | docx-mcp | 无端口 | 后端 stdio 子进程拉起，见 doc-integration.md §8 |

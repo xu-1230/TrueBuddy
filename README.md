@@ -111,7 +111,7 @@ TrueBuddy/
 
 ### 1️⃣ 初始化数据库
 
-手工执行 `backend/sql/` 下的建表脚本(`init.sql` 及各表 `.sql`,向量表由 Spring AI 自动创建)。
+手工执行 `backend/sql/` 下的建表脚本(`init.sql` 及各表 `.sql`,含 `vector_store.sql`;脚本均可重复执行)。`vector_store` 也可由 Spring AI 的 `initialize-schema` 自动创建,但先跑脚本能保证 `metadata` 直接是 `jsonb`。
 
 ### 2️⃣ 准备环境变量
 

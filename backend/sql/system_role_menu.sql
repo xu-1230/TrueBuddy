@@ -12,5 +12,5 @@ CREATE TABLE IF NOT EXISTS system_role_menu (
 COMMENT ON TABLE system_role_menu IS '角色-菜单关联表';
 
 -- 去重
-CREATE UNIQUE INDEX uk_system_role_menu ON system_role_menu (role_id, menu_id);
-CREATE INDEX idx_system_role_menu_menu_id ON system_role_menu (menu_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_system_role_menu ON system_role_menu (role_id, menu_id);
+CREATE INDEX IF NOT EXISTS idx_system_role_menu_menu_id ON system_role_menu (menu_id);
