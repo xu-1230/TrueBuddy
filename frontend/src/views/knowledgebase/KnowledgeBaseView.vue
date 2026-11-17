@@ -68,8 +68,9 @@ const spaces = ref([])
 const publicSpaces = ref([])
 const documents = ref([])
 const chunks = ref([])
-const loading = ref(false)
-const publicLoading = ref(false)
+// 初值 true：本页挂载即请求，首帧直接出骨架，避免先闪一帧空态
+const loading = ref(true)
+const publicLoading = ref(true)
 const chunkLoading = ref(false)
 // 正在 fork 的空间 id（卡片按钮 loading；单请求进行中，无并发去重需求）
 const forkingId = ref(null)
@@ -216,6 +217,8 @@ function handleBackToSpace() {
 function handleSelectDocument(doc) {
   if (currentDocument.value?.id === doc.id && chunks.value.length) return
   currentDocument.value = doc
+  // 切文档先清空旧分片，避免新文档标题下短暂展示上一份文档的内容，也让骨架态生效
+  chunks.value = []
   loadChunks(doc.id)
 }
 

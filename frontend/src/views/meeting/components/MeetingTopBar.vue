@@ -11,7 +11,7 @@
     </div>
 
     <div v-if="meetingNo" class="studio-bar__code">
-      <span class="mt-eyebrow">Meeting ID</span>
+      <span class="mt-eyebrow">ID</span>
       <strong class="mt-mono" :aria-label="`会议号 ${meetingNo}`">{{ formattedNo }}</strong>
     </div>
 
@@ -99,92 +99,125 @@ const connectionClass = computed(
 </script>
 
 <style scoped>
+/* 极简读数条：只留一条底线与分组竖线，不用玻璃底、圆角与阴影 */
 .studio-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--tb-size-3);
-  min-height: 68px;
-  padding: 10px 14px;
-  border: 1px solid var(--mt-line);
-  border-radius: var(--mt-radius-lg);
-  background: var(--mt-bg-rail);
-  box-shadow: var(--mt-shadow-1);
-  backdrop-filter: blur(20px) saturate(1.3);
+  gap: var(--tb-size-4);
+  min-height: 56px;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--mt-line);
+  background: color-mix(in oklab, var(--mt-bg) 55%, transparent);
 }
 
 .studio-bar__brand {
   display: flex;
   align-items: center;
-  gap: var(--tb-size-3);
+  gap: var(--tb-size-2);
   min-width: 0;
 }
 
+/* 图标只作标识，不再画描边方块与右上角光点 */
 .studio-bar__mark {
-  position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--mt-line-strong);
-  border-radius: var(--mt-radius-sm);
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
   color: var(--mt-signal);
-  background: color-mix(in oklab, var(--mt-signal) 8%, transparent);
-}
-
-.studio-bar__mark::after {
-  content: '';
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--mt-signal);
-  box-shadow: 0 0 0 4px color-mix(in oklab, var(--mt-signal) 12%, transparent);
 }
 
 .studio-bar__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
 }
 
+.studio-bar__identity .mt-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  line-height: 1.2;
+}
+
 .studio-bar__title {
-  margin: 2px 0 0;
+  margin: 0;
   overflow: hidden;
   color: var(--mt-text);
   font-family: var(--mt-font-display);
-  font-size: clamp(1.1rem, 1.6vw, 1.45rem);
+  font-size: 1rem;
   font-weight: 500;
-  letter-spacing: -0.025em;
-  line-height: 1.12;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 会议号收成一行小号 mono：ID 2026 1117 0001 */
 .studio-bar__code {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-left: var(--tb-size-3);
+  align-items: baseline;
+  gap: 6px;
+  padding-left: var(--tb-size-4);
   border-left: 1px solid var(--mt-line);
 }
 
-.studio-bar__code strong {
-  color: var(--mt-text);
-  font-size: clamp(1.05rem, 1.4vw, 1.35rem);
-  font-weight: 500;
+.studio-bar__code .mt-eyebrow {
+  font-size: 10px;
   letter-spacing: 0.16em;
-  line-height: 1.1;
 }
 
+.studio-bar__code strong {
+  color: var(--mt-text-2);
+  font-size: var(--tb-text-sm);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+}
+
+/* 右侧读数：主状态（ON AIR / STANDBY）在前，其余用竖线分隔成次要读数 */
 .studio-bar__status {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--tb-size-2);
+  gap: var(--tb-size-3);
   margin-left: auto;
+}
+
+.studio-bar__status > * + * {
+  padding-left: var(--tb-size-3);
+  border-left: 1px solid var(--mt-line);
+}
+
+/* 去掉 chip 的外壳，只保留文字与圆点 */
+.studio-bar__status .mt-chip {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}
+
+.studio-bar__status .mt-chip:first-child {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+}
+
+/* 主状态即使处于 STANDBY 也比次要读数高一档，避免和“未连接”糊成一片 */
+.studio-bar__status .mt-chip:first-child.mt-chip--muted {
+  color: var(--mt-text-2);
+}
+
+.studio-bar__status > .studio-clock {
+  color: var(--mt-text-2);
+  font-size: var(--tb-text-xs);
+  letter-spacing: 0.12em;
 }
 
 .studio-bar__actions {
@@ -192,6 +225,15 @@ const connectionClass = computed(
   align-items: center;
   flex-wrap: wrap;
   gap: var(--tb-size-2);
+  padding-left: var(--tb-size-3);
+  border-left: 1px solid var(--mt-line);
+}
+
+/* 槽位按钮来自父组件，需用 :slotted 才能命中；压成与读数条同高的紧凑尺寸 */
+:slotted(.mt-btn) {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: var(--tb-text-xs);
 }
 
 @media (max-width: 1080px) {
@@ -203,7 +245,7 @@ const connectionClass = computed(
 @media (max-width: 820px) {
   .studio-bar {
     gap: var(--tb-size-2);
-    padding: 10px 12px;
+    padding: 8px 0;
   }
 
   .studio-bar__mark {
@@ -218,9 +260,15 @@ const connectionClass = computed(
     order: 3;
   }
 
+  .studio-bar__status > * + * {
+    padding-left: var(--tb-size-2);
+  }
+
   .studio-bar__actions {
     order: 4;
     width: 100%;
+    padding-left: 0;
+    border-left: 0;
     justify-content: flex-end;
   }
 }

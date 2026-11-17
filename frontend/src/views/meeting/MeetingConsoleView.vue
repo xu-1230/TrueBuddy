@@ -1,7 +1,5 @@
 <template>
   <div class="meeting-studio meeting-console">
-    <StudioBackdrop :poster="showEntryPoster" :animate="showEntryPoster" />
-
     <div class="meeting-console__inner">
       <MeetingTopBar
         :title="store.meeting?.title || '模拟会议'"
@@ -66,9 +64,6 @@
       <!-- 正在按地址栏的 ?meetid= 恢复（避免先闪一下建会表单） -->
       <section v-if="restoring" class="console-entry console-entry--loading" role="status">
         <div class="console-entry__inner">
-          <p class="mt-eyebrow console-entry__reveal">Linking / 正在恢复</p>
-          <h1 class="console-entry__title mt-display console-entry__reveal">{{ meetId }}</h1>
-          <p class="console-entry__desc console-entry__reveal">正在按地址栏恢复这场会议…</p>
           <span class="console-entry__spinner console-entry__reveal" aria-hidden="true" />
         </div>
       </section>
@@ -76,14 +71,6 @@
       <!-- 地址栏带了会议号，但本浏览器没有这场会的主持人凭据 -->
       <section v-else-if="missingCredential" class="console-entry">
         <div class="console-entry__inner">
-          <p class="mt-eyebrow console-entry__reveal">Credential missing / 无法恢复</p>
-          <h1 class="console-entry__title mt-display console-entry__reveal">
-            本浏览器没有这场会的主持人凭据
-          </h1>
-          <p class="console-entry__desc console-entry__reveal">
-            会议 {{ meetId }} 的主持人凭据只存在创建这场会议的浏览器里：可能换了机器、清了存储，
-            或这场会议已经结束。
-          </p>
           <div class="console-entry__actions console-entry__reveal">
             <button type="button" class="mt-btn mt-btn--primary" @click="goCreateInPpt">
               去 PPT 页创建会议
@@ -95,15 +82,6 @@
       <!-- 控制台不再自己建会：它随会议一起打开（会议在 PPT 页创建） -->
       <section v-else-if="!session" class="console-entry">
         <div class="console-entry__inner">
-          <p class="mt-eyebrow console-entry__reveal">Director console / 待机</p>
-          <h1 class="console-entry__title mt-display console-entry__reveal">
-            没有正在进行的会议
-          </h1>
-          <p class="console-entry__desc console-entry__reveal">
-            本页是老师控制台，地址栏带 <code>?meetid={会议号}</code> 时管理这一场。
-            开会请到「PPT 演示」页：导入 PPT → 写好讲稿 → 点「创建会议」，
-            控制台会自动带着这场会的凭据开在这里。
-          </p>
           <div class="console-entry__actions console-entry__reveal">
             <button type="button" class="mt-btn mt-btn--primary" @click="goCreateInPpt">
               去 PPT 页创建会议
@@ -111,7 +89,10 @@
           </div>
 
           <!-- 本机还留着凭据的会议：不给入口的话，摘掉地址栏会议号后就再也回不去 -->
-          <div v-if="knownMeetings.length" class="console-entry__known console-entry__reveal">
+          <div
+            v-if="knownMeetings.length"
+            class="console-entry__known mt-scroll console-entry__reveal"
+          >
             <p class="mt-eyebrow">本机还能回到这些会议</p>
             <button
               v-for="(item, index) in knownMeetings"
@@ -310,7 +291,6 @@ import ControlDock from './components/ControlDock.vue'
 import MeetingTopBar from './components/MeetingTopBar.vue'
 import ScreenStage from './components/ScreenStage.vue'
 import StatusNotice from './components/StatusNotice.vue'
-import StudioBackdrop from './components/StudioBackdrop.vue'
 import { useMeetingStore } from './stores/meeting'
 import { useLiveKitRoom, describeChatSend } from './hooks/useLiveKitRoom'
 import {
@@ -521,9 +501,6 @@ const missingCredential = ref(false)
 const credentialVisible = ref(false)
 /** 本机还留着主持人凭据的会议：建会态下列出来，作为「回到某一场」的入口 */
 const knownMeetings = ref([])
-
-/** 入口屏是否铺海报：空态 / 缺凭据 / 恢复中 */
-const showEntryPoster = computed(() => restoring.value || missingCredential.value || !session.value)
 
 const room = useLiveKitRoom({
   getLocalPreviewElement: () => stageRef.value?.videoRef,
@@ -775,43 +752,22 @@ onBeforeUnmount(() => {
 }
 
 /* ================= 入口屏 ================= */
+/* 整块入口屏不再滚动：内容超出时只让「本机会议」列表自己滚 */
 .console-entry {
   display: flex;
   flex: 1;
-  align-items: center;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .console-entry__inner {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: var(--tb-size-3);
   width: min(880px, 100%);
+  min-height: 0;
   padding: clamp(24px, 4vw, 64px) 0;
-}
-
-.console-entry__title {
-  max-width: 16ch;
-  margin: var(--tb-size-2) 0 0;
-  font-size: clamp(2.5rem, 6vw, 5.5rem);
-}
-
-.console-entry__desc {
-  max-width: 56ch;
-  margin: 0;
-  color: var(--mt-text-2);
-  font-size: var(--tb-text-lg);
-  line-height: 1.7;
-}
-
-.console-entry__desc code {
-  padding: 1px 5px;
-  border-radius: var(--mt-radius-xs);
-  background: color-mix(in oklab, var(--mt-text) 7%, transparent);
-  color: var(--mt-text);
-  font-family: var(--mt-font-mono);
-  font-size: 0.92em;
 }
 
 .console-entry__actions {
@@ -825,8 +781,10 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-height: 0;
   margin-top: var(--tb-size-3);
   padding-top: var(--tb-size-3);
+  overflow-y: auto;
   border-top: 1px solid var(--mt-line);
 }
 
