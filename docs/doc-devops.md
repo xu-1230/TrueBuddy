@@ -91,7 +91,7 @@ npm run dev          # 5173，/api 代理到 8086
 | 范围 | 命令 | 通过标准 |
 | --- | --- | --- |
 | 前端 lint | `cd frontend && npm run lint` | oxlint + ESLint 无 error |
-| 前端测试 | `cd frontend && npm test` | `node --test "tests/*.test.js"` 全部通过（25 个测试文件） |
+| 前端测试 | `cd frontend && npm test` | `node --test "tests/*.test.js"` 全部通过（32 个测试文件） |
 | 前端构建 | `cd frontend && npm run build` | 构建成功（`build-artifact.test.js` 会检查产物） |
 | 后端构建 | `cd backend && ./mvnw clean install` | 全模块编译打包成功 |
 | 后端测试 | `cd backend && ./mvnw test` | 11 个 JUnit 测试类通过（lecture 8 / workflow 3 / knowledgebase 1）；真连外部服务的探针用例靠 `Assumptions` 自动跳过 |

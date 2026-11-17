@@ -14,8 +14,9 @@ import java.util.List;
 public interface DocTemplateGenerationMapper {
 
     @Insert("INSERT INTO doc_template_generation "
-            + "(template_file_id, space_id, description, quality, doc_count, status) "
-            + "VALUES (#{templateFileId}, #{spaceId}, #{description}, #{quality}, #{docCount}, #{status})")
+            + "(template_file_id, space_id, description, quality, doc_count, status, creator, updater) "
+            + "VALUES (#{templateFileId}, #{spaceId}, #{description}, #{quality}, #{docCount}, #{status}, "
+            + "#{creator}, #{updater})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(DocTemplateGenerationDO generation);
 
@@ -28,8 +29,9 @@ public interface DocTemplateGenerationMapper {
     @Select("SELECT * FROM doc_template_generation WHERE id = #{id} AND deleted = FALSE")
     DocTemplateGenerationDO selectById(@Param("id") Long id);
 
-    /** 历史记录：按时间倒序取最近 N 条 */
-    @Select("SELECT * FROM doc_template_generation WHERE deleted = FALSE ORDER BY id DESC LIMIT #{limit}")
-    List<DocTemplateGenerationDO> selectList(@Param("limit") int limit);
+    /** 历史记录：只取该用户的生成记录，按时间倒序取最近 N 条 */
+    @Select("SELECT * FROM doc_template_generation WHERE deleted = FALSE AND creator = #{creator} "
+            + "ORDER BY id DESC LIMIT #{limit}")
+    List<DocTemplateGenerationDO> selectList(@Param("limit") int limit, @Param("creator") Long creator);
 
 }

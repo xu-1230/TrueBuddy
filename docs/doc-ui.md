@@ -342,24 +342,27 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 
 ## 11. 文档模板 AI 聊天面板（`views/doctemplate/components/AiChatPanel.vue`，2026-11-17）
 
-> 参考 Astryx AI Chat 模板（`astryx-stack x78zum5 xdt5ytf` 的垂直 stack）重做；页面仍是「左 docx 预览 + 右聊天」，不翻转主次、不接真实 SSE。
+> 参考 Astryx AI Chat 模板（`astryx-stack x78zum5 xdt5ytf` 的垂直 stack）重做；2026-11-17 起接真实 SSE 编辑与撤回，并按文档持久化聊天记录。页面仍是「左 docx 预览 + 右聊天」，不翻转主次、不展示版本号/版本下拉。
 
 ### 11.1 结构与消息层级
 
-- 面板无独立 header：顶部从「今天」分隔开始，下接居中系统提示「已加载《文档名》，可以开始评审。」；文档上下文只在这条系统提示里出现。
+- 面板无独立 header；首次进入先显示「正在加载聊天记录…」，空记录时显示静态提示「已加载《文档名》。可以直接描述修改要求，或先在左侧选择元素缩小范围。」（未登录时显示登录提示）；一旦有消息，顶部日期分隔取最早一条消息的时间（今天 / `M月D日`），避免历史记录被误标为「今天」。
 - 消息区为 `display:flex; flex-direction:column` 的垂直堆栈；助手消息 = 26px 圆形品牌 soft 头像 + 平铺正文 / 项目列表，用户消息 = 右侧中性填充气泡。
-- 每条消息带 `HH:mm`（`<time>`）；用户消息带「已送达」+ 对勾；typing 为「头像 + 三点」，不再包气泡。
-- 富文本 mock：消息 content 为字符串或 `{ type: 'p' | 'ul' }` 块数组，组件内本地渲染；不引入 MarkdownViewer / bytemd。
-- 切换 `documentName` 时重建初始 mock 对话（时间、消息 id 重新生成）并回底；回复池按顺序循环。
+- 每条消息带 `HH:mm`（`<time>`）；用户消息带「已送达」+ 对勾；助手消息若产生了新版本，在 chat-meta 显示**撤回图标**（不显示版本号）；已撤回/级联失效的消息灰显「已失效」。
+- 助手内容来自 SSE `assistant` 事件的 `p` / `ul` 块；typing 行显示「头像 + 三点 + 阶段文案」（`status` 事件）。
+- 聊天记录按文档（根文件 / 工作区）持久化：打开或切换文档时调用 `GET /doc-template/chat/history` 回放，刷新 / 重新打开后消息、选区 chips、时间、撤回图标与「已失效」状态都保留；切换预览版本不重载聊天。
+- 加载中隐藏空态并禁用发送；记录映射为消息时服务端 id 加 `db-` 前缀、本地新消息用 `local-` 前缀，避免列表 key 冲突。撤回后目标消息及之后的会话消息标记失效，不参与后续 LLM 上下文。
 
 ### 11.2 形状与颜色
 
 - 面板 / 用户气泡 / composer 统一 `--tb-radius-xl`（12px）；头像、发送按钮、滚到底按钮为 `50%`。
 - 中性气泡 + 品牌点色：用户气泡 `color-mix(in oklab, var(--tb-text-primary) 7%, var(--tb-bg-surface))`；品牌色只用于发送按钮、助手头像与焦点环，不使用墨蓝渐变气泡。
-- composer 为 `--tb-bg-raised` 圆角容器，只保留自增长输入（最多 5 行）+ 圆形发送；下方小字「模拟对话 / Enter 发送 · Shift + Enter 换行」。不设上下文 chip、提及 / 附件工具条与「提问」标识。
+- composer 为 `--tb-bg-raised` 圆角容器：选中的文档元素以 ghost-chip 风格 chips 显示在输入区上方（最多 5 个，可逐个 × 移除）；下方是自增长输入（最多 5 行）+ 圆形发送；底部小字「AI 编辑 / Enter 发送 · Shift + Enter 换行」。不设上下文 chip、提及 / 附件工具条与「提问」标识。
+- 选区只是 LLM 上下文提示，不是硬性修改范围；没有选区时按全文处理。用户消息内回显本次选中的元素 chips。
 
-### 11.3 滚动与响应式
+### 11.3 滚动、动效与响应式
 
 - **智能滚动**：用户距底部 ≤48px 时新消息自动跟随；上滑阅读时保持位置并显示右下角「回到最新消息」圆钮；自己发送消息始终回底。
+- 撤回：chat-meta 图标 → 确认弹窗（会提示将同时丢弃之后 N 次修改）→ 目标版本及后代失效，当前版本回到上一版；成功后追加服务端落库的系统提示并把消息灰显，再重新拉取记录保证刷新前后一致。
 - `≤1024px` 时查看模式改为上下堆叠：docx 预览 `height: min(60vh, 560px)`、聊天全宽 `height: min(480px, 60vh)`；预览内部滚动。
 - 无障碍：`role="log"` + `aria-live="polite"`、按钮 / 输入区 `aria-label`、`<time>`、sr-only「AI 助手」标题；`prefers-reduced-motion` 下关闭 typing 三点与 `chat-in` 入场。

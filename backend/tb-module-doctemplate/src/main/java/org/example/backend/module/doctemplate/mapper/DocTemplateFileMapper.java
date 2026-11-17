@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 import org.example.backend.module.doctemplate.model.DocTemplateFileDO;
 
 import java.util.Collection;
@@ -14,10 +15,18 @@ import java.util.List;
 public interface DocTemplateFileMapper {
 
     @Insert("INSERT INTO doc_template_file "
-            + "(generation_id, file_id, name, type, size, tag, summary, sort) "
-            + "VALUES (#{generationId}, #{fileId}, #{name}, #{type}, #{size}, #{tag}, #{summary}, #{sort})")
+            + "(generation_id, file_id, name, type, size, tag, summary, sort, creator, updater) "
+            + "VALUES (#{generationId}, #{fileId}, #{name}, #{type}, #{size}, #{tag}, #{summary}, #{sort}, "
+            + "#{creator}, #{updater})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(DocTemplateFileDO file);
+
+    @Select("SELECT * FROM doc_template_file WHERE id = #{id} AND deleted = FALSE")
+    DocTemplateFileDO selectById(Long id);
+
+    @Update("UPDATE doc_template_file SET current_version_id = #{currentVersionId}, update_time = now() "
+            + "WHERE id = #{id} AND deleted = FALSE")
+    int updateCurrentVersion(@Param("id") Long id, @Param("currentVersionId") Long currentVersionId);
 
     @Select("SELECT * FROM doc_template_file WHERE generation_id = #{generationId} AND deleted = FALSE "
             + "ORDER BY sort ASC, id ASC")

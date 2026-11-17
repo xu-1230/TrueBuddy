@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS doc_template_file (
     tag           VARCHAR(50),                             -- 份数定位标签：复刻 / 优化 / 精简…
     summary       VARCHAR(500),                            -- 内容摘要（结果卡片副标题）
     sort          INTEGER      NOT NULL DEFAULT 0,         -- 展示顺序（0 起）
+    current_version_id BIGINT,                             -- 当前版本（doc_template_version.id；NULL=根文件 v1）
     create_time   TIMESTAMP    NOT NULL DEFAULT now(),     -- 创建时间
     update_time   TIMESTAMP    NOT NULL DEFAULT now(),     -- 更新时间
     creator       BIGINT,                                  -- 创建人 id
@@ -47,6 +48,10 @@ CREATE TABLE IF NOT EXISTS doc_template_file (
 );
 
 COMMENT ON TABLE doc_template_file IS '文档模板生成结果文件表';
+COMMENT ON COLUMN doc_template_file.current_version_id IS '当前版本（doc_template_version.id）；NULL 表示根文件本身即 v1';
+
+-- 已建表的环境补列（新环境由上面的 CREATE TABLE 直接建出）
+ALTER TABLE doc_template_file ADD COLUMN IF NOT EXISTS current_version_id BIGINT;
 
 CREATE INDEX IF NOT EXISTS idx_doc_template_file_generation_id ON doc_template_file (generation_id);
 CREATE INDEX IF NOT EXISTS idx_doc_template_file_file_id ON doc_template_file (file_id);

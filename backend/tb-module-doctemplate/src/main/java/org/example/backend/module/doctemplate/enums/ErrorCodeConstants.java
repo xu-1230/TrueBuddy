@@ -17,5 +17,13 @@ public interface ErrorCodeConstants {
     ErrorCode GENERATE_FAILED = new ErrorCode(1_004_000_006, "文档生成失败：{}");
     ErrorCode MCP_TOOL_UNAVAILABLE = new ErrorCode(1_004_000_007, "文档处理服务（docx-mcp）不可用：{}");
     ErrorCode AI_RESPONSE_INVALID = new ErrorCode(1_004_000_008, "AI 返回内容解析失败：{}");
+    ErrorCode CHAT_ROOT_FILE_REQUIRED = new ErrorCode(1_004_000_009, "缺少文档 id");
+    ErrorCode CHAT_INSTRUCTION_REQUIRED = new ErrorCode(1_004_000_010, "请输入修改要求");
+    ErrorCode CHAT_INSTRUCTION_TOO_LONG = new ErrorCode(1_004_000_011, "修改要求不能超过 2000 字");
+    ErrorCode CHAT_WORKSPACE_NOT_EXISTS = new ErrorCode(1_004_000_012, "文档不存在或无权访问");
+    ErrorCode CHAT_VERSION_NOT_EXISTS = new ErrorCode(1_004_000_013, "文档版本不存在或已失效");
+    ErrorCode CHAT_EDIT_INVALID = new ErrorCode(1_004_000_014, "AI 编辑指令校验失败：{}");
+    ErrorCode CHAT_UNDO_INVALID = new ErrorCode(1_004_000_015, "撤回目标无效：{}");
+    ErrorCode CHAT_VERSION_CONFLICT = new ErrorCode(1_004_000_016, "文档版本已变化，请刷新后重试");
 
 }
