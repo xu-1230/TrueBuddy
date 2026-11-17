@@ -41,8 +41,11 @@
         </el-dropdown>
       </header>
 
-      <div v-loading="loading" class="assets">
-        <div v-if="assetCards.length" class="assets__grid">
+      <div class="assets" :aria-busy="loading">
+        <div v-if="loading" class="assets__grid assets__grid--skeleton" aria-hidden="true">
+          <AssetCardSkeleton v-for="n in SKELETON_COUNT" :key="n" />
+        </div>
+        <div v-else-if="assetCards.length" class="assets__grid">
           <AssetCard
             v-for="card in assetCards"
             :key="card.key"
@@ -62,9 +65,10 @@
             @open="go(card.to)"
           />
         </div>
-        <el-empty v-else-if="!loading" :description="emptyDescription">
+        <el-empty v-else :description="emptyDescription">
           <el-button type="primary" @click="go(emptyAction.to)">{{ emptyAction.label }}</el-button>
         </el-empty>
+        <p v-if="loading" class="assets__status" role="status">正在加载资产…</p>
       </div>
     </section>
   </div>
@@ -79,6 +83,7 @@ import { getGenerationHistory } from '@/api/doctemplate'
 import { getSpaceList } from '@/api/knowledgebase'
 import { listWorkflows } from '@/api/workflow'
 import AssetCard from './components/AssetCard.vue'
+import AssetCardSkeleton from './components/AssetCardSkeleton.vue'
 import HomeHero from './components/HomeHero.vue'
 import ShowcaseCard from './components/ShowcaseCard.vue'
 import { HOME_SORTS, HOME_TABS, KIND_META, MODULE_CARDS } from './constants'
@@ -95,8 +100,12 @@ const router = useRouter()
 
 /** 三个来源的原始返回，请求失败留 null，不阻塞其余来源渲染 */
 const sources = ref({ spaces: null, workflows: null, generations: null })
-const loading = ref(false)
+/** 初值为 true：本页挂载即请求，首帧直接出骨架，避免先闪一帧空态 */
+const loading = ref(true)
 const failedCount = ref(0)
+
+/** 骨架固定 10 张，容器查询再把窄屏多余的部分隐藏，任何宽度只占两行 */
+const SKELETON_COUNT = 10
 
 /**
  * 过滤态跨页保持：跳转型 tab 跳走再回来仍停在原过滤 tab（US3）。
@@ -365,9 +374,27 @@ onMounted(() => {
   gap: 22px;
 }
 
+/* 读屏加载提示：视觉隐藏，不参与布局 */
+.assets__status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip-path: inset(50%);
+}
+
+/* 骨架固定 10 张 DOM，按列数裁到两行：4 列 8 / 3 列 6 / 2 列 4 / 1 列 2 */
 @container (max-width: 1519px) {
   .assets__grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .assets__grid--skeleton > :nth-child(n + 9) {
+    display: none;
   }
 }
 
@@ -375,11 +402,19 @@ onMounted(() => {
   .assets__grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .assets__grid--skeleton > :nth-child(n + 7) {
+    display: none;
+  }
 }
 
 @container (max-width: 979px) {
   .assets__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .assets__grid--skeleton > :nth-child(n + 5) {
+    display: none;
   }
 }
 
@@ -387,6 +422,10 @@ onMounted(() => {
   .assets__grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 14px;
+  }
+
+  .assets__grid--skeleton > :nth-child(n + 3) {
+    display: none;
   }
 }
 
