@@ -2,6 +2,8 @@ package org.example.backend.module.lecture.ppt.model.vo;
 
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * 请求体里的一页 PPT（字段与 test2 的 {@code PptxPage} 对齐：{@code index} / {@code text} / {@code remark}）。
  *
@@ -22,5 +24,13 @@ public class PptSpeechPageVO {
 
     /** 该页现有备注（可空）—— AI 的重写对象 */
     private String remark;
+
+    /**
+     * 该页图片（{@code data:image/jpeg;base64,...}），最多 3 张，可为空。
+     *
+     * <p>前端只送幻灯片里的图片元素：压缩到最长边 1280px 的 JPEG；EMF/WMF 等
+     * 浏览器无法解码的格式已在端上静默跳过。后端只做格式/体积校验，不落库。
+     */
+    private List<String> images;
 
 }

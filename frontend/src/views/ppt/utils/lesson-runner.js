@@ -39,7 +39,8 @@ export function decideAfterPage(page, pageCount) {
  * @param {(page: number) => string} [deps.getPageText] 某页讲稿纯文本（verbatim）
  * @param {(event: object) => void} [deps.onEvent] 工作项事件
  * @param {(text: string) => string[]} [deps.segmentText] 切段注入点
- * @param {(page: number) => object|null} [deps.getPageInfo] ai：某页 { index(1基), title, text, remark }
+ * @param {(page: number) => object|null|Promise<object|null>} [deps.getPageInfo] ai：某页
+ *   { index(1基), title, text, remark, images? }；可返回 Promise（图片压缩是异步的）
  * @param {(payload: object) => Promise<{ speechText: string }>} [deps.generateSpeech] ai：narrate 端点
  * @param {() => void} [deps.advance] ai：驱动翻页（execNext 循环），结果由 onPageChanged 驱动
  * @param {() => number} [deps.getPageCount] ai：总页数
@@ -115,8 +116,9 @@ export function createLessonRunner({
 
   /** 单次 narrate（重试策略归 getAiSpeech）。页面无内容返回 null。 */
   async function generateOnce(page) {
-    const info = getPageInfo?.(page) ?? null
-    if (!info || (!info.remark?.trim() && !info.text?.trim())) return null
+    const info = (await getPageInfo?.(page)) ?? null
+    // 图片也是页面内容：纯图片页（无正文/备注）必须继续走 narrate，不能在这里被跳过
+    if (!info || (!info.remark?.trim() && !info.text?.trim() && !info.images?.length)) return null
     const payload = {
       ...info,
       context: { pageCount: getPageCount?.() ?? null, elapsedMin: elapsedMinutes() },
