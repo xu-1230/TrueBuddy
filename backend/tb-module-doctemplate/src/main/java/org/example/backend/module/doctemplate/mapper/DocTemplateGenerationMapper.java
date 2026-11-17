@@ -14,9 +14,9 @@ import java.util.List;
 public interface DocTemplateGenerationMapper {
 
     @Insert("INSERT INTO doc_template_generation "
-            + "(template_file_id, space_id, description, quality, doc_count, status, creator, updater) "
-            + "VALUES (#{templateFileId}, #{spaceId}, #{description}, #{quality}, #{docCount}, #{status}, "
-            + "#{creator}, #{updater})")
+            + "(template_file_id, space_ids, description, quality, doc_count, status, creator, updater) "
+            + "VALUES (#{templateFileId}, #{spaceIds}, #{description}, #{quality}, #{docCount}, "
+            + "#{status}, #{creator}, #{updater})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(DocTemplateGenerationDO generation);
 

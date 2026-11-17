@@ -43,6 +43,10 @@ export const WORKFLOW_REST_API = {
   publicList: '/workflow/public-list',
   /** fork 为自己的副本（query 参数 `workflow_id`），返回新副本 id */
   fork: '/workflow/fork',
+  /** 重命名本人工作流（query 参数 `workflow_id` + `name`；builtin 拒绝） */
+  rename: '/workflow/rename',
+  /** 软删除本人工作流（query 参数 `workflow_id`；builtin 拒绝） */
+  delete: '/workflow/delete',
 }
 
 /** 节点上允许提交给后端的字段（Vue Flow 注入的运行时字段一律剔除） */
@@ -213,6 +217,29 @@ export function getPublicWorkflows() {
  */
 export function forkWorkflow(workflowId) {
   return service.post(WORKFLOW_REST_API.fork, null, { params: { workflow_id: workflowId } })
+}
+
+/**
+ * 重命名本人工作流：只改名称，不触碰画布定义；builtin 拒绝。
+ *
+ * @param {string} workflowId 工作流 id（雪花 ID 字符串）
+ * @param {string} name 新名称（trim 后非空，≤100 字符）
+ * @returns {Promise<boolean>} 固定 true，失败由 HTTP 层表达
+ */
+export function renameWorkflow(workflowId, name) {
+  return service.put(WORKFLOW_REST_API.rename, null, {
+    params: { workflow_id: workflowId, name },
+  })
+}
+
+/**
+ * 软删除本人工作流：builtin 拒绝；会话 / 执行记录保留，但后续再用它运行会报「工作流不存在」。
+ *
+ * @param {string} workflowId 工作流 ID（雪花 ID 字符串）
+ * @returns {Promise<boolean>} 固定 true，失败由 HTTP 层表达
+ */
+export function deleteWorkflow(workflowId) {
+  return service.delete(WORKFLOW_REST_API.delete, { params: { workflow_id: workflowId } })
 }
 
 /**

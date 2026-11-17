@@ -62,4 +62,21 @@ public interface WorkflowService {
      */
     String forkWorkflow(String workflowId);
 
+    /**
+     * 重命名本人工作流（builtin 拒绝）。只改名称，不触碰画布定义，
+     * 避免列表为了改名而拉取并回写整份 `schemaJson`。
+     *
+     * @param workflowId 工作流 id（雪花 ID 字符串）
+     * @param name 新名称（trim 后非空，≤100 字符）
+     */
+    void renameWorkflow(String workflowId, String name);
+
+    /**
+     * 软删除本人工作流（builtin 拒绝）。已存在的会话 / 执行记录不级联删除，
+     * 但后续再用该工作流建会话或运行会按「工作流不存在」拒绝。
+     *
+     * @param workflowId 工作流 id（雪花 ID 字符串）
+     */
+    void deleteWorkflow(String workflowId);
+
 }

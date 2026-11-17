@@ -4,7 +4,7 @@
 > 适用范围：知识库模块的**已实现链路**（§2 现状盘点，含 §2.4 归属与共享）与后续能力的**规划方案**（§3 起）
 > 相关：[doc-api.md](./doc-api.md)（接口清单）、[doc-database.md](./doc-database.md)（kb_* 表）、[doc-conventions.md](./doc-conventions.md)、[doc-doctemplate.md](./doc-doctemplate.md)（检索增强的唯一消费方）、[adr/0006-知识库与工作流归属与共享模型.md](./adr/0006-知识库与工作流归属与共享模型.md)（归属与共享模型的决策依据）、[../backend/AGENT - 后端技术规约.md](../backend/AGENT%20-%20后端技术规约.md)
 
-> ⚠️ **落地状态（2026-11-16 逐项核对）**：**§2 现状盘点**描述的入库-检索底座链路已实现——空间 / 文档 / 分块 / 分片管理 + DocMind 解析 + AI 语义分片（失败回退逐块）+ DashScope 向量化 + pgvector 单路向量检索（`searchBySpace`，唯一消费方是 doc-template 的 RAG 上下文）；**§2.4 归属与共享（creator 过滤 / 公有私有 / fork 深拷贝 / 公有库浏览区）已实现**（ADR 0006）。**§3 起的规划全部未实现**——代码中不存在：关键词检索通道、多路召回融合去重、重排降级、父子分块、引用回填、问答会话与消息表（无 `kb_qa_*` 表）、问答接口与 SSE 流式回答、联网搜索与 SSRF 出口控制。规划内容落地前不得被其它模块依赖。
+> ⚠️ **落地状态（2026-11-16 逐项核对）**：**§2 现状盘点**描述的入库-检索底座链路已实现——空间 / 文档 / 分块 / 分片管理 + DocMind 解析 + AI 语义分片（失败回退逐块）+ DashScope 向量化 + pgvector 单路向量检索（`searchBySpace` 单空间 / `searchBySpaces` 多空间，消费方是 doc-template 的 RAG 上下文）；**§2.4 归属与共享（creator 过滤 / 公有私有 / fork 深拷贝 / 公有库浏览区）已实现**（ADR 0006）。**§3 起的规划全部未实现**——代码中不存在：关键词检索通道、多路召回融合去重、重排降级、父子分块、引用回填、问答会话与消息表（无 `kb_qa_*` 表）、问答接口与 SSE 流式回答、联网搜索与 SSRF 出口控制。规划内容落地前不得被其它模块依赖。
 
 ---
 
@@ -68,7 +68,7 @@
 | --- | --- | --- | --- |
 | 解析网关 | `backend/tb-module-knowledgebase/src/main/java/org/example/backend/module/knowledgebase/service/parse/DocumentParseGateway.java` | 接口四方法：`String submit(InputStream, String)`、`ParseTaskStatus query(String)`、`List<Map<?,?>> fetchMarkdown(String)`、`default void release(String)`；由同目录 `ParseGatewayConfiguration` 以 `@Bean` 手工装配 `docmind/DocMindParseGateway`（AK/SK 缺失时**启动即失败**） | 「网址入库」复用同一抽象新增来源分支 |
 | 分块策略 | `backend/tb-module-knowledgebase/src/main/java/org/example/backend/module/knowledgebase/service/chunk/DocumentChunkService.java`（接口）、同目录 `AiDocumentChunkService.java`（实现） | 接口只有一个方法：`List<String> chunk(List<String> blocks)`；实现用 `ChatClient` 只让模型输出**块区间**，正文由后端按区间拼接；模型异常 / 输出不可解析 / 拼接为空三处均回退为「逐块分片」 | 父子分块的改造点 |
-| 检索入口 | `backend/tb-module-knowledgebase/src/main/java/org/example/backend/module/knowledgebase/service/Impl/KbDocumentServiceImpl.java` 的 `searchBySpace(Long spaceId, String query, int topK)` | 构造 `SearchRequest.builder().query(q).topK(max(1,topK)).filterExpression("spaceId == '<id>'")` 调 `vectorStore.similaritySearch`；把命中拼成 `【片段N】<正文>\n` 字符串返回；异常时**吞掉并返回空串** | 改造为薄封装，另增结构化检索方法 |
+| 检索入口 | `backend/tb-module-knowledgebase/src/main/java/org/example/backend/module/knowledgebase/service/Impl/KbDocumentServiceImpl.java` 的 `searchBySpace(Long spaceId, String query, int topK)` / `searchBySpaces(List<Long> spaceIds, String query, int topK)` | 单空间用 `filterExpression("spaceId == '<id>'")`，多空间用 `filterExpression("spaceId in ['<id1>', '<id2>']")` 调 `vectorStore.similaritySearch`；把命中拼成 `【片段N】<正文>\n` 字符串返回；异常时**吞掉并返回空串**。doc-template 现用多空间入口 | 改造为薄封装，另增结构化检索方法 |
 | 向量存储 | Spring AI `VectorStore`（pgvector） | `application.yml`：`index-type=hnsw`、`distance-type=COSINE_DISTANCE`、`dimensions=1024`、`initialize-schema=true`；向量表可由 `sql/vector_store.sql` 预建（`metadata JSONB` + HNSW/GIN），也可由 Spring AI 自动建 | 保留不换库；关键词通道与它按 `chunkId` 关联 |
 | 向量化写入 | `KbDocumentServiceImpl#vectorize` | 先 `chunkMapper.deleteByDocumentId` 覆盖式重建分片，再为每片建 `org.springframework.ai.document.Document`，metadata 写入 `chunkId` / `documentId` / `spaceId`（**均为字符串**）；旧向量按 `documentId == '..'` 清理后分批 `add`（批大小 10） | 引用回填直接依赖 `chunkId` metadata |
 | 文件存储 | `tb-module-infra` 的 `MinioFileStorageService` + `infra_file` 表 | 只有 `bucket` / `path` / `url` / `size` / `type`，**无 provider 抽象** | 抓取到的正文与图片转存 |
@@ -87,7 +87,7 @@
 | 重排 | 无 | 需要可降级的重排调用（见 §4.4） |
 | 父子分块 | `kb_document_chunk` 是单层，表内**无父子字段、无块类型、无前后指针** | 需要加列 + 分块写入改造（见 §4.5） |
 | 引用回填 | 无（`kb_document_parse_block.external_id` 仅注释提到「溯源」，无回填逻辑） | 需要结构化引用结果与流式事件（见 §4.6） |
-| 结构化检索 | `searchBySpace` 只返回拼接字符串 | 需要返回带 `chunkId` / `documentId` / `name` / `content` / `score` 的结果（见 §4.7） |
+| 结构化检索 | `searchBySpace` / `searchBySpaces` 只返回拼接字符串 | 需要返回带 `chunkId` / `documentId` / `name` / `content` / `score` 的结果（见 §4.7） |
 | 会话与消息 | 表与代码均无 | 需要 2 张表 + 接口（见 §5） |
 | 流式问答 | 无 | 需要 SSE 问答接口（见 §5.3） |
 | 搜索来源 | 无 | 需要 provider 抽象与注册表（见 §6.1） |
@@ -120,9 +120,23 @@
 | 6 | fork 深拷贝 | `POST /knowledge-base/space/fork`：与公有只读同一把闸（本人空间或他人公有可 fork）；单事务复制 空间→文档（**只带 `status=2 已向量化` 的文档**，`file_id` 共享引用 MinIO 对象不动）→版面块→分片→pgvector 向量（`INSERT…SELECT` 改写 metadata），并做**行数对账**（分片/向量复制不完整即抛出整笔回滚）；副本私有、归属当前用户、与原库此后无任何同步 |
 | 7 | 副本命名 | 「原名（副本）」起，重名追加序号「（副本 2）」；`uk_kb_space_name` 唯一索引防撞，原名超长先截断基底再接后缀（列宽 100）；重试 99 次仍冲突按 500 拒绝 |
 | 8 | 分片读取守卫 | `KbDocumentChunkServiceImpl.getChunkList`：文档不存在→`1_003_000_001`；经 `document.spaceId` 反查空间后过 `requireReadable`——公有库浏览区暴露他人 documentId，分片路径必须锁死 |
-| 9 | 检索增强豁免 | `searchBySpace` 是 doc-template 复用的**内部接缝**，不做归属校验（消费方是服务端自身，非用户面接口） |
+| 9 | 检索增强豁免 | `searchBySpace` / `searchBySpaces` 是 doc-template 复用的**内部接缝**，不做归属校验；由调用方（doc-template 生成入口）先按 `getSpaceList` 过滤为当前用户自己的空间 |
 
 **接受的不一致**：批改选库等下游选择器「只列我的空间」由各自的列表接口按 creator 过滤保证（本模块 `getSpaceList` 已过滤）；fork 事务里 `IllegalStateException` 用通用 500 而非模块错误码（对账失败是极小概率数据异常，可读堆栈优先）。
+
+### 2.5 前端路由状态（2026-11-17）
+
+> 口径与验收见 [specs/2026-11-17-知识库空间路由状态.md](./specs/2026-11-17-知识库空间路由状态.md)。
+
+| # | 能力 | 现状实现 |
+| --- | --- | --- |
+| 1 | URL 契约 | `/index/knowledge-base?space=<spaceId>`；无 `space` 即空间列表 |
+| 2 | 状态真相源 | `KnowledgeBaseView.vue` 用 `watch(() => route.query.space, { immediate: true })` 驱动载入与复位；点击空间 / 返回列表只做 `router.push` |
+| 3 | 归属判定 | 先查 `/space/list`（我的空间，可写），再查 `/space/public-list`（他人公有，只读）；两处都未命中且两份列表均加载成功 → toast + `replace` 回列表 |
+| 4 | 过程态 | 文档选择、上传页、创建 / 编辑弹窗不进 URL；进入空间默认选中第一篇文档，上传页刷新后回到文档列表 |
+| 5 | 加载失败 | 列表接口失败保留深链 URL 并回落空间列表；文档接口失败保留空间壳与空文档区 |
+| 6 | 并发 | 路由 / 文档 / 分片三层请求令牌，快速切换时丢弃过期响应 |
+| 7 | 纯函数与测试 | `views/knowledgebase/utils/route.js`（解析 / 规范 location）；用例 `tests/knowledge-base-route.test.js` |
 
 ---
 
@@ -289,15 +303,16 @@ ALTER TABLE kb_document_chunk
 
 ```text
 DocTemplateServiceImpl.generate   (tb-module-doctemplate, RAG_TOP_K = 5)
-        └── KbDocumentService#searchBySpace(Long, String, int) -> String
-                └── KbDocumentServiceImpl#searchBySpace  ->  "【片段N】…\n"
+        └── KbDocumentService#searchBySpaces(List<Long>, String, int) -> String
+                └── KbDocumentServiceImpl#searchBySpaces  ->  "【片段N】…\n"
+                    （单空间兼容入口 searchBySpace 保留，内部走同一拼接实现）
 ```
 
 **改造后调用链**：
 
 ```text
 DocTemplateServiceImpl.generate
-        └── KbDocumentService#searchBySpace(Long, String, int) -> String   (保留，签名与返回语义不变)
+        └── KbDocumentService#searchBySpaces(List<Long>, String, int) -> String   (保留，签名与返回语义不变)
                 └── 薄封装：调用结构化检索 → 仅拼接 content 为 "【片段N】…\n"
 
 新增：KbRetrievalService#retrieve(Long spaceId, String query, RetrieveOptions) -> List<RetrieveHitVO>
@@ -306,7 +321,7 @@ DocTemplateServiceImpl.generate
 
 约束：
 
-- `searchBySpace` 的**方法签名与返回字符串格式不得变化**；现有唯一调用点是 `DocTemplateServiceImpl.generate`（`tb-module-doctemplate`，`RAG_TOP_K = 5`），改造后其行为需与改造前等价或更优。
+- `searchBySpace` / `searchBySpaces` 的**方法签名与返回字符串格式不得变化**；`DocTemplateServiceImpl.generate`（`tb-module-doctemplate`，`RAG_TOP_K = 5`）现调用多空间入口，改造后其行为需与改造前等价或更优。
 - 结构化检索方法返回 `List<RetrieveHitVO>`，字段见 §4.6 引用项 + `hitType`（`vector` / `keyword` / `both`）。
 - 新增类的落点：`tb-module-knowledgebase` 的 `service/`（接口）与 `service/Impl/`（实现），与现有分层一致。
 
@@ -514,7 +529,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_kb_document_source_url
 
 | 被改动点 | 现有引用（已核实） | 影响 |
 | --- | --- | --- |
-| `KbDocumentService#searchBySpace` | 声明 `KbDocumentService.java:66`；实现 `KbDocumentServiceImpl.java:571`；**唯一调用点** `DocTemplateServiceImpl.java:170`（`RAG_TOP_K = 5`） | 保留签名与返回字符串语义，改为薄封装后**调用方零改动** |
+| `KbDocumentService#searchBySpace` / `#searchBySpaces` | 声明 `KbDocumentService.java`；实现 `KbDocumentServiceImpl.java`；doc-template 现调用 `searchBySpaces`（`RAG_TOP_K = 5`），单空间 `searchBySpace` 保留兼容 | 保留签名与返回字符串语义，改为薄封装后**调用方零改动** |
 | `DocumentParseGateway` | 接口 `DocumentParseGateway.java:12`；唯一实现 `DocMindParseGateway.java:35`；装配 `ParseGatewayConfiguration.java:21`；使用点 `KbDocumentServiceImpl.java` 的 `179` / `224` / `296` / `364` / `448` | 新增来源分支时保持既有四方法签名不变（`submit` 目前只接受 `InputStream` + `fileName`，网址场景建议**新增重载**而非修改签名） |
 | `DocumentChunkService#chunk` | 接口 `DocumentChunkService.java:10`；唯一实现 `AiDocumentChunkService.java:27`；唯一调用点 `KbDocumentServiceImpl.java:377` | 若改返回结构（父子），需同步 `handleParseSuccess` 与分片落库；建议**新增方法**保留旧方法 |
 | `KbDocumentChunkMapper` | `KbDocumentServiceImpl.java` 的 `168` / `276` / `468` / `477` / `527` / `538`；`KbDocumentChunkServiceImpl.java:20`；`KbSpaceServiceImpl.java:65`（删空间级联清分片） | 新增父子列后 `insert` 需扩展列；`selectListByDocumentId` 已 `SELECT *`，DO 增字段即可；**删空间 / 删文档 / 重新向量化三条路径都会物理清分片**，新列随之清理，无需额外改动 |
@@ -580,7 +595,7 @@ cd frontend && npm test                     # node:test（前端纯函数层）
 
 ### 10.3 回归重点
 
-- `DocTemplateServiceImpl.generate` 的 RAG 上下文（`searchBySpace`）行为与改造前对比不得劣化。
+- `DocTemplateServiceImpl.generate` 的 RAG 上下文（`searchBySpaces`；单空间走 `searchBySpace`）行为与改造前对比不得劣化。
 - 现有「上传 → 解析 → 分片 → 向量化」链路不受影响。
 - 前端 `npm run lint` 与后端 `./mvnw clean install` 必须通过。
 

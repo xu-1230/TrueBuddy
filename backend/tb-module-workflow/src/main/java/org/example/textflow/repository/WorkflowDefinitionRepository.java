@@ -45,7 +45,7 @@ public class WorkflowDefinitionRepository {
                     + WorkflowConstants.BUILTIN_WORKFLOW_ID + " AS BIGINT)) "
                     + "ORDER BY update_time DESC, id DESC";
 
-    /** 匿名（未登录）可见列表：/workflow/** 在免登录白名单内，只暴露 builtin 模板 */
+    /** 匿名（未登录）可见列表：/workflow/** 已要求登录（ADR 0007），此分支仅保留 Service 兜底 */
     private static final String SELECT_LIST_BUILTIN_ONLY =
             "SELECT " + COLUMNS + " FROM workflow "
                     + "WHERE deleted = FALSE AND id = CAST(" + WorkflowConstants.BUILTIN_WORKFLOW_ID + " AS BIGINT) "
@@ -85,6 +85,16 @@ public class WorkflowDefinitionRepository {
 
     private static final String UPDATE =
             "UPDATE workflow SET name = ?, description = ?, schema_json = ?, status = ?, update_time = now() "
+                    + "WHERE deleted = FALSE AND id = CAST(? AS BIGINT)";
+
+    /** 只改名称（重命名），不触碰画布定义 */
+    private static final String UPDATE_NAME =
+            "UPDATE workflow SET name = ?, update_time = now() "
+                    + "WHERE deleted = FALSE AND id = CAST(? AS BIGINT)";
+
+    /** 软删除：只翻 deleted 标记，会话 / 执行记录不级联 */
+    private static final String SOFT_DELETE =
+            "UPDATE workflow SET deleted = TRUE, update_time = now() "
                     + "WHERE deleted = FALSE AND id = CAST(? AS BIGINT)";
 
     private static final String COUNT_NOT_DELETED =
@@ -141,7 +151,7 @@ public class WorkflowDefinitionRepository {
     /**
      * 可见列表：登录用户拿到「我的 + builtin」，匿名只拿 builtin。
      *
-     * <p>{@code /workflow/**} 在免登录白名单里（URL 模式无法按方法拆分），过滤在查询侧完成。
+     * <p>{@code /workflow/**} 自 ADR 0007 起要求登录；过滤仍在查询侧完成，避免把归属判断散到 Service。
      */
     public List<WorkflowDO> selectListVisible(Long creatorId) {
         if (creatorId == null) {
@@ -188,6 +198,16 @@ public class WorkflowDefinitionRepository {
                 workflow.getSchemaJson(),
                 workflow.getStatus(),
                 workflow.getId());
+    }
+
+    /** 按主键重命名一条未删除的工作流，返回影响行数（0 表示记录不存在） */
+    public int updateName(String id, String name) {
+        return jdbcTemplate.update(UPDATE_NAME, name, id);
+    }
+
+    /** 按主键软删除一条未删除的工作流，返回影响行数（0 表示记录不存在） */
+    public int softDelete(String id) {
+        return jdbcTemplate.update(SOFT_DELETE, id);
     }
 
     /** 未删除的工作流条数（启动初始化判空用） */

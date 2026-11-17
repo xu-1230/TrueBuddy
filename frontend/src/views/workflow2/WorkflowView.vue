@@ -1,8 +1,8 @@
 <script setup>
 import { computed, h, markRaw, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Hide, Share, View } from '@element-plus/icons-vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ArrowLeft, Hide, View } from '@element-plus/icons-vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import '@vue-flow/core/dist/style.css'
@@ -45,7 +45,6 @@ import {
   buildWorkflowSchema,
   createConversation,
   forkWorkflow,
-  getPublicWorkflows,
   getWorkflowDetail,
   saveWorkflow,
   updateWorkflowVisibility,
@@ -61,6 +60,11 @@ import {
 } from './utils/iteration'
 import { ITERATION_DROP_TARGET_KEY, RUN_ACTION_KEY, RUN_STATE_KEY } from './utils/run-inject'
 import { DEFAULT_FLOW_DEFINITION } from './default-flow'
+import {
+  normalizeWorkflowId,
+  workflowCanvasLocation,
+  workflowListLocation,
+} from './utils/route'
 import { applyRunEvent, beginRun, createRunState, finishRun, pendingCardOf, resumeRun } from './utils/run-state'
 
 const {
@@ -114,9 +118,9 @@ const CANVAS_INPUT_HANDLE = 'in'
 const CANVAS_OUTPUT_HANDLE = 'out'
 
 const handleConnect = (connection) => {
-  // 只读画布（他人公有流）不接受任何编辑动作，越权写由后端兜底拒绝
-  if (isPublicReadonly.value) {
-    ElMessage.warning('他人公开的工作流是只读画布，不能连线')
+  // 只读画布（他人公有流 / 内置模板）不接受任何编辑动作，越权写由后端兜底拒绝
+  if (isReadonly.value) {
+    ElMessage.warning('只读画布不能连线')
     return
   }
   const { source, target } = connection
@@ -184,7 +188,7 @@ const isEditingElement = (target) => {
 const handleDeleteKey = (event) => {
   if (!DELETE_KEYS.has(event.key)) return
   // 只读画布不允许删除；静默返回，不给每次按键都弹提示
-  if (isPublicReadonly.value) return
+  if (isReadonly.value) return
   // 抽屉与节点内的输入框（如人工确认）里按删除键属于文本编辑
   if (isEditingElement(event.target)) return
 
@@ -226,9 +230,9 @@ const activeNodeId = ref(null)
 
 
 function onNodeClick({ node }) {
-  // 只读画布不打开数据抽屉：抽屉的全部动作都是「编辑草稿」，对公有流没有意义
-  if (isPublicReadonly.value) {
-    ElMessage.warning('他人公开的工作流是只读画布，不能编辑节点配置')
+  // 只读画布不打开数据抽屉：抽屉的全部动作都是「编辑草稿」，对公有流 / 内置模板没有意义
+  if (isReadonly.value) {
+    ElMessage.warning('只读画布不能编辑节点配置')
     return
   }
   activeNodeId.value = node.id
@@ -282,9 +286,9 @@ const viewportCenterNodePosition = (type) => {
  *   缺省落在画布可视区域正中，量不出画布尺寸时回落工厂推算的默认落点
  */
 const addNodeAt = (type, position) => {
-  // 只读画布（他人公有流）不接受任何编辑动作；点击添加与拖拽落位都走这里，一处拦住两条路
-  if (isPublicReadonly.value) {
-    ElMessage.warning('他人公开的工作流是只读画布，不能添加节点')
+  // 只读画布（他人公有流 / 内置模板）不接受任何编辑动作；点击添加与拖拽落位都走这里，一处拦住两条路
+  if (isReadonly.value) {
+    ElMessage.warning('只读画布不能添加节点')
     return
   }
   if (!NODE_META[type]) {
@@ -698,9 +702,10 @@ const showRunValidationErrors = (errors) => {
  * utils/run-validation）：不通过就拦住本次运行并把原因全部列出，不进入执行。
  */
 const handleRun = async () => {
-  // 直跑闸（US21）：他人的公有流不可运行，唯一通道是先 fork 为自己的副本（008）
-  if (isPublicReadonly.value) {
-    ElMessage.warning('他人发布的工作流不能直接运行，请先 fork 为自己的副本')
+  // 直跑闸（US21）：他人的公有流不可运行，唯一通道是先 fork 为自己的副本（008）；
+  // builtin 是系统资产，豁免直跑闸（own OR builtin）
+  if (!canRunCurrent.value) {
+    ElMessage.warning('他人发布的工作流不能直接运行，请先添加为自己的副本')
     return
   }
   if (runState.value.streaming) {
@@ -785,10 +790,14 @@ function submitCard({ nodeId, values }) {
 // 挂在画布容器上会出现「选中节点后按删除键没反应」。输入框里的按键由 isEditingElement 过滤。
 onMounted(() => {
   window.addEventListener('keydown', handleDeleteKey)
-  // 带 workflow_id 进入时载入已保存的定义；无该参数则保留 default-flow 的默认画布
-  loadWorkflowFromRoute()
+  window.addEventListener('beforeunload', handleBeforeUnload)
 })
-onUnmounted(() => window.removeEventListener('keydown', handleDeleteKey))
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleDeleteKey)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  // 页面卸载后丢弃在途详情响应
+  routeLoadToken++
+})
 
 onUnmounted(abortRun)
 
@@ -840,13 +849,20 @@ const nodes = ref(defaultCanvas.nodes)
 // 否则 vue-flow 会按「候选列表第一个」兜底，把主链路连到内侧的「迭代开始 / 迭代结束」上
 const edges = ref(defaultCanvas.edges)
 
-/* ===== 工作流定义持久化：按 workflow_id 载入、保存回库 ===== */
+/* ===== 工作流定义持久化：按路由 id 载入、保存回库（ADR 0007） ===== */
 
 const route = useRoute()
 const router = useRouter()
 
-/** 当前正在编辑的工作流 id（空 = 尚未保存过，保存时走新建） */
-const currentWorkflowId = ref(String(route.query.workflow_id ?? '').trim())
+/** 当前正在编辑的工作流 id（空 = `/new` 或尚未保存，保存时走新建） */
+const currentWorkflowId = ref(normalizeWorkflowId(route.params.id) ?? '')
+/** 已载入详情的 id：保存后 replace 到同一个 id 时不重复请求 */
+let loadedWorkflowId = ''
+/** 路由载入令牌：快速切换 / 卸载时丢弃过期响应 */
+let routeLoadToken = 0
+/** 详情拉取中 / 暂时性失败（断网、5xx、画布定义损坏）；确定失败直接回列表 */
+const workflowLoading = ref(false)
+const loadError = ref('')
 
 /** 当前工作流的名称 / 说明：保存对话框回填与顶部标识共用 */
 const currentWorkflowName = ref('')
@@ -857,17 +873,27 @@ const currentWorkflowVisibility = ref(0)
 const currentWorkflowMine = ref(false)
 const currentWorkflowBuiltin = ref(false)
 
+/** 最近一次落库 / 载入的画布序列化结果：用于未保存修改判定 */
+let savedSchema = buildWorkflowSchema(nodes.value, edges.value)
+
 /**
- * 只读画布：他人公有流（非本人创建且非 builtin）。
- * 禁编辑 / 保存 / 运行；运行他人流的唯一通道是 fork（008 的「添加为自己的」）。
+ * 只读画布：有 id 且不是本人创建（他人公有流 + 内置模板）。
+ * 禁编辑 / 保存；builtin 仍可运行，他人公有流必须 fork 后才能运行。
  * 未保存的默认画布不算（`currentWorkflowId` 为空）——那是用户自己的草稿。
  */
-const isPublicReadonly = computed(() =>
-  Boolean(currentWorkflowId.value) && !currentWorkflowMine.value && !currentWorkflowBuiltin.value)
+const isReadonly = computed(() => Boolean(currentWorkflowId.value) && !currentWorkflowMine.value)
+
+/** 当前画布可否运行：本人、builtin、或尚未保存的新画布（运行前会提示先保存） */
+const canRunCurrent = computed(
+  () => !currentWorkflowId.value || currentWorkflowMine.value || currentWorkflowBuiltin.value)
+
+/** 当前画布是否可 fork：他人公有流；builtin 是系统资产，不可 fork */
+const canForkCurrent = computed(
+  () => Boolean(currentWorkflowId.value) && !currentWorkflowMine.value && !currentWorkflowBuiltin.value)
 
 /** 公有/私有切换入口：仅本人且非 builtin 可见（builtin 模板是种子数据，不可改） */
-const canToggleVisibility = computed(() =>
-  Boolean(currentWorkflowId.value) && currentWorkflowMine.value && !currentWorkflowBuiltin.value)
+const canToggleVisibility = computed(
+  () => Boolean(currentWorkflowId.value) && currentWorkflowMine.value && !currentWorkflowBuiltin.value)
 
 /** 保存对话框状态 */
 const saveDialogVisible = ref(false)
@@ -891,12 +917,13 @@ function parseSchemaJson(schemaJson) {
  * 用后端详情覆盖画布：`schemaJson` 解析出的定义经 `toCanvasFlow` 展开（迭代体还原成
  * 「容器 + 子块 + 内部边」），随后回填名称与说明。
  *
- * 解析失败或结构为空时**不改动画布**——宁可停在原画布，也不要清掉用户正在编辑的内容。
+ * 解析失败或结构为空时**不改动画布**，把原因交给 `loadError` 呈现——
+ * 绝不把默认画布冒充成该工作流，地址与画面必须一致。
  */
 function applyWorkflowDetail(detail) {
   const definition = parseSchemaJson(detail?.schemaJson)
   if (!definition?.nodes?.length) {
-    ElMessage.error('该工作流的画布定义无法解析，已保留当前画布')
+    loadError.value = '该工作流的画布定义无法解析或为空'
     return false
   }
   const canvas = toCanvasFlow(definition)
@@ -905,22 +932,101 @@ function applyWorkflowDetail(detail) {
   currentWorkflowId.value = String(detail.id ?? '')
   currentWorkflowName.value = detail.name ?? ''
   currentWorkflowDescription.value = detail.description ?? ''
-  // 归属与可见性以服务端为准：mine=false 且非 builtin 时画布进入只读形态
+  // 归属与可见性以服务端为准：mine=false 时画布进入只读形态；builtin 额外只读可运行
   currentWorkflowVisibility.value = detail.visibility ?? 0
   currentWorkflowMine.value = detail.mine === true
   currentWorkflowBuiltin.value = detail.builtin === true
   return true
 }
 
-/** 按路由 `workflow_id` 载入定义；没有该参数时保持默认画布 */
-async function loadWorkflowFromRoute() {
-  const workflowId = String(route.query.workflow_id ?? '').trim()
-  if (!workflowId) return
-  try {
-    applyWorkflowDetail(await getWorkflowDetail(workflowId))
-  } catch (error) {
-    ElMessage.error(error?.message || '工作流载入失败')
+/** 确定失败（不存在 / 无权 / 登录失效）：回列表，不在坏地址上停留 */
+function isDeterministicLoadError(error) {
+  const code = error?.code ?? error?.response?.status
+  return code === 400 || code === 401 || code === 403
+}
+
+/** 拉取详情并落状态；确定失败回列表，暂时性失败保留地址交给「重新载入」 */
+async function loadWorkflow(workflowId, token) {
+  // 地址先对齐：失败时顶部标识不能继续显示上一个工作流的名字
+  if (workflowId !== currentWorkflowId.value) {
+    currentWorkflowId.value = workflowId
+    currentWorkflowName.value = ''
+    currentWorkflowDescription.value = ''
+    currentWorkflowVisibility.value = 0
+    currentWorkflowMine.value = false
+    currentWorkflowBuiltin.value = false
   }
+  workflowLoading.value = true
+  loadError.value = ''
+  try {
+    const detail = await getWorkflowDetail(workflowId)
+    if (token !== routeLoadToken) return
+    if (!applyWorkflowDetail(detail)) return
+    loadedWorkflowId = String(detail.id ?? '')
+    savedSchema = buildWorkflowSchema(nodes.value, edges.value)
+  } catch (error) {
+    if (token !== routeLoadToken) return
+    if (isDeterministicLoadError(error)) {
+      ElMessage.error(error?.message || '工作流不存在或无权访问')
+      await router.replace(workflowListLocation())
+      return
+    }
+    loadError.value = error?.message || '工作流载入失败'
+  } finally {
+    if (token === routeLoadToken) workflowLoading.value = false
+  }
+}
+
+/** `/new`：回到默认链路，清空当前工作流身份与未保存基线 */
+function resetToNewCanvas() {
+  const canvas = toCanvasFlow(DEFAULT_FLOW_DEFINITION)
+  setNodes(canvas.nodes)
+  setEdges(canvas.edges)
+  currentWorkflowId.value = ''
+  currentWorkflowName.value = ''
+  currentWorkflowDescription.value = ''
+  currentWorkflowVisibility.value = 0
+  currentWorkflowMine.value = false
+  currentWorkflowBuiltin.value = false
+  loadedWorkflowId = ''
+  savedSchema = buildWorkflowSchema(canvas.nodes, canvas.edges)
+  loadError.value = ''
+  workflowLoading.value = false
+}
+
+/**
+ * 路由 → 画布：`/new` 重置默认链路；`/:id` 按 id 载入。
+ * 保存后 `replace` 到同一个 id 时状态已在内存里，不重复请求。
+ */
+async function syncFromRoute() {
+  const token = ++routeLoadToken
+  const rawId = route.params.id
+  if (rawId === undefined || rawId === null || rawId === '') {
+    resetToNewCanvas()
+    return
+  }
+  const workflowId = normalizeWorkflowId(rawId)
+  if (!workflowId) {
+    ElMessage.warning('工作流地址无效，已返回列表')
+    await router.replace(workflowListLocation())
+    return
+  }
+  if (workflowId === loadedWorkflowId) {
+    workflowLoading.value = false
+    return
+  }
+  await loadWorkflow(workflowId, token)
+}
+
+/** 暂时性失败后的「重新载入」：清掉已载入标记，强制重拉当前 id */
+function retryLoad() {
+  loadedWorkflowId = ''
+  syncFromRoute()
+}
+
+/** 返回工作流列表（未保存时由路由守卫先弹确认） */
+function backToList() {
+  router.push(workflowListLocation())
 }
 
 /**
@@ -928,9 +1034,11 @@ async function loadWorkflowFromRoute() {
  * 通过后打开对话框填写名称 / 说明；已有名称时回填，便于「打开后另存」。
  */
 function handleSave() {
-  // 只读画布不允许保存：保存会覆盖库里的定义，他人公有流绝不能走这条通道
-  if (isPublicReadonly.value) {
-    ElMessage.warning('他人公开的工作流是只读画布，不能保存')
+  // 只读画布不允许保存：保存会覆盖库里的定义，他人公有流 / 内置模板都不能走这条通道
+  if (isReadonly.value) {
+    ElMessage.warning(
+      currentWorkflowBuiltin.value ? '内置模板不可修改' : '他人公开的工作流是只读画布，不能保存',
+    )
     return
   }
   if (runState.value.streaming) {
@@ -975,6 +1083,7 @@ async function submitSave() {
     return
   }
   saving.value = true
+  const wasNew = !currentWorkflowId.value
   try {
     const id = await saveWorkflow({
       id: currentWorkflowId.value,
@@ -983,7 +1092,7 @@ async function submitSave() {
       schemaJson: buildWorkflowSchema(getNodes.value, getEdges.value),
     })
     // 新建通道（保存前没有 id）：画布从「未落库草稿」变成「我自己的私有工作流」
-    if (!currentWorkflowId.value) {
+    if (wasNew) {
       currentWorkflowVisibility.value = 0
       currentWorkflowMine.value = true
       currentWorkflowBuiltin.value = false
@@ -991,8 +1100,14 @@ async function submitSave() {
     currentWorkflowId.value = String(id ?? '')
     currentWorkflowName.value = name
     currentWorkflowDescription.value = description
+    // 落库即基线：随后的 replace 不会触发未保存确认
+    loadedWorkflowId = currentWorkflowId.value
+    savedSchema = buildWorkflowSchema(getNodes.value, getEdges.value)
     saveDialogVisible.value = false
-    router.replace({ query: { ...route.query, workflow_id: currentWorkflowId.value } })
+    if (wasNew) {
+      // `/new` → `/:id` 用 replace：后退不会回到「未保存的新画布」
+      router.replace(workflowCanvasLocation(currentWorkflowId.value))
+    }
     ElMessage.success('工作流已保存')
   } catch (error) {
     ElMessage.error(error?.message || '工作流保存失败')
@@ -1025,57 +1140,71 @@ const handleToggleVisibility = async () => {
   }
 }
 
-/* ===== 公有库浏览区：他人公开的工作流，只读画布的入口 ===== */
+/* ===== 只读画布内的 fork（公有库浏览已统一到列表页，ADR 0007） ===== */
 
-const publicDrawerVisible = ref(false)
-const publicWorkflows = ref([])
-const publicLoading = ref(false)
-
-/** 打开公有库抽屉并拉取列表；失败静默为空列表，不打断抽屉打开 */
-const openPublicDrawer = async () => {
-  publicDrawerVisible.value = true
-  publicLoading.value = true
-  try {
-    publicWorkflows.value = await getPublicWorkflows()
-  } catch {
-    publicWorkflows.value = []
-  } finally {
-    publicLoading.value = false
-  }
-}
-
-/** 打开一份他人公有工作流：载入详情（只读画布），地址栏同步 workflow_id 便于刷新复现 */
-const openPublicWorkflow = async (workflowId) => {
-  try {
-    // 定义解析失败时保留原画布，也不切地址栏
-    if (!applyWorkflowDetail(await getWorkflowDetail(workflowId))) return
-    router.replace({ query: { ...route.query, workflow_id: String(workflowId ?? '') } })
-    publicDrawerVisible.value = false
-  } catch (error) {
-    ElMessage.error(error?.message || '工作流载入失败')
-  }
-}
-
-/** fork 进行中：按来源工作流 id 记状态，防同一行重复提交 */
-const forkingId = ref(null)
+/** fork 进行中：防重复提交 */
+const forkBusy = ref(false)
 
 /**
- * 「添加为自己的」：fork 后**直接打开副本**——副本归属自己（mine=true），画布立即从
- * 只读形态切回可编辑 / 可运行，完整走通「他人公有流 → fork → 编辑运行」这条唯一通道。
+ * 「添加为自己的」：fork 后 `replace` 到副本画布——副本归属自己（mine=true），
+ * 画布立即从只读形态切回可编辑 / 可运行，完成「他人公有流 → fork → 编辑运行」闭环。
  */
-const handleForkWorkflow = async (item) => {
-  if (forkingId.value != null) return
-  forkingId.value = item.id
+async function handleForkCurrent() {
+  if (!canForkCurrent.value || forkBusy.value) return
+  forkBusy.value = true
   try {
-    const copyId = await forkWorkflow(item.id)
+    const copyId = await forkWorkflow(currentWorkflowId.value)
     ElMessage.success('已添加为自己的工作流，可以编辑和运行了')
-    await openPublicWorkflow(copyId)
+    await router.replace(workflowCanvasLocation(copyId))
   } catch (error) {
-    ElMessage.error(error?.message || 'fork 失败')
+    ElMessage.error(error?.message || '添加为自己的工作流失败')
   } finally {
-    forkingId.value = null
+    forkBusy.value = false
   }
 }
+
+/* ===== 未保存修改守卫（路由离开 + 关闭页签） ===== */
+
+/** 当前画布的规范序列化：与保存 / 运行共用同一份折叠口径 */
+function currentSchema() {
+  return buildWorkflowSchema(getNodes.value, getEdges.value)
+}
+
+/** 是否有未保存修改：只读画布永远不算（用户没有改动入口） */
+function hasUnsavedChanges() {
+  if (isReadonly.value) return false
+  return currentSchema() !== savedSchema
+}
+
+/** 关闭 / 刷新页签：交给浏览器原生确认 */
+function handleBeforeUnload(event) {
+  if (!hasUnsavedChanges()) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onBeforeRouteLeave(async () => {
+  if (!hasUnsavedChanges()) return true
+  try {
+    await ElMessageBox.confirm('当前画布有未保存的修改，离开后将丢失。', '放弃未保存的修改？', {
+      type: 'warning',
+      confirmButtonText: '离开',
+      cancelButtonText: '继续编辑',
+    })
+    return true
+  } catch {
+    return false
+  }
+})
+
+// 路由 → 画布：首次挂载、`/new` ↔ `/:id`、浏览器前进 / 后退都走这一条路径
+watch(
+  () => route.params.id ?? '',
+  () => {
+    syncFromRoute()
+  },
+  { immediate: true },
+)
 
 </script>
 
@@ -1099,6 +1228,8 @@ const handleForkWorkflow = async (item) => {
       :elevate-nodes-on-select="false"
       :delete-key-code="null"
       :multi-selection-key-code="['Alt']"
+      :nodes-draggable="!isReadonly"
+      :nodes-connectable="!isReadonly"
       fit-view-on-init
       @connect="handleConnect"
       @node-click="onNodeClick"
@@ -1120,19 +1251,28 @@ const handleForkWorkflow = async (item) => {
       <ToolsWrap
         :running="runState.streaming"
         :saving="saving"
-        :readonly="isPublicReadonly"
+        :readonly="isReadonly"
+        :run-disabled="!canRunCurrent"
         @run="handleRun"
         @save="handleSave"
       />
     </div>
 
+    <!-- 返回列表：右上角浮层，发现与 fork 已统一到列表页（ADR 0007） -->
+    <button class="wf-back-entry" type="button" @click="backToList">
+      <el-icon><ArrowLeft /></el-icon>
+      <span>返回列表</span>
+    </button>
+
     <!-- 当前工作流标识：已打开 / 已保存过才显示。只读画布带「只读」标签；
-         本人工作流（非 builtin）带公有/私有切换按钮（按钮自己 pointer-events: auto） -->
+         本人工作流（非 builtin）带公有/私有切换按钮；他人公有流带 fork 入口 -->
     <div v-if="currentWorkflowName" class="wf-workflow-badge">
       <span class="wf-workflow-badge__name" :title="currentWorkflowDescription || currentWorkflowName">
         {{ currentWorkflowName }}
       </span>
-      <span v-if="isPublicReadonly" class="wf-workflow-badge__tag">只读</span>
+      <span v-if="isReadonly" class="wf-workflow-badge__tag">
+        {{ currentWorkflowBuiltin ? '内置模板 · 只读' : '他人公开 · 只读' }}
+      </span>
       <button
         v-if="canToggleVisibility"
         class="wf-workflow-badge__toggle"
@@ -1144,46 +1284,32 @@ const handleForkWorkflow = async (item) => {
         <el-icon><View v-if="currentWorkflowVisibility === 1" /><Hide v-else /></el-icon>
         <span>{{ currentWorkflowVisibility === 1 ? '公有' : '私有' }}</span>
       </button>
+      <el-button
+        v-if="canForkCurrent"
+        class="wf-workflow-badge__fork"
+        size="small"
+        type="primary"
+        plain
+        :loading="forkBusy"
+        @click="handleForkCurrent"
+      >
+        添加为自己的
+      </el-button>
     </div>
 
-    <!-- 公有库入口：右上角浮层按钮，打开他人公有工作流的浏览抽屉 -->
-    <button class="wf-public-entry" type="button" @click="openPublicDrawer">
-      <el-icon><Share /></el-icon>
-      <span>公有库</span>
-    </button>
-
-    <!-- 公有库抽屉：他人公有工作流列表；「查看」打开只读画布，「添加为自己的」fork 成副本并直接进入编辑 -->
-    <el-drawer v-model="publicDrawerVisible" title="公有库" size="360px">
-      <div class="wf-public-list">
-        <p class="wf-public-list__hint">他人公开的工作流，打开后为只读画布</p>
-        <div v-loading="publicLoading" class="wf-public-list__body">
-          <div v-if="!publicLoading && !publicWorkflows.length" class="wf-public-list__empty">
-            暂无他人公开的工作流
-          </div>
-          <div v-for="item in publicWorkflows" :key="item.id" class="wf-public-item">
-            <div class="wf-public-item__main">
-              <span class="wf-public-item__name">{{ item.name }}</span>
-              <span class="wf-public-item__meta">
-                {{ item.creatorName || '未知用户' }} · {{ item.stepCount ?? 0 }} 个步骤
-              </span>
-            </div>
-            <div class="wf-public-item__actions">
-              <el-button size="small" @click="openPublicWorkflow(item.id)">查看</el-button>
-              <el-button
-                size="small"
-                type="primary"
-                plain
-                :loading="forkingId === item.id"
-                :disabled="forkingId != null && forkingId !== item.id"
-                @click="handleForkWorkflow(item)"
-              >
-                添加为自己的
-              </el-button>
-            </div>
-          </div>
-        </div>
+    <!-- 详情载入中 / 暂时性失败：不让默认画布冒充成地址里的工作流 -->
+    <div v-if="workflowLoading" class="wf-canvas-state" role="status">
+      <span class="wf-canvas-state__spinner" aria-hidden="true"></span>
+      <p class="wf-canvas-state__title">正在载入工作流…</p>
+    </div>
+    <div v-else-if="loadError" class="wf-canvas-state wf-canvas-state--error" role="alert">
+      <p class="wf-canvas-state__title">工作流载入失败</p>
+      <p class="wf-canvas-state__desc">{{ loadError }}</p>
+      <div class="wf-canvas-state__actions">
+        <el-button type="primary" @click="retryLoad">重新载入</el-button>
+        <el-button @click="backToList">返回列表</el-button>
       </div>
-    </el-drawer>
+    </div>
 
     <!-- 节点数据抽屉：编辑当前选中节点的变量与提示词 -->
     <NodeDataDrawer v-model:visible="drawerVisible" :node-id="activeNodeId" />
@@ -1312,12 +1438,13 @@ const handleForkWorkflow = async (item) => {
   opacity: 0.6;
 }
 
-/* 公有库入口：右上角浮层按钮，hover 只换底色与文字色 */
-.wf-public-entry {
+/* 返回列表：右上角浮层按钮，hover 只换底色与文字色 */
+.wf-back-entry {
   position: absolute;
   top: 16px;
   right: 16px;
-  z-index: 10;
+  /* 高于载入 / 失败遮罩：加载中也能返回列表 */
+  z-index: 30;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1334,76 +1461,73 @@ const handleForkWorkflow = async (item) => {
     color var(--tb-dur-2) var(--tb-ease-out);
 }
 
-.wf-public-entry:hover {
+.wf-back-entry:hover {
   background: var(--tb-bg-raised);
   color: var(--tb-text-primary);
 }
 
-/* 公有库抽屉内容：提示行 + 列表（列表体内部滚动） */
-.wf-public-list {
+/* 只读画布内的 fork：badge 容器 pointer-events: none，按钮自己声明 auto 才可点 */
+.wf-workflow-badge__fork {
+  flex-shrink: 0;
+  margin: 0;
+  pointer-events: auto;
+}
+
+/* 详情载入中 / 暂时性失败：盖住画布，避免默认画布冒充地址里的工作流 */
+.wf-canvas-state {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  height: 100%;
-}
-
-.wf-public-list__hint {
-  margin: 0;
-  font-size: var(--tb-text-sm);
-  color: var(--tb-text-secondary);
-}
-
-.wf-public-list__body {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.wf-public-list__empty {
-  padding: 24px 0;
-  text-align: center;
-  font-size: var(--tb-text-sm);
-  color: var(--tb-text-secondary);
-}
-
-.wf-public-item {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
-  padding: 10px 12px;
-  border: var(--tb-border-width) solid var(--tb-border);
-  border-radius: var(--tb-radius-md);
-  background: var(--tb-bg-surface);
+  padding: 2rem;
+  text-align: center;
+  background: color-mix(in oklab, var(--tb-bg-page) 88%, transparent);
+  backdrop-filter: blur(6px);
 }
 
-.wf-public-item + .wf-public-item {
+.wf-canvas-state__spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--tb-border);
+  border-top-color: var(--tb-primary);
+  border-radius: 50%;
+  animation: wf-state-spin 0.9s linear infinite;
+}
+
+@keyframes wf-state-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.wf-canvas-state__title {
+  margin: 0;
+  font-size: var(--tb-text-lg);
+  font-weight: 650;
+  color: var(--tb-text-primary);
+}
+
+.wf-canvas-state__desc {
+  margin: 0;
+  max-width: 36rem;
+  font-size: var(--tb-text-sm);
+  color: var(--tb-text-secondary);
+}
+
+.wf-canvas-state__actions {
+  display: flex;
+  gap: 8px;
   margin-top: 8px;
 }
 
-.wf-public-item__main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.wf-public-item__name {
-  font-size: var(--tb-text-sm);
-  color: var(--tb-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wf-public-item__meta {
-  font-size: var(--tb-text-xs, 12px);
-  color: var(--tb-text-secondary);
-}
-
-.wf-public-item__actions {
-  display: flex;
-  flex-shrink: 0;
-  gap: 6px;
+@media (prefers-reduced-motion: reduce) {
+  .wf-canvas-state__spinner {
+    animation: none;
+  }
 }
 
 /* 保存对话框表单：标签在上、控件在下 */

@@ -45,7 +45,7 @@ import StudioClock from './StudioClock.vue'
 
 const props = defineProps({
   /** 会议标题（未就绪时由调用方给兜底文案） */
-  title: { type: String, default: '模拟会议' },
+  title: { type: String, default: '会议' },
   /** 会议号 */
   meetingNo: { type: String, default: '' },
   /** 会议号后面的补充说明，如「老师控制台 / 学生会议室」 */

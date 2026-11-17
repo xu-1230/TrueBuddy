@@ -65,7 +65,7 @@
 | --- | --- |
 | 首次运行 / 换机 | **先准备 `backend/.env`**（对照根 `.env.example` 的变量名清单填真实值）；yml 大量占位符无默认值，缺键启动即失败 |
 | 教案生成 / 知识库 | `backend/.env` 中 `SPRING_AI_OPENAI_API_KEY`、`OPENAI_EMBEDDING_API_KEY`、DocMind AK/SK（缺则启动失败）；本机装有 `uv`（拉起 docx-mcp） |
-| 模拟会议 | 先启动自托管 LiveKit（§7）；`LIVEKIT_API_KEY/SECRET` 与其 `.env` 同值 |
+| 会议 | 先启动自托管 LiveKit（§7）；`LIVEKIT_API_KEY/SECRET` 与其 `.env` 同值 |
 | 讲稿播报 | `tb.lecture.digital-human.enabled=true` + `DASHSCOPE_API_KEY` 有值，**无需任何额外进程**；`GET /meeting/digital/status` 应回 `available: true` |
 
 ```bash

@@ -115,10 +115,12 @@
 | `/index/home` | `system-home` | `views/system/SystemHomeView.vue` | 系统首页（展示台 + 动态聚合 `utils/feed.js`） |
 | `/index/doc-template/:id?` | `doc-template` | `views/doctemplate/DocTemplateView.vue` | 文档模板生成；`:id` = 生成记录、`?file=<docId>` = 该次生成中的某份文档（URL 为页面状态唯一真相源，见 [specs/2026-11-16-模板生成页路由状态.md](./specs/2026-11-16-模板生成页路由状态.md)） |
 | `/index/homework-grading` | `homework-grading` | `views/homework/HomeworkGradingView.vue` | 作业批改 |
-| `/index/knowledge-base` | `knowledge-base` | `views/knowledgebase/KnowledgeBaseView.vue` | 知识库 |
+| `/index/knowledge-base` | `knowledge-base` | `views/knowledgebase/KnowledgeBaseView.vue` | 知识库；`?space=<spaceId>` = 当前打开的空间（无参数为空间列表，URL 为页面状态唯一真相源，见 [specs/2026-11-17-知识库空间路由状态.md](./specs/2026-11-17-知识库空间路由状态.md)） |
 | `/index/ppt` | `ppt` | `views/ppt/index.vue` | PPT 预览 / 放映 + 讲稿 AI 优化 + **创建会议入口**（`?screen=1` 直接进放映；`?meetid=` 时订阅音频驱动口型） |
 | `/index/meeting` | `meeting-console` | `views/meeting/MeetingConsoleView.vue` | 老师控制台（由 PPT 页建会后带 `?meetid=` 打开；本页不提供建会） |
-| `/index/workflow` | `workflow` | `views/workflow2/WorkflowView.vue` | 工作流编排（目录名 `workflow2`） |
+| `/index/workflow` | `workflow` | `views/workflow2/WorkflowListView.vue` | 工作流模块入口：我的工作流（内置模板单独置顶）+ 公有库；URL 为页面状态唯一真相源，见 [specs/2026-11-17-工作流入口列表与公有复刻.md](./specs/2026-11-17-工作流入口列表与公有复刻.md) 与 [adr/0007](./adr/0007-工作流入口收敛为登录态列表.md) |
+| `/index/workflow/new` | `workflow-new` | `views/workflow2/WorkflowView.vue` | 新画布（未落库）；显式保存后 `replace` 到 `/:id` |
+| `/index/workflow/:id` | `workflow-canvas` | `views/workflow2/WorkflowView.vue` | 某个工作流的画布：本人可编辑、builtin 只读可运行、他人公有只读可 fork；旧的 `?workflow_id=` 已废弃 |
 | `/meeting/:meetingNo` | `meeting-room` | `views/meeting/MeetingRoomView.vue` | 学生会议室：顶层路由、免登录 |
 | `/test` | `test` | `views/TestView.vue` | 连通性 / 身份测试页 |
 | `/403`、`/:pathMatch(.*)*` | `forbidden` / `not-found` | `views/error/*` | 非管理员跳转 / 兜底 404 |
@@ -129,8 +131,8 @@
 
 | 项 | 现状 | 规范要求 / 规划 |
 | --- | --- | --- |
-| 路由守卫 | 管理端已实现 `beforeEach`（Token + `requiresAdmin`）；用户端无校验 | 用户端补 `meta.requiresAuth`，未登录跳 `/login` |
-| 权限控制 | 管理端按 `meta.permission` + 服务端 `permissions` 过滤；用户端无身份控制 | 用户端按身份控制菜单与可达性 |
+| 路由守卫 | 管理端已实现 `beforeEach`（Token + `requiresAdmin`）；用户端 `/index` 自 2026-11-17 起在父路由声明 `meta.requiresAuth`，未登录跳 `/login?redirect=…`（ADR 0007） | 其余顶层用户页（`/guides`、`/docs`）维持公开 |
+| 权限控制 | 管理端按 `meta.permission` + 服务端 `permissions` 过滤；用户端 `/index` 只校验登录态，未按角色细分 | 用户端按身份控制菜单与可达性 |
 | 菜单来源 | 用户端在 `IndexView.vue` 内写死 `menuGroups`；管理端由路由 `meta` 生成 | 维持现状（管理端只改路由表一处） |
 
 ### 5.4 路由与安全的对应（需成对维护）
@@ -139,13 +141,15 @@
 | --- | --- |
 | `/system/auth/login`、`/system/auth/refresh` | `/login`、`/register`（refresh 由 401 拦截器自动调用，不跳路由） |
 | `/test2/read-pptx`、`/test2/file-text` | 仅测试 / 联调桩，无正式页面 |
-| `/homework/**` | `/index/homework-grading`（便于未登录态联调） |
-| `/workflow/**` | `/index/workflow` 定义类调用；**执行入口 `POST /chat` 不在白名单**（要求登录） |
-| `/meeting/**` | `/meeting/:meetingNo`（免登录入会）、`/index/meeting`（用 hostToken） |
-| `/ppt/**` | `/index/ppt`（讲稿生成与播报） |
+| `/homework/**` | `/index/homework-grading`（页面随 `/index` 要求登录；API 仍放行用于未登录态联调） |
+| ~~`/workflow/**`~~ | **2026-11-17 起移出白名单**（ADR 0007）：工作流列表 / 详情 / 可见性 / fork / 删除全部要求登录并按 `creator` 授权；执行入口 `POST /chat` 同样要求登录 |
+| `/meeting/**` | `/meeting/:meetingNo`（免登录入会）；`/index/meeting`（页面随 `/index` 要求登录，用 hostToken） |
+| `/ppt/**` | `/index/ppt`（页面随 `/index` 要求登录；讲稿生成与播报接口本身无状态放行） |
 | `/admin/**`（仅身份接口已实现） | `/admin/**` 页面；其余业务接口为前端 mock，安全边界在后端 |
 
 > `/doc-template/**` 自 2026-11-17 起**移出免登录白名单**：生成 / 历史 / 详情 / AI 编辑 / 撤回都要求登录并按 `creator` 隔离；`/index/doc-template/:id?` 页面未登录时不拉数据、显示登录提示。
+>
+> `/workflow/**` 同日移出白名单（ADR 0007）：`/index` 整个用户端后台要求登录，工作流定义类接口不再匿名可达；`/workflow/text` 联调接口随之要求登录。
 >
 > 新增免登录接口时，需同步 [doc-api.md](./doc-api.md) §2.4 与本文 §5.4。
 
@@ -239,8 +243,8 @@
 
 | 端 | 现状 | 框架 |
 | --- | --- | --- |
-| 后端 | 4 个模块 20 个 JUnit 测试类（knowledgebase 7 / lecture 7 / workflow 5 / homework 1），全部是单元测试，零 `@SpringBootTest` / MockMvc | JUnit 5 + `spring-boot-starter-test`（Mockito、AssertJ） |
-| 前端 | `frontend/tests/*.test.js` 34 个测试文件，`npm test` = `node --test`，零新增依赖 | Node 内置 `node:test` + `node:assert/strict` |
+| 后端 | 4 个模块 22 个 JUnit 测试类（knowledgebase 8 / lecture 7 / workflow 5 / homework 2），全部是单元测试，零 `@SpringBootTest` / MockMvc | JUnit 5 + `spring-boot-starter-test`（Mockito、AssertJ） |
+| 前端 | `frontend/tests/*.test.js` 38 个测试文件，`npm test` = `node --test`，零新增依赖 | Node 内置 `node:test` + `node:assert/strict` |
 | docx-mcp | **零测试**（有 `.pytest_cache` 但无 test 文件） | — |
 
 > 命名陷阱：`tb-module-test` / `tb-module-test2` 是业务验证模块，不进入 `./mvnw test` 测试集。组件渲染、`src/api/` 拦截器、端到端流程仍无覆盖。
@@ -315,9 +319,9 @@
 | 范围 | 命令 | 说明 |
 | --- | --- | --- |
 | 前端 lint | `npm run lint` | `oxlint . --fix` + `eslint . --fix --cache`（`.oxlintrc.json` correctness 为 error；ESLint flat config） |
-| 前端测试 | `npm test` | `node --test "tests/*.test.js"`（34 个文件） |
+| 前端测试 | `npm test` | `node --test "tests/*.test.js"`（38 个文件） |
 | 后端构建 | `./mvnw clean install` | 全模块构建，CI 缺位下的人工门禁 |
-| 后端测试 | `./mvnw test` | 11 个测试类（§10.1） |
+| 后端测试 | `./mvnw test` | 22 个测试类（§10.1） |
 
 - 提交前必须本地跑通上述命令，不得以「稍后修」为由提交带 lint 报错的代码。
 - **工具强制范围要如实看待**：`==` 禁止、组件名多单词、`@/` 别名统一**没有**被 ESLint 全量拦截，靠 review 与本文约束。

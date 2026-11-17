@@ -20,6 +20,9 @@ public class WorkflowVO {
     /** 状态：0=草稿，1=已发布 */
     private Integer status;
 
+    /** 可见性：0=私有，1=公有（列表卡片据此渲染与切换） */
+    private Integer visibility;
+
     /** 是否为内置模板（前端据此分组「批改工作流 / 用户自定义工作流」） */
     private Boolean builtin;
 

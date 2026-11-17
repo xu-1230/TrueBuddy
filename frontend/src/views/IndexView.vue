@@ -230,7 +230,7 @@ import {
 import AdminIcon from '@/views/admin/components/AdminIcon.vue'
 import { useAppearance } from '@/composables/useAppearance'
 import { removeToken } from '@/utils/auth'
-import { isPathActive } from '@/utils/route'
+import { isChildPath, isPathActive } from '@/utils/route'
 
 const route = useRoute()
 const router = useRouter()
@@ -248,9 +248,13 @@ const isDarkMode = computed({
   set: (value) => setMode(value ? 'dark' : 'light'),
 })
 
-/** 全幅页面：工作流画布与模拟会议控制台都自己管理内边距/滚动 */
-const FULL_BLEED_PATHS = new Set(['/index/workflow', '/index/meeting'])
-const isFullBleed = computed(() => FULL_BLEED_PATHS.has(route.path))
+/**
+ * 全幅页面：会议控制台与工作流画布 / 新建页。
+ * 工作流列表（/index/workflow）走正常带内边距布局，只有它的子路径（画布 / new）全幅。
+ */
+const isFullBleed = computed(
+  () => route.path === '/index/meeting' || isChildPath(route.path, '/index/workflow'),
+)
 
 const user = reactive({
   name: '张三',
@@ -273,7 +277,7 @@ const menuGroups = [
       { path: '/index/doc-template', label: '文档模板生成', icon: 'doc' },
       { path: '/index/homework-grading', label: '作业批改', icon: 'grading' },
       { path: '/index/ppt', label: 'PPT 演示', icon: 'slide' },
-      { path: '/index/meeting', label: '模拟会议', icon: 'meeting' },
+      { path: '/index/meeting', label: '会议列表', icon: 'meeting' },
     ],
   },
   {

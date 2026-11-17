@@ -8,13 +8,13 @@
 
 ## 1. 模块定位
 
-上传一份 `.docx` 模板 + 一段 AI 描述（可选知识库空间），产出与模板**同版式**的教案文档 1~N 份（复刻 / 优化 / 精简等份数定位由 LLM 规划）。核心原则：**AI 只产出改写规则；结构、版式与校验由确定性工具保证**——`docx_replace` 只改 `w:t` 文本、版式零变化，可用 `docx_diff` 证明。
+上传一份 `.docx` 模板 + 一段 AI 描述（可选多个知识库空间），产出与模板**同版式**的教案文档 1~N 份（复刻 / 优化 / 精简等份数定位由 LLM 规划）。核心原则：**AI 只产出改写规则；结构、版式与校验由确定性工具保证**——`docx_replace` 只改 `w:t` 文本、版式零变化，可用 `docx_diff` 证明。
 
 ## 2. 接口清单（`DocTemplateController` / `DocChatController`，前缀 `/doc-template`）
 
 | 方法 | 路径 | 说明 | 返回 |
 | --- | --- | --- | --- |
-| POST | `/doc-template/generate` | 生成文档：`templateFileId` + `spaceId`（空 / `"default"` = 不启用检索）+ `description`（≤500 字）+ `quality`（480p/720p/1080p） | **同步阻塞**返回生成文件列表（无轮询、无 SSE） |
+| POST | `/doc-template/generate` | 生成文档：`templateFileId` + `spaceIds`（字符串数组，可多选；空 / 只含 `"default"` = 不启用检索；单值 `spaceId` 已移除，见 [ADR 0008](./adr/0008-文档模板知识库仅保留多值-spaceIds.md)）+ `description`（≤500 字）+ `quality`（480p/720p/1080p） | **同步阻塞**返回生成文件列表（无轮询、无 SSE） |
 | GET | `/doc-template/history?limit=` | 生成历史（默认 20 条，上限 100，按**任务**计数；只返回当前登录用户 creator 的记录）；每条内联 `docs` 文件摘要（`DocFileRespVO`，`src` 为空、不签发 URL），首页「文档」tab 据此展开文件卡 | `CommonResult<List<GenerationHistoryRespVO>>` |
 | GET | `/doc-template/detail?id=` | 生成详情（任务 + 文件列表，重新签发 MinIO 预签名 URL）；非本人记录按不存在处理；`docs[].src` 指向 `current_version_id` 对应文件 | `CommonResult<GenerationRespVO>` |
 | POST | `/doc-template/chat` | AI 文档编辑 SSE（见 §7）；要求登录且为根文件 creator | `SseEmitter`：`status` / `assistant` / `version` / `error` / `done` |
@@ -28,7 +28,7 @@
 1. **参数校验**：templateFileId 必填、description 非空 ≤500 字；模板查 `infra_file` 且必须 `.docx`；落 `doc_template_generation`（status=0 生成中）。
 2. **环境准备**：临时目录 `{tempDir}/{generationId}`；取模板的 MinIO 预签名 URL。
 3. **解析模板**（docx-mcp 第 1 次介入）：`docx_open` 取骨架 → `docx_get_tables` 取表格清单 → `docx_get_text` 翻页取全文（每页 200 块、最多 30 页）→ `docx_validate` 生成「体检基线」。
-4. **知识库检索增强**（第 2 次介入）：`kbDocumentService.searchBySpace(spaceId, description, topK=5)`。
+4. **知识库检索增强**（第 2 次介入）：`kbDocumentService.searchBySpaces(spaceIds, description, topK=5)`——多选空间用一条 `spaceId in [...]` 查询取总 topK；选择前先过滤为当前用户自己的空间。
 5. **LLM 规划**（第 3 次介入）：`aiContentService.plan()` 产出份数 + 每份主题定位 + 自检关键词（必备 / 禁检）。
 6. **逐份生成** `generateOne`（单份失败不影响其余）：
    - LLM `buildReplacements` 产出 old→new 改写规则（重复文本带 scope 按位置区分）；
@@ -63,7 +63,7 @@
 ## 5. 前端流程（`views/doctemplate/DocTemplateView.vue`）
 
 1. 选模板文件 → `POST /infra/file/upload` 拿 templateFileId。
-2. 选知识库（内置「默认知识库」传 `"default"` = 不启用检索）、填 AI 描述、清晰度。
+2. 选知识库（多选，与作业批改同形；内置「默认知识库」是哨兵，提交时过滤）、填 AI 描述、清晰度。
 3. 点生成 → `POST /doc-template/generate` **同步等待** → 有文档则 `replace` 到 `/index/doc-template/:generationId`，渲染结果卡片（tag / summary / MinIO URL）；失败 / 0 份只提示错误，不改 URL 与当前结果。
 4. **URL 是页面状态的唯一真相源**：`watch([:id, ?file], immediate)` 驱动载入。点历史条目 → `push` 到 `/:generationId`（0 份 / 失败记录同样进入），抽屉立即关闭，由结果区显示「正在载入生成记录…」；详情拉取后回填预览 URL。
 5. `?file=<DocFileVO.id>`（`doc_template_file` 主键，不是 `infra_file.id`）打开查看模式；刷新 / 前进 / 后退均可重放。文件不存在或不属于该次生成 → `replace` 剔除 query 回结果列表。
@@ -116,6 +116,7 @@
 - `/doc-template/**` 已移出免登录白名单；生成 / 历史 / 详情 / 编辑 / 撤回都要求登录。
 - 历史 / 详情按 `doc_template_generation.creator` 过滤；聊天 / 撤回校验根文件 creator，非本人按「文档不存在或无权访问」处理。
 - 生成时写入当前用户到 `doc_template_generation` / `doc_template_file`（及后续版本的 `creator`）。
+- 知识库选择按「当前用户自己的空间」收口：`resolveSpaceIds` 用 `getSpaceList`（只列本人空间）过滤请求里的 id，非本人 / 已删除空间丢弃并记 WARN，避免凭 id 检索他人私有知识库。
 
 ### 7.5 单元格定位说明
 

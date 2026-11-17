@@ -38,7 +38,7 @@
 
 ## 4. doctemplate 模块
 
-**doc_template_generation** — 生成任务表：`template_file_id` → infra_file；`space_id` → kb_space（空=不启用检索）；`description VARCHAR(500)`；`quality` 480p/720p/1080p；`doc_count`；**`status SMALLINT` 0=生成中/1=成功/2=部分成功/3=失败**；`error_msg`；`duration_ms`。idx(template_file_id)、idx(space_id)。
+**doc_template_generation** — 生成任务表：`template_file_id` → infra_file；**`space_ids TEXT`**（逗号分隔的知识库选择；为空=不启用检索）；`description VARCHAR(500)`；`quality` 480p/720p/1080p；`doc_count`；**`status SMALLINT` 0=生成中/1=成功/2=部分成功/3=失败**；`error_msg`；`duration_ms`。idx(template_file_id)。**2026-11-18 已直接在 PostgreSQL 完成迁移**（补 `space_ids`、回填存量、删旧列与索引）；仓库不再保留旧单值设计。
 
 **doc_template_file** — 生成结果文件表（根行同时是「文档工作区」）：`generation_id` → doc_template_generation；`file_id` → infra_file（v1 文件）；`name`；`type` WORD/PDF/MARKDOWN；`size`；`tag` 份数定位标签；`summary`；`sort`；`current_version_id` → doc_template_version（`NULL` = 当前就是根文件 v1）；`creator` 为文档所有者（生成 / 历史 / 详情 / 编辑均按它隔离）。idx(generation_id)、idx(file_id)。
 
@@ -73,7 +73,7 @@
 
 **vector_store** — pgvector 向量存储（Spring AI PgVectorStore 结构，建表语句在 `vector_store.sql`）：`id UUID` 默认 `uuid_generate_v4()`；`content TEXT`；`metadata JSONB`（含 spaceId/documentId/chunkId/title，JSON 内逻辑关联）；**`embedding vector(1024)`**。索引：**`spring_ai_vector_index` HNSW（`vector_cosine_ops` 余弦距离）** + GIN(metadata jsonb_path_ops)。配置约定：dimensions=1024、hnsw、cosine_distance；`initialize-schema=true` 时 Spring AI 也会自动建表，脚本预建可保证 `metadata` 直接为 `jsonb`，旧库由 `index_and_column_fixes_20261023.sql` 收敛。
 
-## 7. lecture 模块（模拟会议）
+## 7. lecture 模块（会议）
 
 **lecture_meeting** — 会议表（一次开启 = 一行）：`meeting_no VARCHAR(6)`（UNIQUE WHERE deleted=FALSE）；`title`；`host_token` 主持人凭据；**`status SMALLINT` 1=进行中/2=已结束**；`start_time`；`end_time`。结束会议时后端同步删除 LiveKit 房间。
 
@@ -83,7 +83,7 @@
 
 ## 8. workflow 模块（三表主键均为应用生成雪花 ID，非自增）
 
-**workflow** — 定义表（`{nodes,edges}` 整体存 JSON，**不做版本管理**）：`name`（非纯数字 workflowId 时按此匹配）；`description`；`schema_json TEXT`；`status` 0=草稿/1=已发布；**`visibility SMALLINT` 0=私有/1=公有（默认私有，ADR 0006 归属模型）**。idx(name) WHERE deleted=FALSE。内置模板「标准批改作业」由启动初始化器在表为空时写入（固定 id，幂等；`visibility=1` 且 creator 豁免——builtin 全员可见可运行）。
+**workflow** — 定义表（`{nodes,edges}` 整体存 JSON，**不做版本管理**）：`name`（非纯数字 workflowId 时按此匹配）；`description`；`schema_json TEXT`；`status` 0=草稿/1=已发布；**`visibility SMALLINT` 0=私有/1=公有（默认私有，ADR 0006 归属模型）**。idx(name) WHERE deleted=FALSE。内置模板「标准批改作业」由启动初始化器按固定 id 幂等写入（`UPSERT_BUILTIN` 实际写 `visibility=0`；builtin 的可见性来自列表 / 详情按固定 id 豁免，**不依赖 visibility=1**——builtin 全员可见可运行、只读不可改）。
 
 **workflow_conversation** — 会话表（前端一个聊天窗口 = 一行）：`conversation_id VARCHAR(36)` UUID（UNIQUE，/chat 续跑定位）；`workflow_id`；`workflow_name`（冗余）；`title`。idx(update_time DESC)（最近活跃排序）。
 

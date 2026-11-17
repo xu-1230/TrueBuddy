@@ -60,9 +60,9 @@ export const CAROUSEL_SLIDES = [
   {
     id: 'meeting',
     eyebrow: '创作工具',
-    title: '模拟会议',
+    title: '会议列表',
     description: '实时音视频 + 屏幕共享 + 会议内问答',
-    cta: '进入控制台',
+    cta: '查看会议',
     to: '/index/meeting',
     image: '/hero/hero-meeting.webp',
   },

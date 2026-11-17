@@ -125,9 +125,6 @@ tb:
       - /test2/read-pptx
       # 作业文件文本读取（测试接口，免登录便于联调）
       - /test2/file-text
-      # 文档模板：生成 / 历史 / 详情 / AI 编辑 / 撤回按 creator 隔离，必须登录
-      # 自定义工作流：/run、/resume 为 SSE 流，需免登录（画布定义经请求体提交）
-      - /workflow/**
       # 作业批改：文件夹批量上传，便于未登录态联调
       - /homework/**
       # 模拟会议：学生点入会链接免登录参会（会议内身份用 hostToken / attendeeToken；

@@ -52,7 +52,7 @@ const PREIEWS = [
     claim: 'AI 讲稿与数字人会议室，把课讲完也讲透',
     file: '期中家长会 · 演讲稿.pptx',
     kind: 'deck',
-    chips: ['讲稿生成', '提词放映', '模拟会议'],
+    chips: ['讲稿生成', '提词放映', '会议列表'],
   },
 ]
 
@@ -159,7 +159,7 @@ onBeforeUnmount(() => {
       <p class="showcase__eyebrow">TrueBuddy Workbench</p>
       <h2 class="showcase__claim">把一学期的备课、批改与演讲，收进同一张工作台</h2>
       <p class="showcase__lede">
-        登录后直接进入文档模板、作业批改、课程知识库、PPT 演讲与模拟会议。
+        登录后直接进入文档模板、作业批改、课程知识库、PPT 演讲与会议。
       </p>
     </header>
 
