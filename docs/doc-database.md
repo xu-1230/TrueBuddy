@@ -1,6 +1,6 @@
 # doc-database · 数据库设计
 
-> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-17
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-18
 > 事实源：`backend/sql/`（每表一个建表文件 + 日期命名的增量补丁）；本文与 SQL 文件冲突时以 SQL 为准并同步本文。
 
 ---
@@ -73,13 +73,19 @@
 
 **vector_store** — pgvector 向量存储（Spring AI PgVectorStore 结构，建表语句在 `vector_store.sql`）：`id UUID` 默认 `uuid_generate_v4()`；`content TEXT`；`metadata JSONB`（含 spaceId/documentId/chunkId/title，JSON 内逻辑关联）；**`embedding vector(1024)`**。索引：**`spring_ai_vector_index` HNSW（`vector_cosine_ops` 余弦距离）** + GIN(metadata jsonb_path_ops)。配置约定：dimensions=1024、hnsw、cosine_distance；`initialize-schema=true` 时 Spring AI 也会自动建表，脚本预建可保证 `metadata` 直接为 `jsonb`，旧库由 `index_and_column_fixes_20261023.sql` 收敛。
 
-## 7. lecture 模块（会议）
+## 7. lecture 模块（会议 + PPT 数字人设置）
 
 **lecture_meeting** — 会议表（一次开启 = 一行）：`meeting_no VARCHAR(6)`（UNIQUE WHERE deleted=FALSE）；`title`；`host_token` 主持人凭据；**`status SMALLINT` 1=进行中/2=已结束**；`start_time`；`end_time`。结束会议时后端同步删除 LiveKit 房间。
 
 **lecture_meeting_attendee** — 参会人表（**累计入会台账，不是在线名单**；在线真相源为 LiveKit 房间事件，adr/0002；原 `online` 列已删）：`meeting_id`；`nickname`（会议内自动去重）；`attendee_token`（UNIQUE WHERE deleted=FALSE）；`role SMALLINT` 1=老师/2=学生；`join_time`；`leave_time`（NULL=未显式离开；刷新页面不补写）。idx(meeting_id, nickname) WHERE deleted=FALSE。
 
 **lecture_meeting_message** — 会议消息表：`meeting_id`；`attendee_id`（可空）；`nickname`（冗余）；`role`；`content TEXT`；**`kind SMALLINT` 1=文字（2/3 预留语音转写 / 数字人）**。idx(meeting_id, id) WHERE deleted=FALSE。
+
+**avatar_model** — 数字人形象目录表（2026-11-18 新增，`avatar_model.sql`）：`model_code VARCHAR(50)`（UNIQUE，与前端 `views/ppt/configs/avatar.js` 的键一致）；`name`；`kind`（deepseek=社区二创 / sample=官方示例）；`preview_image`（静态缩略图路径）；`sort`；`enabled`。**只做目录**：模型地址、取景参数仍由前端配置维护。种子 9 条；**Wanko（示例）为默认形象**（`sort=5`，排在最前），前端 `DEFAULT_AVATAR_MODEL` 同值。
+
+**avatar_voice** — 音色库表（2026-11-18 新增，`avatar_voice.sql`）：`voice_code VARCHAR(128)`（UNIQUE，内置如 `longxiaochun_v3`，复刻为 DashScope 返回的 voice_id）；`name`；`trait`；`age`；`language`；`category`；`gender`；**`source SMALLINT` 1=内置 / 2=复刻**；`tts_model`（复刻音色绑定的模型）；`audio_preview_url`（内置官方试听地址）；`sample_file_id`（→ `infra_file.id`）；`sample_audio_url`（复刻样本公网地址）。内置音色 `creator` 为空、全员可见；复刻音色仅创建者可见。种子 37 条内置音色（试听地址取自阿里云 cosyvoice-v3-flash 官方音色表）。
+
+**lecture_avatar_preference** — 教师数字人与音色偏好表（2026-11-18 新增，`lecture_avatar_preference.sql`）：`creator`（UNIQUE WHERE deleted=FALSE）；`avatar_model_code`；`voice_code`；两个编码为空都表示使用默认。PPT 页挂载时先读它再初始化 Live2D；打开设置弹窗时读取/保存。
 
 ## 8. workflow 模块（三表主键均为应用生成雪花 ID，非自增）
 

@@ -1,6 +1,6 @@
 # doc-ui · 样式设计
 
-> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-17（主题 Ink，2026-10-25 由 Harbor 换入）
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-18（主题 Ink，2026-10-25 由 Harbor 换入）
 > 适用范围：前端全部样式与主题、动效实现，以及展示页模块（`/guides`、`/docs`）全流程（§8）与系统首页 Zone C 的 tab 双行为模型（§9）
 > 相关：[doc-conventions.md](./doc-conventions.md)（编码与组件规范）、[ui.html](./ui.html)（视觉样张）
 
@@ -256,7 +256,7 @@ scrollTo(document.getElementById("hero"), { duration: 1.4 });
 2. `<LoginForm />` 未监听 `login-success`，`/docs` 账号登录成功后不跳转。
 3. `LoginView.vue` 登录成功 `router.push('/')`，路由表无 `/` 路由，会落空视图（应改 `/index/home` 或补 `/` 重定向）。
 4. 本页与 `views/LoginView.vue` 的登录能力重复：改登录逻辑应优先改 `components/LoginForm.vue`，两页同时生效。
-5. 规划：用户端路由守卫（`meta.requiresAuth`，见 doc-conventions.md §5.3）；Live2D 数字人独立组件（`public/live2d/` 资源已就位、未接入）。
+5. 已落地（2026-11-18）：用户端路由守卫（`meta.requiresAuth`，见 doc-conventions.md §5.3）；Live2D 数字人已接入 `/index/ppt`，设置入口为顶栏最右侧齿轮（「数字人与声音设置」弹窗：形象图片卡片 + 音色列表 + 复刻，见 doc-lecture.md §5.7）。
 
 ---
 
