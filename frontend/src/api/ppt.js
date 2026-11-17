@@ -14,6 +14,45 @@ export const PPT_REST_API = {
   /** 讲稿生成：{ targetSeconds, pages: [{ index, title, text, remark }] } */
   optimizeSpeech: '/ppt/speech/optimize',
   narrateSpeech: '/ppt/speech/narrate',
+  /** 数字人形象目录（启用中的形象） */
+  avatarList: '/ppt/avatar/list',
+  /** 音色库（内置 + 我的复刻） */
+  voiceBase: '/ppt/voice',
+  voiceList: '/ppt/voice/list',
+  /** 当前用户的数字人与音色偏好 */
+  preference: '/ppt/preference',
+  /** 声音复刻（multipart） */
+  voiceClone: '/ppt/voice/clone',
+}
+
+/** 启用中的数字人形象目录 */
+export function getAvatarList() {
+  return service.get(PPT_REST_API.avatarList)
+}
+
+/** 当前用户可见的音色（内置 + 自己复刻）与能力开关 */
+export function getVoiceList() {
+  return service.get(PPT_REST_API.voiceList)
+}
+
+/** 读取当前用户的数字人与音色偏好；没有记录时两个字段为空 */
+export function getAvatarPreference() {
+  return service.get(PPT_REST_API.preference)
+}
+
+/** 保存当前用户的数字人与音色偏好 */
+export function saveAvatarPreference(payload) {
+  return service.put(PPT_REST_API.preference, payload)
+}
+
+/** 复刻音色：FormData 字段 name/gender/trait/language/sourceType/url/file */
+export function cloneVoice(formData) {
+  return service.post(PPT_REST_API.voiceClone, formData)
+}
+
+/** 删除自己的复刻音色 */
+export function deleteVoice(id) {
+  return service.delete(`${PPT_REST_API.voiceBase}/${id}`)
 }
 
 /**

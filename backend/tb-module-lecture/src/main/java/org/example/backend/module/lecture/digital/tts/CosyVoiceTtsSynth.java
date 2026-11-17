@@ -37,11 +37,13 @@ public class CosyVoiceTtsSynth implements TtsSynthPort {
     }
 
     @Override
-    public TtsStats synthesize(String text, OutputStream pcm) {
+    public TtsStats synthesize(String text, String voice, String model, OutputStream pcm) {
         String apiKey = properties.getDashscopeApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("数字人语音未配置 DashScope API Key");
         }
+        String actualVoice = voice == null || voice.isBlank() ? properties.getTtsVoice() : voice;
+        String actualModel = model == null || model.isBlank() ? properties.getTtsModel() : model;
 
         var firstChunkMs = new AtomicLong(-1);
         var bytes = new AtomicLong();
@@ -50,8 +52,8 @@ public class CosyVoiceTtsSynth implements TtsSynthPort {
         long began = System.nanoTime();
 
         var param = SpeechSynthesisParam.builder()
-                .model(properties.getTtsModel())
-                .voice(properties.getTtsVoice())
+                .model(actualModel)
+                .voice(actualVoice)
                 .format(SpeechSynthesisAudioFormat.PCM_48000HZ_MONO_16BIT)
                 .apiKey(apiKey)
                 .build();
@@ -114,7 +116,7 @@ public class CosyVoiceTtsSynth implements TtsSynthPort {
             throw new IllegalStateException("语音合成没有产出任何音频");
         }
         log.info("[synthesize][合成完成 model={}, voice={}, firstChunkMs={}, bytes={}]",
-                properties.getTtsModel(), properties.getTtsVoice(), firstChunkMs.get(), total);
+                actualModel, actualVoice, firstChunkMs.get(), total);
         return new TtsStats(firstChunkMs.get(), total);
     }
 

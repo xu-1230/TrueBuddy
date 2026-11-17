@@ -39,7 +39,7 @@
 > 以下为**规划 / 已引入未使用**：
 > - 实时通信 `SSE (EventSource)`：规划中，暂未引入。
 > - `pptxtojson` `^2.0.6`：依赖已声明，源码尚未引用。
-> - `pixi.js` / `pixi-live2d-display`：依赖已声明、`public/live2d/` 模型资源已就位，源码尚未接入，数字人展示目前为占位（详见第 12 章）。
+> - `pixi.js` / `pixi-live2d-display`：**已接入** `/index/ppt` 右侧数字人面板（见第 12 章）。
 
 ---
 
@@ -50,7 +50,7 @@
 ```
 frontend/
 ├── public/
-│   ├── live2d/                     # Live2D 模型资源（Haru/Hiyori/Mao/Mark/Natori/Rice/Wanko + cubism core，规划中）
+│   ├── live2d/                     # Live2D 模型资源（DeepSeek 鲸鱼娘/大肥鱼 + Haru/Hiyori/Mao/Mark/Natori/Rice/Wanko + cubism core + previews/ 静态缩略图）
 │   ├── favicon.ico
 │   └── logo-exploration.html
 ├── vite.config.js                  # 别名 @ → ./src；/api 代理到 http://localhost:8086
@@ -365,7 +365,7 @@ scrollTo(document.getElementById('hero'), { duration: 1.4 })
 
 | 目录/文件                | 职责                                                                 |
 | ------------------------ | -------------------------------------------------------------------- |
-| `index.vue`              | 主页：导入数据、左侧缩略图、中部画布（缩放/翻页）、备注区、右侧数字人占位 |
+| `index.vue`              | 主页：导入数据、左侧缩略图、中部画布（缩放/翻页）、备注区、右侧 Live2D 数字人面板；顶栏齿轮打开「数字人与声音设置」弹窗 |
 | `components/element/`    | 元素渲染组件（见 10.3），含 `ElementOutline` 与元素级 hooks           |
 | `components/screen/`     | 放映渲染：`ScreenSlideList`（翻页过渡）/ `ScreenSlide` / `ScreenElement` |
 | `components/thumbnail/`  | 缩略图渲染：`ThumbnailSlide` / `ThumbnailElement`（不播放动画）       |
@@ -415,7 +415,7 @@ scrollTo(document.getElementById('hero'), { duration: 1.4 })
 - 放映行为：`useExecPlay` 负责元素动画执行、翻页（键盘 / 滚轮 / 触摸）、自动播放（间隔 2500ms）、按 `turningMode`（`no` / `fade` / `slideX` / `slideY`）做过渡。
 - 尺寸与全屏：`useSlideSize` 按视口比例自适应，`useFullscreen` 处理全屏切换与 ESC 退出。
 
-> **待开发**：`index.vue` 右侧「数字人展示页面（待开发）」占位；`vendor/` 目录为空；编辑态工具栏未实现。
+> **待开发**：`vendor/` 目录为空；编辑态工具栏未实现。右侧数字人已接入 Live2D（见第 12 章），设置弹窗的开头/保存流程见 `components/settings/AvatarVoiceSettingsDialog.vue`。
 
 ---
 
@@ -481,13 +481,16 @@ scrollTo(document.getElementById('hero'), { duration: 1.4 })
 
 ---
 
-## 12. 数字人（Live2D，规划）
+## 12. 数字人（Live2D，已接入）
 
 - 依赖：`pixi.js` `^6.5.10` + `pixi-live2d-display` `^0.4.0`（已在 `package.json` 声明）。
-- 资源：`public/live2d/` 已放置 7 个模型（Haru / Hiyori / Mao / Mark / Natori / Rice / Wanko）及 `live2dcubismcore.min.js`。
-- 现状：源码尚未接入（全量检索 `pixi` / `live2d` 无引用）；`views/ppt/index.vue` 右侧保留了「数字人展示页面」占位区。
-
-> 该能力整体标注为**规划 / 待开发**，接入时建议以独立组件 + `composables` 封装 Pixi 生命周期。
+- 资源：`public/live2d/` 已放置 9 个模型（DeepSeek 鲸鱼娘 / DeepSeek 大肥鱼 + Haru / Hiyori / Mao / Mark / Natori / Rice / Wanko）及 `live2dcubismcore.min.js`；`public/live2d/previews/` 是设置弹窗用的 960×1200 静态缩略图。
+- 现状：
+  - 默认形象为 **Wanko（示例）**（`DEFAULT_AVATAR_MODEL = 'Wanko'`；`avatar_model.sort=5` 排在最前），加载失败时兜底 Haru。
+  - `configs/avatar.js` 维护形象登记表（模型地址、兜底顺序、取景参数、嘴部参数探测）；`index.vue` 初始化 PIXI + Live2DModel，放映态驱动口型（`mouthLevel` → `writeMouthOpen`），并处理拖拽与舞台缩放。
+  - 设置入口在页面顶栏最右侧（齿轮）；`components/settings/AvatarVoiceSettingsDialog.vue` 两个 Tab：数字人用静态图片卡片（不加载 Live2D），声音用搜索/筛选列表 + 复刻二级弹窗。选择先存草稿，保存时先加载形象、成功后才 `PUT /ppt/preference`（全有或全无）。
+  - 缩略图由 `scripts/generate-avatar-previews.mjs` 用 Vite + Chrome headless 生成，只在开发时运行，不参与构建。
+- 规划：管理端 `views/admin/ppt/AvatarConfigView.vue` 仍是演示 mock；卡片内嵌实时 Live2D 预览暂不做。
 
 ---
 

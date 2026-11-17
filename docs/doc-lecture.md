@@ -1,7 +1,7 @@
 # doc-lecture · 智能课堂业务逻辑
 
-> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-13
-> 适用范围：**会议（§3–§11，已落地）+ PPT 讲稿优化（§12，已落地）+ 数字人语音播报（§5.7，已落地：放映页本页播放并驱动口型）**；放映/会议 × 照读/AI 现场讲词的演讲体系为**规划**（§13，未落地）
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-18
+> 适用范围：**会议（§3–§11，已落地）+ PPT 讲稿优化（§12，已落地）+ 数字人语音播报与形象/音色设置（§5.7，已落地：放映页本页播放并驱动口型）**；放映/会议 × 照读/AI 现场讲词的演讲体系为**规划**（§13，未落地）
 > 实时通道实现：**自托管 LiveKit**（部署在仓库外的 `D:\ctf\livekit`），媒体与聊天都不经过本服务
 > 相关：[doc-api.md](./doc-api.md)（会议/讲稿接口）、[doc-conventions.md](./doc-conventions.md)、[doc-integration.md](./doc-integration.md)（LiveKit / TTS 集成）、[doc-devops.md](./doc-devops.md)（LiveKit 部署）、[adr/](./adr/)（0001–0004）
 
@@ -123,8 +123,8 @@
 | # | 位置 | 现状 | 规范要求 | 待整改动作 |
 | --- | --- | --- | --- | --- |
 | 1 | 错误码分段 | `1_001`–`1_006` 已占用；`1_004` 被 `homework` 与 `doctemplate` 重复使用 | 各模块独占分段 | 本模块取 `1_007_000_xxx`；`1_004` 冲突作为既有问题记录，不在本期修 |
-| 2 | 前端路由守卫 | `docs/06` §4 规划了 `meta.requiresAuth`，代码未落地 | 同左 | 学生入会页 `/meeting/:meetingNo` 必须免登录；引入守卫时需把它列入白名单 |
-| 3 | 前端数字人描述 | `frontend/AGENT` §12 记为「源码尚未接入，数字人为占位」 | 同左 | 与实际不符（`views/ppt/index.vue` 已初始化 Live2D）；属后续阶段 |
+| 2 | 前端路由守卫 | **已落地**（`src/router/index.js` 全局守卫按 `meta.requiresAuth` 判定；学生入会页 `/meeting/:meetingNo` 仍免登录） | 同左 | 无 |
+| 3 | 前端数字人描述 | **已一致**（`frontend/AGENT` §12 于 2026-11-18 更新为「已接入」，含设置弹窗与缩略图脚本） | 同左 | 无 |
 | 4 | `/test2/read-pptx` | 硬编码本地路径的验证接口 | 无 | 属后续「演讲稿」阶段：迁到 `tb-module-lecture` 的 `ppt/` 包 |
 | 5 | 明文密钥 | 对话 / 向量化 `api-key` 仍为明文默认值 | `docs/08` §1.1 | 既有待整改项；本次新增的 `LIVEKIT_*` 一律 `${VAR}` 注入，不引入新明文 |
 
@@ -287,7 +287,8 @@ PPT 页(放映态) --POST /ppt/speech/speak--> tb-module-lecture
 
 | 项 | 口径 |
 | --- | --- |
-| 接口 | `POST /ppt/speech/speak`（与讲稿生成同控制器、同口径：`/ppt/**` 免登录）。事件 `status`（started/done）、`chunk`（base64 的 48kHz 单声道 16bit PCM）、`error`；事件流建立前校验失败时返回普通 JSON 错误体 |
+| 接口 | `POST /ppt/speech/speak`（**唯一保留在 `/ppt/**` 白名单里的接口**：放映页刷新 / accessToken 过期时仍能出声）。请求 `{ text, voiceCode?, meetingNo?, hostToken? }`；事件 `status`（started/done）、`chunk`（base64 的 48kHz 单声道 16bit PCM）、`error`；`status started` 带 `voiceCode`、`voiceFallback`、`voiceFallbackReason`。事件流建立前校验失败时返回普通 JSON 错误体 |
+| 音色 | 设置弹窗「声音」Tab 从 `avatar_voice` 选内置音色或复刻音色；按登录用户存到 `lecture_avatar_preference`。播报请求带 `voiceCode`；音色不存在 / 无权使用 / 查找失败时**回退全局默认音色**，SSE `status` 标记 `voiceFallback`，前端提示一次并把失效偏好回退默认。复刻音色只有创建者可用 |
 | 播放 | `views/ppt/utils/speech-player.js`：`AudioContext({ sampleRate: 48000 })` + 逐片排期的 `AudioBufferSourceNode`；分片切在采样中间时留一个字节进位；`stop()` 掐掉已排期与队列里的全部音源 |
 | 口型 | 同一个 AudioContext 上取**逐帧瞬时响度** → `mouthLevel` → `writeMouthOpen`。口型跟的就是学生正在听的那条音频，**不可能不同步** |
 | 声音怎么到学生端 | 屏幕共享开 `audio: true`（共享**这一页的声音**）；学生端把 `screen_share_audio` 轨 attach 到隐藏 `<audio>`。**共享框里音频勾选被取消 = 学生听不到**，只能重新共享一次 |
@@ -296,6 +297,13 @@ PPT 页(放映态) --POST /ppt/speech/speak--> tb-module-lecture
 | 落库 | 请求带齐 `meetingNo + hostToken`（本页从 `?meetid=` 与 `localStorage` 取）时，内容以数字人身份落 `lecture_meeting_message`（`kind=2`）；彩排试听不落库 |
 | 名单 | 房间里**不再有**数字人 / 放映页这类非人身份，名单与人数就是房间成员（`utils/attendees.js` 只做 `omitHost`） |
 | 彩排 vs 开会 | 同一段代码、同一个接口，差别只在「那一页有没有被共享」：共享了，声音就到学生端 |
+
+**设置入口（2026-11-18）**：原数字人面板底部的 `avatar-switch` 胶囊按钮已删除，改为页面顶栏最右侧的齿轮按钮；点击打开「数字人与声音设置」弹窗，两个 Tab：
+
+- **数字人**：3 列图片卡片（`avatar_model.preview_image`，静态截图，不加载 Live2D）；选中后点「保存并应用」才切换右侧 Live2D。目录只负责「哪些形象可展示、显示名、缩略图、排序、启停」；模型地址与取景仍由 `frontend/src/views/ppt/configs/avatar.js` 维护。默认形象为 **Wanko（示例）**（`DEFAULT_AVATAR_MODEL`，`avatar_model.sort=5` 排在最前）；偏好为空时页面与弹窗都落它。缩略图由 `frontend/scripts/generate-avatar-previews.mjs` 生成到 `public/live2d/previews/`。
+- **声音**：搜索 + 性别/分类筛选 + 行列表（试听、选中、删除）；右上角「复刻音色」打开二级弹窗。内置音色来自 `avatar_voice` 种子（试听地址取阿里云官方示例），复刻音色走 DashScope `VoiceEnrollmentService.createVoice`，只对创建者可见、可删。复刻样本可以粘贴公网 URL；上传文件仅在配置 `tb.lecture.digital-human.public-base-url`（公网可达的存储）时可用。
+
+保存是**全有或全无**：先加载新形象，成功后才 `PUT /ppt/preference`；加载失败不写偏好、弹窗不关；偏好写入失败则把形象退回保存前的那个。偏好按登录用户存 `lecture_avatar_preference`，PPT 页挂载时先读偏好再初始化 Live2D。放映中不提供设置入口。鉴权与偏好的取舍见 [adr/0009-ppt-settings-auth-and-preference.md](./adr/0009-ppt-settings-auth-and-preference.md)。
 
 **为什么删掉 worker 中继那一套**（此前版本：`presenter` 身份 + `GET /meeting/present` + Node `digital-human-worker/`）：
 
@@ -473,6 +481,10 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 | 20 | **（M9）** 播报中点「停止演讲」 | 声音立刻停（播放器清空已排期音频），后端日志显示合成被取消（不再向厂商要音频） |
 | 21 | **（M9）** 在 PPT 页点「试听本页」 | 不需要开会就能念出备注区当前内容（含未保存的改动）；备注为空时提示先写备注，不报错 |
 | 22 | **（M9）** 共享时**取消勾选**「分享标签页音频」（或共享整个屏幕而不是这一页） | 学生端看得到画面但听不到声音；重新共享并保留音频勾选后恢复。本轮**不检测**这件事，靠现象排查（见 §5.7 代价①） |
+| 23 | **（数字人设置）** 点顶栏齿轮打开设置 → 数字人 Tab 选一个形象 → 保存并应用 → 刷新页面 | 弹窗出现 9 张图片卡片；保存后右侧 Live2D 切换；刷新后仍是该形象（`lecture_avatar_preference` 已写入） |
+| 24 | **（数字人设置）** 声音 Tab 选内置音色 → 试听 → 保存 → 点「试听本页」 | 试听播放该音色的官方示例；播报使用该音色（SSE `status started.voiceCode` 与所选一致） |
+| 25 | **（数字人设置）** 粘贴公网音频 URL 复刻 → 列表出现「我的复刻」→ 删除它 | 复刻音色仅当前账号可见、可删；删除后列表消失，引用它的偏好回退默认；未配置公网存储时上传入口禁用 |
+| 26 | **（数字人设置）** 未登录直接调 `/ppt/voice/list`、`/ppt/avatar/list`、`/ppt/preference` | 返回 401；`/ppt/speech/speak` 仍可公开调用（系统音色），所选复刻音色无登录态时回退默认 |
 
 ### 11.3 回归重点
 
@@ -501,7 +513,7 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 
 ### 12.2 接口
 
-`POST /api/ppt/speech/optimize`（`/ppt/**` 已在白名单，见 `application.yml`）
+`POST /api/ppt/speech/optimize`（2026-11-18 起要求登录；`/ppt/**` 只有 `/ppt/speech/speak` 在白名单，见 `application.yml`）
 
 ```jsonc
 // 请求
