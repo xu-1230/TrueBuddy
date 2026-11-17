@@ -57,7 +57,7 @@ public class WorkflowDefinitionRepository {
                     + "w.create_time, w.update_time, "
                     + "COALESCE(u.nickname, u.username, '未知用户') AS creator_name "
                     + "FROM workflow w "
-                    + "LEFT JOIN system_user u ON u.id = w.creator "
+                    + "LEFT JOIN \"system_user\" u ON u.id = w.creator "
                     + "WHERE w.deleted = FALSE AND w.visibility = 1 AND w.creator <> CAST(? AS BIGINT) "
                     + "ORDER BY w.update_time DESC, w.id DESC";
 
@@ -67,7 +67,7 @@ public class WorkflowDefinitionRepository {
                     + "w.create_time, w.update_time, "
                     + "COALESCE(u.nickname, u.username, '未知用户') AS creator_name "
                     + "FROM workflow w "
-                    + "LEFT JOIN system_user u ON u.id = w.creator "
+                    + "LEFT JOIN \"system_user\" u ON u.id = w.creator "
                     + "WHERE w.deleted = FALSE AND w.visibility = 1 "
                     + "ORDER BY w.update_time DESC, w.id DESC";
 

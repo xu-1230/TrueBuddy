@@ -731,7 +731,6 @@ onBeforeUnmount(() => {
   height: 100%;
   padding: clamp(12px, 1.6vw, 24px);
   overflow: hidden;
-  background: var(--mt-bg);
 }
 
 .meeting-console__inner {

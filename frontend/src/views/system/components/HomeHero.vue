@@ -430,6 +430,12 @@ onBeforeUnmount(() => {
 .hero__entry {
   --entry-shade: 26 44 78;
   --entry-on-media: #ffffff;
+  /* 固定深色媒体位（doc-ui §3.3 约定 6）：两套主题共用同一支墨蓝，不随品牌色变亮 */
+  --entry-base-from: #2b4a80;
+  --entry-base-to: #1a2c4e;
+  --entry-tint-from: #1c3057;
+  --entry-tint-to: #2b4a80;
+  --entry-img-filter: brightness(1.02) saturate(1.02);
 
   flex-direction: row;
   align-items: center;
@@ -438,8 +444,8 @@ onBeforeUnmount(() => {
   min-height: 0;
   padding: var(--tb-size-4);
   color: var(--entry-on-media);
-  /* 兜底底色与 A1 同一支主色，图片未解码时不会闪白 */
-  background: linear-gradient(150deg, var(--tb-primary) 0%, rgb(var(--entry-shade)) 100%);
+  /* 兜底底色取固定墨蓝，图片未解码时不会闪白，也不随主题变亮 */
+  background: linear-gradient(150deg, var(--entry-base-from) 0%, var(--entry-base-to) 100%);
   isolation: isolate;
 }
 
@@ -457,14 +463,14 @@ onBeforeUnmount(() => {
   object-fit: cover;
   /* 两张图的主体都在右半，左侧留白供文字落位 */
   object-position: 72% 50%;
-  filter: light-dark(brightness(1.12) saturate(1.02), brightness(1.05));
+  filter: var(--entry-img-filter);
 }
 
-/* 品牌染色：把整帧色相拉到主色上、只留明暗，与 A1/A3 归到同一色系 */
+/* 品牌染色：把整帧色相拉到固定墨蓝上、只留明暗，两套主题保持同一支颜色 */
 .hero__entry-tint {
   position: absolute;
   inset: 0;
-  background: linear-gradient(140deg, var(--tb-primary-active) 0%, var(--tb-primary) 100%);
+  background: linear-gradient(140deg, var(--entry-tint-from) 0%, var(--entry-tint-to) 100%);
   mix-blend-mode: color;
   opacity: 0.66;
 }
@@ -563,8 +569,11 @@ onBeforeUnmount(() => {
   --hero-shade: 26 44 78;
   --hero-on-media: #ffffff;
   --hero-cta-bg: #eef2f9;
+  --hero-img-filter: brightness(1.04) saturate(1.02);
   --px: 0;
   --py: 0;
+
+  /* 注：A3 是随主题换色的运营位，与 A2 的固定深色媒体卡不同；这里只把滤镜固定住 */
 
   justify-content: flex-start;
   gap: var(--tb-size-2);
@@ -605,8 +614,8 @@ onBeforeUnmount(() => {
   /* 三张图的视觉重心都在右半，裁切时优先保住主体 */
   object-position: 68% 50%;
   transform: scale(1.04);
-  /* 亮色页面是暖白，底图稍提亮才不会像一块黑洞；暗色只补一点点，避免破坏夜景 */
-  filter: light-dark(brightness(1.14) saturate(1.02), brightness(1.05));
+  /* 亮色页面稍提亮避免黑块；暗色只压一点点，避免夜景被冲淡 */
+  filter: var(--hero-img-filter);
 }
 
 /* 推镜：停留期间极缓慢拉近，静图也有了呼吸感；只动 transform，符合 docs/09 §6.3 */

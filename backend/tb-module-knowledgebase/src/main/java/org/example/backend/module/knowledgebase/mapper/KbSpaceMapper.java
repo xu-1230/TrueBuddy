@@ -41,7 +41,7 @@ public interface KbSpaceMapper {
             + "FROM kb_space s "
             + "LEFT JOIN (SELECT space_id, COUNT(*) AS document_count FROM kb_document "
             + "           WHERE status = 2 AND deleted_at IS NULL GROUP BY space_id) d ON d.space_id = s.id "
-            + "LEFT JOIN system_user u ON u.id = s.creator "
+            + "LEFT JOIN \"system_user\" u ON u.id = s.creator "
             + "WHERE s.deleted = FALSE AND s.visibility = 1 AND s.creator <> #{userId} "
             + "ORDER BY s.id DESC")
     List<PublicSpaceRespVO> selectPublicList(Long userId);

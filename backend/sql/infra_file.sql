@@ -26,4 +26,4 @@ CREATE TABLE IF NOT EXISTS infra_file (
 COMMENT ON TABLE infra_file IS '文件表（MinIO 对象元数据）';
 
 -- 同一桶内对象键唯一（仅约束未删除记录）
-CREATE UNIQUE INDEX uk_infra_file_bucket_path ON infra_file (bucket, path) WHERE deleted = FALSE;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_infra_file_bucket_path ON infra_file (bucket, path) WHERE deleted = FALSE;

@@ -14,4 +14,4 @@ CREATE TABLE IF NOT EXISTS system_role (
 COMMENT ON TABLE system_role IS '角色表';
 
 -- 角色编码唯一
-CREATE UNIQUE INDEX uk_system_role_code ON system_role (code);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_system_role_code ON system_role (code);

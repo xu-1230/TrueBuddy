@@ -149,9 +149,10 @@ public class ExampleController {
 ## 6. 数据库规范
 
 - **PostgreSQL**：`127.0.0.1:5432/tb`（扩展：`uuid-ossp`、`vector`）
-- **数据库脚本**：`sql/` 目录下按表拆分，共 18 个 `.sql`：
+- **保留字表名**：`system_user` 是 PostgreSQL 的 SQL 标准特殊关键字（等同 `SYSTEM_USER`/`CURRENT_USER`），所有 SQL（MyBatis 注解、JdbcTemplate 字符串、手写脚本）必须写成 `"system_user"`；未加双引号时不会解析成表，运行期报 `column u.id does not exist` 或 `relation "system_user" does not exist`。
+- **数据库脚本**：`sql/` 目录下按表拆分，另有日期命名的增量补丁（均幂等）：
   - `init.sql`：初始化 `uuid-ossp`、`vector` 扩展（只需运行一次）
-  - `vector_store.sql`：pgvector 扩展与向量存储前置（对齐 Spring AI PgVectorStore：1024 维 / hnsw / cosine）
+  - `vector_store.sql`：pgvector 扩展、`vector_store` 表（`metadata JSONB`）与 HNSW / GIN 索引（对齐 Spring AI PgVectorStore：1024 维 / hnsw / cosine）
   - RBAC 5 张：`system_user` / `system_role` / `system_menu` / `system_user_role` / `system_role_menu`
   - OAuth2 2 张：`system_oauth2_access_token` / `system_oauth2_refresh_token`
   - 其它：`infra_file`（文件元数据）、`doc_template`（模板生成任务与结果文件）、`workflow`（工作流定义：画布 schema 整存）

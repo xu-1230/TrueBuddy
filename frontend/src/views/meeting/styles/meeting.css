@@ -139,7 +139,6 @@
   isolation: isolate;
   min-width: 0;
   color: var(--mt-text);
-  background: var(--mt-bg);
   font-family: var(--font-sans);
 }
 

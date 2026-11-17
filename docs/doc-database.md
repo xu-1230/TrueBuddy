@@ -1,6 +1,6 @@
 # doc-database · 数据库设计
 
-> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-16
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-17
 > 事实源：`backend/sql/`（每表一个建表文件 + 日期命名的增量补丁）；本文与 SQL 文件冲突时以 SQL 为准并同步本文。
 
 ---
@@ -14,11 +14,11 @@
 | 外键 | 全部为**逻辑外键**（无物理约束），下文「→」表示跨表引用 |
 | 通用审计列 | 业务表统一：`create_time/update_time TIMESTAMP 默认now`、`creator/updater BIGINT`、软删 `deleted BOOLEAN 默认false`（`kb_document` 例外用 `deleted_at`，`homework_file` 物理删除） |
 | `newsql/public.sql` | pg_dump 导出，**只含 7 张 system 表 + pgvector 扩展对象**；且内含 `DROP TABLE`，只作参考、禁止当迁移脚本执行 |
-| 表规模 | 单表 DDL 共 22 张（含 doc_template.sql 内 2 张、homework_grading_result.sql）；恢复脚本额外 3 张（旧版批改两表 + vector_store）→ 全库 25 张 |
+| 表规模 | 单表 DDL 共 24 张（含 doc_template.sql 内 2 张、homework_grading_result.sql、vector_store.sql）；`restore_dropped_tables_20261022.sql` 另含旧版批改两表与 `vector_store` 的历史恢复语句，仅作参考，现行建表以本目录每表脚本为准 |
 
 ## 2. system 模块（RBAC 与认证）
 
-**system_user** — 用户表：`id` 自增 PK；`username VARCHAR(30)`；`password VARCHAR(100)`；`nickname`；`remark`；`email`；`avatar`；`status INTEGER` 0=正常/1=禁用；`login_ip`；`login_date`。索引：UNIQUE(username)、UNIQUE(email)。被 system_user_role、OAuth2 令牌与各业务表 creator/updater 引用。
+**system_user** — 用户表：`id` 自增 PK；`username VARCHAR(30)`；`password VARCHAR(100)`；`nickname`；`remark`；`email`；`avatar`；`status INTEGER` 0=正常/1=禁用；`login_ip`；`login_date`。索引：UNIQUE(username)、UNIQUE(email)。被 system_user_role、OAuth2 令牌与各业务表 creator/updater 引用。**表名是保留字，SQL 中必须写 `"system_user"`（含双引号），否则会按 `SYSTEM_USER` 关键字解析而报列不存在。**
 
 **system_role** — 角色表：`id`；`name`；`code VARCHAR(100)`；`status`；`remark`。UNIQUE(code)。
 
@@ -28,9 +28,9 @@
 
 **system_user_role**：`user_id` → system_user，`role_id` → system_role；UNIQUE(user_id, role_id)。
 
-**system_oauth2_access_token** — 访问令牌：`access_token`（UNIQUE）；`refresh_token`；`user_id`；`user_type`（已废弃）；`user_info JSONB`；`scopes JSONB`；`expires_time`。补丁加 idx(user_id)、idx(expires_time)。
+**system_oauth2_access_token** — 访问令牌：`access_token`（UNIQUE）；`refresh_token`；`user_id`；`user_type`（已废弃）；`user_info JSONB`；`scopes JSONB`；`expires_time`。索引：UNIQUE(access_token)、idx(user_id)、idx(expires_time)。
 
-**system_oauth2_refresh_token** — 刷新令牌：`refresh_token`（UNIQUE，一次性消费轮换）；`user_id`；`scopes JSONB`；`expires_time`。
+**system_oauth2_refresh_token** — 刷新令牌：`refresh_token`（UNIQUE，一次性消费轮换）；`user_id`；`scopes JSONB`；`expires_time`。索引：UNIQUE(refresh_token)、idx(user_id)。
 
 ## 3. infra 模块
 
@@ -44,7 +44,7 @@
 
 ## 5. homework 模块
 
-**homework_task** — 批改任务表（一次文件夹上传 = 一行，软删）：`folder_name`；`file_count`；`total_size`；**`status SMALLINT` 0=待批改/1=批改中/2=成功/3=部分成功/4=失败**；`description`（批改要求，补丁列）；`space_ids VARCHAR(512)`（逗号分隔，补丁列）。idx(create_time DESC) WHERE deleted=FALSE。1:N homework_file。
+**homework_task** — 批改任务表（一次文件夹上传 = 一行，软删）：`folder_name`；`file_count`；`total_size`；**`status SMALLINT` 0=待批改/1=批改中/2=成功/3=部分成功/4=失败**；`description`（批改要求）；`space_ids VARCHAR(512)`（逗号分隔）。idx(create_time DESC) WHERE deleted=FALSE。1:N homework_file。
 
 **homework_file** — 作业文件表（物理删除）：`task_id` → homework_task；`file_id` → infra_file（可空）；**`relative_path VARCHAR(512)`**（形如 `课程/学号-姓名/文件.docx`）；`name`；`size`。UNIQUE(task_id, relative_path)。
 
@@ -59,11 +59,11 @@
 
 **kb_document** — 文档表（原文不落库，由 parse_block 聚合）：`space_id` → kb_space；`file_id` → infra_file（可空）；`name`；`type` PDF/WORD/MARKDOWN；`chunk_count`；`token_count`；**`status SMALLINT` 0=待处理/1=解析中/2=已向量化/3=失败/4=分片待确认/5=待分片/6=AI分片中/7=向量化中**；`docmind_job_id`；`parse_progress` 0-100；`parse_error`；`parse_start_at/parse_end_at/vectorize_at`；**软删用 `deleted_at TIMESTAMP`（NULL=未删除），无 deleted 布尔列**。idx(space_id, status) WHERE deleted_at IS NULL。
 
-**kb_document_parse_block** — 解析版面块表（DocMind 产物、AI 分片输入；物理删除重建）：`document_id`；`space_id`（冗余）；`block_index` 全局阅读顺序；`page_num`；`page_block_seq`；`block_type`；`content TEXT` Markdown 正文；`text` 纯文本降级；`external_id`；`token_count`。UNIQUE(document_id, block_index)。
+**kb_document_parse_block** — 解析版面块表（DocMind 产物、AI 分片输入；物理删除重建）：`document_id`；`space_id`（冗余）；`block_index` 全局阅读顺序；`page_num`；`page_block_seq`；`block_type`；`content TEXT` Markdown 正文；`text` 纯文本降级；`external_id`；`token_count`。UNIQUE(document_id, block_index)；按 document_id 的查询与删除走该唯一键最左前缀，不再建单列索引。
 
 **kb_document_chunk** — 分片表（AI 语义分片产物；物理删除重建）：`document_id`；`space_id`（冗余）；`chunk_index` 从 0 起；`content TEXT`；`token_count`；`enabled BOOLEAN` 参与检索开关；`hit_count` 召回次数（**表结构已预留，代码尚无更新/按 enabled 过滤的逻辑**）。UNIQUE(document_id, chunk_index)。
 
-**vector_store** — pgvector 向量存储（Spring AI PgVectorStore 默认结构，建表语句仅存在于恢复脚本；`vector_store.sql` 只建扩展）：`id UUID` 默认 `uuid_generate_v4()`；`content TEXT`；`metadata JSONB`（含 spaceId/documentId/chunkId/title，JSON 内逻辑关联）；**`embedding vector(1024)`**。索引：**`spring_ai_vector_index` HNSW（`vector_cosine_ops` 余弦距离）** + GIN(metadata jsonb_path_ops)。配置约定：dimensions=1024、hnsw、cosine_distance。
+**vector_store** — pgvector 向量存储（Spring AI PgVectorStore 结构，建表语句在 `vector_store.sql`）：`id UUID` 默认 `uuid_generate_v4()`；`content TEXT`；`metadata JSONB`（含 spaceId/documentId/chunkId/title，JSON 内逻辑关联）；**`embedding vector(1024)`**。索引：**`spring_ai_vector_index` HNSW（`vector_cosine_ops` 余弦距离）** + GIN(metadata jsonb_path_ops)。配置约定：dimensions=1024、hnsw、cosine_distance；`initialize-schema=true` 时 Spring AI 也会自动建表，脚本预建可保证 `metadata` 直接为 `jsonb`，旧库由 `index_and_column_fixes_20261023.sql` 收敛。
 
 ## 7. lecture 模块（模拟会议）
 

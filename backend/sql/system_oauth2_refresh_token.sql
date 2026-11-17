@@ -16,4 +16,9 @@ CREATE TABLE IF NOT EXISTS system_oauth2_refresh_token (
 COMMENT ON TABLE system_oauth2_refresh_token IS 'OAuth2 刷新令牌表';
 
 -- 刷新令牌唯一
-CREATE UNIQUE INDEX uk_system_oauth2_refresh_token ON system_oauth2_refresh_token (refresh_token);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_system_oauth2_refresh_token
+    ON system_oauth2_refresh_token (refresh_token);
+
+-- 按用户清理（deleteByUserId）
+CREATE INDEX IF NOT EXISTS idx_system_oauth2_refresh_token_user_id
+    ON system_oauth2_refresh_token (user_id);

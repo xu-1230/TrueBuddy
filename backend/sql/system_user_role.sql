@@ -12,5 +12,5 @@ CREATE TABLE IF NOT EXISTS system_user_role (
 COMMENT ON TABLE system_user_role IS '用户-角色关联表';
 
 -- 去重
-CREATE UNIQUE INDEX uk_system_user_role ON system_user_role (user_id, role_id);
-CREATE INDEX idx_system_user_role_role_id ON system_user_role (role_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_system_user_role ON system_user_role (user_id, role_id);
+CREATE INDEX IF NOT EXISTS idx_system_user_role_role_id ON system_user_role (role_id);
