@@ -65,4 +65,17 @@ public interface KbDocumentService {
      */
     String searchBySpace(Long spaceId, String query, int topK);
 
+    /**
+     * 检索增强（多空间）：在多个空间上做一次 topK 检索，合并为上下文文本。
+     *
+     * <p>使用 pgvector 的 `spaceId in [...]` 过滤，排序仍由向量相似度统一完成；
+     * 空列表 / 全空 id 返回空串。
+     *
+     * @param spaceIds 空间 id 列表
+     * @param query    检索词（为空返回空串）
+     * @param topK     返回分片总数
+     * @return 拼接后的上下文文本（无命中或检索异常时返回空串）
+     */
+    String searchBySpaces(List<Long> spaceIds, String query, int topK);
+
 }

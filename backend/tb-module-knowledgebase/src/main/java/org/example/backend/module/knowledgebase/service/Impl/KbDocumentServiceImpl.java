@@ -40,8 +40,10 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import static org.example.backend.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static org.example.backend.module.knowledgebase.enums.ErrorCodeConstants.DOCUMENT_ALREADY_COMPLETED;
@@ -628,15 +630,38 @@ public class KbDocumentServiceImpl implements KbDocumentService {
 
     @Override
     public String searchBySpace(Long spaceId, String query, int topK) {
-        if (spaceId == null || query == null || query.isBlank()) {
+        if (spaceId == null) {
+            return "";
+        }
+        // 向量元数据中 spaceId 以字符串写入，此处按等值过滤
+        return searchByFilter("spaceId == '" + spaceId + "'", query, topK, "spaceId=" + spaceId);
+    }
+
+    @Override
+    public String searchBySpaces(List<Long> spaceIds, String query, int topK) {
+        if (spaceIds == null || spaceIds.isEmpty()) {
+            return "";
+        }
+        List<Long> ids = spaceIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return "";
+        }
+        String inList = ids.stream()
+                .map(id -> "'" + id + "'")
+                .collect(Collectors.joining(", "));
+        return searchByFilter("spaceId in [" + inList + "]", query, topK, "spaceIds=" + ids);
+    }
+
+    /** 按过滤表达式检索并拼接上下文；异常吞掉返回空串（检索增强不阻断主流程） */
+    private String searchByFilter(String filterExpression, String query, int topK, String logDetail) {
+        if (query == null || query.isBlank()) {
             return "";
         }
         try {
             SearchRequest request = SearchRequest.builder()
                     .query(query)
                     .topK(Math.max(1, topK))
-                    // 向量元数据中 spaceId 以字符串写入，此处按等值过滤
-                    .filterExpression("spaceId == '" + spaceId + "'")
+                    .filterExpression(filterExpression)
                     .build();
             List<Document> documents = vectorStore.similaritySearch(request);
             if (documents == null || documents.isEmpty()) {
@@ -653,10 +678,10 @@ public class KbDocumentServiceImpl implements KbDocumentService {
                         .append(text)
                         .append("\n");
             }
-            log.info("知识库检索完成: spaceId={}, topK={}, hits={}", spaceId, topK, index);
+            log.info("知识库检索完成: {}, topK={}, hits={}", logDetail, topK, index);
             return context.toString();
         } catch (Exception e) {
-            log.warn("知识库检索失败（已忽略检索增强）: spaceId={}, error={}", spaceId, e.getMessage());
+            log.warn("知识库检索失败（已忽略检索增强）: {}, error={}", logDetail, e.getMessage());
             return "";
         }
     }

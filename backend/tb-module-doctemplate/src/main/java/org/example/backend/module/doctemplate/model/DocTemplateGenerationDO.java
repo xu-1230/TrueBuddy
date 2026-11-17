@@ -14,8 +14,8 @@ public class DocTemplateGenerationDO {
     private Long id;
     /** 模板文件 id（infra_file.id） */
     private Long templateFileId;
-    /** 知识库空间 id（kb_space.id，为空表示不启用检索） */
-    private Long spaceId;
+    /** 知识库空间 id 列表（逗号分隔；为空表示不启用检索） */
+    private String spaceIds;
     /** AI 描述说明 */
     private String description;
     /** 清晰度参数：480p / 720p / 1080p */

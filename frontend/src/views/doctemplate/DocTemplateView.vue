@@ -82,11 +82,14 @@
               <span class="section-head__hint">用于检索增强生成</span>
             </div>
             <el-select
-              v-model="selectedKbId"
+              v-model="selectedKbIds"
               class="kb-select"
               popper-class="kb-select-popper"
-              placeholder="请选择知识库"
+              placeholder="请选择知识库（可多选）"
               :loading="kbLoading"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
               clearable
               no-data-text="暂无更多知识库"
             >
@@ -102,7 +105,7 @@
                 <span class="kb-option">
                   <span
                     class="kb-option__tile"
-                    :class="{ 'kb-option__tile--active': selectedKbId === kb.id }"
+                    :class="{ 'kb-option__tile--active': selectedKbIds.includes(kb.id) }"
                   >
                     <el-icon><Collection /></el-icon>
                   </span>
@@ -114,7 +117,7 @@
                   </span>
                   <span v-if="kb.isDefault" class="kb-option__tag">默认</span>
                   <span v-else class="kb-option__count">{{ kb.documentCount ?? 0 }} 篇</span>
-                  <el-icon v-if="selectedKbId === kb.id" class="kb-option__check">
+                  <el-icon v-if="selectedKbIds.includes(kb.id)" class="kb-option__check">
                     <Check />
                   </el-icon>
                 </span>
@@ -543,15 +546,19 @@ const DEFAULT_KB = {
 }
 
 const knowledgeBases = ref([])
-const selectedKbId = ref(DEFAULT_KB.id)
+// 多选：默认只选「默认知识库」哨兵；提交时过滤掉它，只发真实空间 id
+const selectedKbIds = ref([DEFAULT_KB.id])
 const kbLoading = ref(false)
 
 /** 下拉选项：内置默认知识库 + 接口返回的知识库 */
 const kbOptions = computed(() => [DEFAULT_KB, ...knowledgeBases.value])
 
-/** 当前选中的知识库对象 */
-const selectedKnowledgeBase = computed(
-  () => kbOptions.value.find((kb) => kb.id === selectedKbId.value) ?? null,
+/** 当前选中的真实知识库对象（不含「默认知识库」哨兵） */
+const selectedKnowledgeBases = computed(() =>
+  selectedKbIds.value
+    .filter((id) => id !== DEFAULT_KB.id)
+    .map((id) => kbOptions.value.find((kb) => kb.id === id))
+    .filter(Boolean),
 )
 
 async function loadKnowledgeBases() {
@@ -678,10 +685,8 @@ async function handleGenerate() {
   try {
     const res = await generateDoc({
       templateFileId: templateDoc.value.id,
-      // 内置默认知识库不启用检索增强，统一传 "default" 由后端判定
-      spaceId: selectedKbId.value === null || selectedKbId.value === undefined
-        ? 'default'
-        : String(selectedKbId.value),
+      // 多选：过滤「默认知识库」哨兵，只提交真实空间 id；空数组 = 不启用检索增强
+      spaceIds: selectedKbIds.value.filter((id) => id !== DEFAULT_KB.id).map(String),
       description: description.value.trim(),
       quality: quality.value,
     })
@@ -713,7 +718,9 @@ async function handleGenerate() {
     if (res?.status === 2) {
       ElMessage.warning(`部分文档生成失败：${res?.errorMsg || ''}`)
     } else {
-      const kbText = selectedKnowledgeBase.value ? `，知识库「${selectedKnowledgeBase.value.name}」` : ''
+      const kbText = selectedKnowledgeBases.value.length
+        ? `，知识库「${selectedKnowledgeBases.value.map((kb) => kb.name).join('、')}」`
+        : ''
       ElMessage.success(
         `已基于模板「${templateDoc.value.name}」${kbText}返回 ${docs.length} 份文档`,
       )
