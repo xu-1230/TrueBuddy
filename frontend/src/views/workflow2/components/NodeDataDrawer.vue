@@ -5,90 +5,13 @@ import { ElMessageBox } from 'element-plus'
 import { useVueFlow } from '@vue-flow/core'
 import { injectOutputsOf, iterationOutputWarningsOf, upstreamOutputsOf } from '../utils/variable-sources'
 import { metaOf } from '../utils/node-meta'
+import { VARIABLE_SHORT_TYPES as SHORT_TYPES, VARIABLE_TYPE_OPTIONS as options } from '../utils/variable-types'
 const { getNodes, getEdges, removeNodes } = useVueFlow()
 const props = defineProps({
   visible: { type: Boolean, default: false },
   nodeId: { type: String, default: null },
 })
 
-const options = [
-  {
-    value: 'string',
-    label: 'String',
-  },
-  {
-    value: 'integer',
-    label: 'Integer',
-  },
-  {
-    value: 'number',
-    label: 'Number',
-  },
-  {
-    value: 'boolean',
-    label: 'Boolean',
-  },
-  {
-    value: 'time',
-    label: 'Time',
-  },
-  {
-    value: 'object',
-    label: 'Object',
-  },
-  {
-    value: 'list',
-    label: 'List',
-    children: [
-      {
-        value: 'string',
-        label: 'String',
-      },
-      {
-        value: 'integer',
-        label: 'Integer',
-      },
-      {
-        value: 'number',
-        label: 'Number',
-      },
-      {
-        value: 'boolean',
-        label: 'Boolean',
-      },
-      {
-        value: 'object',
-        label: 'Object',
-      },
-    ],
-  },
-  {
-    value: 'file',
-    label: 'File',
-    children: [
-      {
-        value: 'string',
-        label: 'String',
-      },
-      {
-        value: 'integer',
-        label: 'Integer',
-      },
-      {
-        value: 'number',
-        label: 'Number',
-      },
-      {
-        value: 'boolean',
-        label: 'Boolean',
-      },
-      {
-        value: 'object',
-        label: 'Object',
-      },
-    ],
-  },
-]
 
 
 
@@ -151,18 +74,6 @@ const sourcesFingerprint = computed(() => {
 
 watch(sourcesFingerprint, refreshUpstreamOutputs, { immediate: true })
 
-/** 类型短码：与节点卡片上变量胶囊的读法保持同一套 */
-const SHORT_TYPES = {
-  string: 'str',
-  integer: 'int',
-  number: 'num',
-  float: 'num',
-  boolean: 'bool',
-  time: 'time',
-  list: 'arr',
-  object: 'obj',
-  file: 'file',
-}
 
 /**
  * 输入行当前取值的类型短码：

@@ -75,17 +75,168 @@
           :rows="5"
           :maxlength="DESC_MAX"
           resize="none"
-          placeholder="请说明本次作业的批改要求，例如：以满分 100 分评分，重点考查需求分析的完整性与数据流图的规范性；概念性错误每个扣 5 分，缺少图例扣 3 分；评语需给出具体修改建议。"
+          placeholder="请说明本次作业的评分维度、扣分规则与评语要求，例如：重点考查需求分析的完整性与数据流图的规范性；概念性错误每个扣 5 分，缺少图例扣 3 分。满分与及格线已在上方「评分与导出设置」中固定。"
         />
       </section>
 
-      <!-- 导出结果格式 -->
+      <!-- 评分与导出设置：固定评分区间 + 自定义导出列 -->
       <section class="panel-section">
         <div class="section-head">
-          <span class="section-head__title">导出结果格式</span>
-          <span class="section-head__hint">成绩汇总表</span>
+          <span class="section-head__title">评分与导出设置</span>
+          <span class="section-head__hint">{{ scoreRangeHint }}</span>
         </div>
-        <el-segmented v-model="exportFormat" :options="EXPORT_OPTIONS" size="small" block />
+
+        <!-- 评分设置：输入变量的行式表单（变量名 + 老师自己填的值） -->
+        <div class="nd-group__head score-input-head">
+          <span class="nd-group__name">
+            评分设置
+            <span class="nd-panel__count">3</span>
+          </span>
+        </div>
+        <div class="score-range__presets" role="group" aria-label="常用评分区间">
+          <button
+            v-for="preset in SCORE_PRESETS"
+            :key="preset.label"
+            type="button"
+            class="score-preset"
+            :disabled="grading"
+            @click="applyPreset(preset)"
+          >
+            {{ preset.label }}
+          </button>
+        </div>
+        <div class="nd-list score-input-list">
+          <div class="nd-head-row nd-grid--value">
+            <span>变量名</span>
+            <span>变量值</span>
+          </div>
+          <div class="nd-row nd-row--item score-input-row">
+            <div class="nd-row__main nd-grid--value">
+              <span class="score-input__name" title="最低分">score_min</span>
+              <el-input-number
+                v-model="scoreMin"
+                size="small"
+                :min="-9999"
+                :max="9999"
+                :step="0.5"
+                :controls="false"
+                :disabled="grading"
+              />
+            </div>
+          </div>
+          <div class="nd-row nd-row--item score-input-row">
+            <div class="nd-row__main nd-grid--value">
+              <span class="score-input__name" title="最高分">score_max</span>
+              <el-input-number
+                v-model="scoreMax"
+                size="small"
+                :min="-9999"
+                :max="9999"
+                :step="0.5"
+                :controls="false"
+                :disabled="grading"
+              />
+            </div>
+          </div>
+          <div class="nd-row nd-row--item score-input-row">
+            <div class="nd-row__main nd-grid--value">
+              <span class="score-input__name" title="及格线">pass_score</span>
+              <el-input-number
+                v-model="passScore"
+                size="small"
+                :min="-9999"
+                :max="9999"
+                :step="0.5"
+                :controls="false"
+                :disabled="grading"
+              />
+            </div>
+          </div>
+        </div>
+        <p v-if="rangeError" class="field__tip field__tip--error">{{ rangeError }}</p>
+
+        <!-- 自定义导出列：输出变量的行式表单（变量名 + 类型 + 描述） -->
+        <div class="nd-group__head custom-group-head">
+          <span class="nd-group__name">
+            自定义导出列
+            <span class="nd-panel__count">{{ customFields.length }}</span>
+          </span>
+          <button
+            type="button"
+            class="nd-group__add"
+            :disabled="grading"
+            aria-label="添加导出列"
+            title="添加导出列"
+            @click="addField"
+          >
+            <el-icon><Plus /></el-icon>
+          </button>
+        </div>
+        <p v-if="fieldsError" class="field__tip field__tip--error">{{ fieldsError }}</p>
+
+        <p v-if="!customFields.length" class="nd-panel__empty">
+          暂无自定义导出列；点击右上角「＋」新增一列。
+        </p>
+        <div v-else class="nd-list">
+          <div class="nd-head-row custom-grid">
+            <span>变量名</span>
+            <span>变量类型</span>
+            <span></span>
+            <span></span>
+          </div>
+          <div
+            v-for="(field, index) in customFields"
+            :key="field.key"
+            class="nd-row nd-row--item custom-row"
+          >
+            <div class="nd-row__main custom-grid">
+              <el-input
+                v-model="field.key"
+                size="small"
+                maxlength="40"
+                placeholder="变量名，如 highlight"
+                :disabled="grading"
+              />
+              <el-cascader
+                size="small"
+                :model-value="fieldTypePath(field)"
+                :options="CUSTOM_FIELD_TYPES"
+                :props="{ expandTrigger: 'hover' }"
+                :disabled="grading"
+                @update:model-value="(path) => handleFieldTypeChange(field, path)"
+              />
+              <el-button
+                class="nd-row__expand"
+                text
+                :class="{ 'is-active': isFieldDescExpanded(field.key) }"
+                :icon="FullScreen"
+                :aria-label="isFieldDescExpanded(field.key) ? '收起描述' : '编辑描述'"
+                :title="isFieldDescExpanded(field.key) ? '收起描述' : '编辑描述'"
+                @click="toggleFieldDesc(field.key)"
+              />
+              <el-button
+                class="nd-row__remove"
+                text
+                :icon="Delete"
+                :disabled="grading"
+                :aria-label="`删除第 ${index + 1} 列`"
+                title="删除该列"
+                @click="removeField(index)"
+              />
+            </div>
+
+            <div v-if="isFieldDescExpanded(field.key)" class="nd-sub nd-sub--stack">
+              <span class="nd-sub__label">描述</span>
+              <el-input
+                v-model="field.description"
+                size="small"
+                maxlength="120"
+                placeholder="给模型的描述：这一列要写什么"
+                :disabled="grading"
+              />
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- 高级 -->
@@ -194,31 +345,40 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import {
   ArrowDown,
   ArrowRight,
   Check,
   Collection,
+  Delete,
   EditPen,
+  FullScreen,
   Plus,
 } from '@element-plus/icons-vue'
 import FolderUploader from './FolderUploader.vue'
 import SquircleButton from './SquircleButton.vue'
+import {
+  CUSTOM_FIELD_TYPES,
+  SCORE_PRESETS,
+  newCustomField,
+  normalizeCustomFieldType,
+  validateCustomFields,
+  validateScoreRange,
+} from '@/views/homework/utils/custom-fields'
+import { isContainerType } from '@/views/workflow2/utils/variable-types'
 
 /** AI 描述说明字数上限（与后端 DESCRIPTION_MAX 一致） */
 const DESC_MAX = 500
 
-const EXPORT_OPTIONS = [
-  { label: 'Excel', value: 'xlsx' },
-  { label: 'CSV', value: 'csv' },
-]
-
 const spaceIds = defineModel('spaceIds', { default: () => [] })
 const description = defineModel('description', { default: '' })
-const exportFormat = defineModel('exportFormat', { default: 'xlsx' })
 const workflow = defineModel('workflow', { default: 'standard' })
 const folder = defineModel('folder', { default: null })
+const scoreMin = defineModel('scoreMin', { default: 0 })
+const scoreMax = defineModel('scoreMax', { default: 100 })
+const passScore = defineModel('passScore', { default: 60 })
+const customFields = defineModel('customFields', { default: () => [] })
 
 const props = defineProps({
   /** 批改工作流列表（批改工作流 + 用户自定义工作流），来自后端 GET /workflow/list */
@@ -248,6 +408,62 @@ function stepCount(workflow) {
 const advancedOpen = ref(true)
 
 const fileCount = computed(() => folder.value?.files?.length ?? 0)
+
+/** 已展开描述的自定义列 key（沿用 NodeDataDrawer 的展开态方案） */
+const expandedFields = reactive(new Set())
+const isFieldDescExpanded = (key) => expandedFields.has(key)
+function toggleFieldDesc(key) {
+  if (expandedFields.has(key)) expandedFields.delete(key)
+  else expandedFields.add(key)
+}
+
+/** 类型下拉回显：list / file 走二级（[类型, 元素类型]），其余一级 */
+function fieldTypePath(field) {
+  const type = normalizeCustomFieldType(field?.type)
+  return isContainerType(type) && field?.schema?.type ? [type, field.schema.type] : [type]
+}
+
+/** 类型下拉选中：容器类型落成 { type, schema:{ type } }，标量清掉 schema */
+function handleFieldTypeChange(field, path) {
+  const [type, element] = Array.isArray(path) ? path : [path]
+  if (!type) return
+  field.type = type
+  if (element) field.schema = { ...field.schema, type: element }
+  else delete field.schema
+}
+
+/** 前端即时校验（后端 /homework/grade 会再校验一次） */
+const rangeError = computed(() => validateScoreRange({
+  min: scoreMin.value,
+  max: scoreMax.value,
+  pass: passScore.value,
+}))
+const fieldsError = computed(() => validateCustomFields(customFields.value))
+
+/** 区间摘要：标题右侧直接显示本次评分范围（min–max）与及格线 */
+const scoreRangeHint = computed(() => {
+  if (rangeError.value) return '待修正'
+  return `${scoreMin.value}–${scoreMax.value} 分 · 及格 ${passScore.value}`
+})
+
+/** 点预设：只填三个值，之后仍可微调 */
+function applyPreset(preset) {
+  scoreMin.value = preset.min
+  scoreMax.value = preset.max
+  passScore.value = preset.pass
+}
+
+/** 新增一列：变量名由老师填写（还没有 key，先空着等填） */
+function addField() {
+  customFields.value = [...customFields.value, newCustomField()]
+}
+
+/** 删除一列（预置列也可删） */
+function removeField(index) {
+  const [removed] = customFields.value.slice(index, index + 1)
+  if (removed?.key) expandedFields.delete(removed.key)
+  customFields.value = customFields.value.filter((_, itemIndex) => itemIndex !== index)
+}
 </script>
 
 <style scoped>
@@ -358,6 +574,281 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
   font-size: 0.66rem;
   line-height: 1.6;
   color: var(--tb-text-tertiary);
+}
+
+.field__tip--error {
+  color: var(--tb-danger);
+}
+
+/* ---------- 评分与导出设置 ---------- */
+.score-range__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.score-preset {
+  padding: 3px 9px;
+  border: var(--tb-border-width) solid var(--tb-border);
+  border-radius: var(--tb-radius-xs);
+  background: var(--tb-bg-surface);
+  font-size: 0.68rem;
+  color: var(--tb-text-secondary);
+  cursor: pointer;
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.score-preset:hover:not(:disabled) {
+  color: var(--tb-primary-text);
+  border-color: var(--tb-primary-border);
+  background: var(--tb-primary-soft);
+}
+
+.score-preset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 评分设置：输入变量的行式表单 */
+.score-input-head {
+  margin-top: 0.35rem;
+}
+
+.score-input-list {
+  margin-top: 0.35rem;
+}
+
+.nd-grid--value {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.score-input__name {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  color: var(--tb-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.score-input-row :deep(.el-input-number) {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.score-input-row :deep(.el-input__wrapper) {
+  min-height: 28px;
+  padding: 0 0.45rem;
+  border-radius: 0;
+  background: var(--tb-bg-surface);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border) inset;
+}
+
+.score-input-row :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-primary) inset;
+}
+
+.score-input-row :deep(.el-input__inner) {
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 自定义导出列：nd-list 行式表单（对齐 workflow2 NodeDataDrawer） ---------- */
+.custom-group-head {
+  margin-top: 0.85rem;
+}
+
+.nd-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.nd-group__name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--tb-text-primary);
+}
+
+.nd-panel__count {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--tb-bg-sunken);
+  font-size: 0.66rem;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--tb-text-secondary);
+}
+
+.nd-group__add {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: var(--tb-primary-soft);
+  font-size: 14px;
+  color: var(--tb-primary);
+  cursor: pointer;
+  transition:
+    background-color var(--tb-dur-2) var(--tb-ease-out),
+    color var(--tb-dur-2) var(--tb-ease-out);
+}
+
+.nd-group__add:hover:not(:disabled) {
+  background: var(--tb-primary-border);
+  color: var(--tb-primary-text);
+}
+
+.nd-group__add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.nd-panel__empty {
+  margin: 0;
+  padding: 2px 0;
+  font-size: 0.7rem;
+  line-height: 1.7;
+  color: var(--tb-text-tertiary);
+}
+
+.nd-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.nd-head-row {
+  margin: 0 -8px;
+  padding: 2px 8px 6px;
+  font-size: 0.66rem;
+  line-height: 1.6;
+  color: var(--tb-text-tertiary);
+}
+
+/* 面板只有 312px 可用：变量名 / 类型 / 展开描述 / 删除 */
+.custom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px 22px 22px;
+  align-items: center;
+  gap: 6px;
+}
+
+.custom-row :deep(.el-cascader) {
+  width: 100%;
+  min-width: 0;
+}
+
+.nd-row--item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 -8px;
+  padding: 4px 8px;
+  border-bottom: var(--tb-border-width) dashed var(--tb-border);
+  border-radius: var(--tb-radius-md);
+  transition: background-color var(--tb-dur-2) var(--tb-ease-out);
+}
+
+.nd-row--item:hover,
+.nd-row--item:focus-within {
+  background: var(--tb-bg-raised);
+}
+
+.nd-row--item:last-child {
+  border-bottom-color: transparent;
+}
+
+.nd-row__expand,
+.nd-row__remove {
+  width: 22px;
+  height: 24px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--tb-text-tertiary);
+}
+
+.nd-row__expand.is-active,
+.nd-row__expand:hover {
+  color: var(--tb-primary);
+}
+
+.nd-row__remove:hover:not(:disabled) {
+  color: var(--tb-danger);
+}
+
+.nd-row__remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.nd-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nd-sub--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.nd-sub__label {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.66rem;
+  line-height: 1.6;
+  color: var(--tb-text-tertiary);
+}
+
+.custom-row :deep(.el-input__wrapper),
+.custom-row :deep(.el-select__wrapper) {
+  min-height: 28px;
+  padding: 0 0.45rem;
+  border-radius: 0;
+  background: var(--tb-bg-surface);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border) inset;
+  font-size: 0.72rem;
+}
+
+.custom-row :deep(.el-input__wrapper.is-focus),
+.custom-row :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-primary) inset;
+}
+
+.custom-row :deep(.el-select .el-input__wrapper),
+.custom-row :deep(.el-select__wrapper) {
+  padding-right: 0.25rem;
+}
+
+.nd-sub :deep(.el-input__wrapper) {
+  min-height: 28px;
+  padding: 0 0.45rem;
+  border-radius: 0;
+  background: var(--tb-bg-surface);
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-border) inset;
+  font-size: 0.72rem;
+}
+
+.nd-sub :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 var(--tb-border-width) var(--tb-primary) inset;
 }
 
 /* 知识库下拉 */

@@ -31,11 +31,44 @@ export function formatDuration(ms) {
   return seconds ? `${minutes} 分 ${seconds} 秒` : `${minutes} 分`
 }
 
-/** 得分 → 配色档位（优秀 / 良好 / 及格 / 待改进） */
-export function scoreTone(score) {
+/** 评分配置缺省值（与面板 / 工作流 startnode 保持一致） */
+const DEFAULT_RANGE = { min: 0, max: 100, pass: 60 }
+
+const rangeOf = (range = {}) => ({
+  min: Number.isFinite(Number(range.min)) ? Number(range.min) : DEFAULT_RANGE.min,
+  max: Number.isFinite(Number(range.max)) ? Number(range.max) : DEFAULT_RANGE.max,
+  pass: Number.isFinite(Number(range.pass)) ? Number(range.pass) : DEFAULT_RANGE.pass,
+})
+
+/**
+ * 得分 → 配色档位（优秀 / 良好 / 及格 / 待改进）。
+ *
+ * 以及格线为基线向满分方向两等分：待改进 < pass；及格 ≥ pass；
+ * 良好 ≥ pass + 50%×(max−pass)；优秀 ≥ pass + 75%×(max−pass)。
+ * 0–100 / 60 时即 80 良好、90 优秀。
+ */
+export function scoreTone(score, range = DEFAULT_RANGE) {
   if (!Number.isFinite(score)) return 'pending'
-  if (score >= 90) return 'excellent'
-  if (score >= 80) return 'good'
-  if (score >= 60) return 'pass'
-  return 'weak'
+  const { max, pass } = rangeOf(range)
+  if (score < pass) return 'weak'
+  const span = max - pass
+  if (span <= 0) return 'pass'
+  if (score >= pass + span * 0.75) return 'excellent'
+  if (score >= pass + span * 0.5) return 'good'
+  return 'pass'
+}
+
+/** 得分在评分区间里的比例（0–1），用于刻度光点位置 */
+export function scoreRatio(score, range = DEFAULT_RANGE) {
+  if (!Number.isFinite(score)) return 0
+  const { min, max } = rangeOf(range)
+  if (max <= min) return 0
+  return Math.min(Math.max((score - min) / (max - min), 0), 1)
+}
+
+/** 评分区间的显示档位（用于进度条刻度标签） */
+export function scoreScaleOf(range = DEFAULT_RANGE) {
+  const { min, max, pass } = rangeOf(range)
+  const excellent = max - pass > 0 ? pass + (max - pass) * 0.75 : pass
+  return { min, max, pass, excellent }
 }

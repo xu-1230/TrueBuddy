@@ -23,10 +23,12 @@ public class HomeworkGradingResultDO {
     private BigDecimal score;
     /** 等级（优 / 良 / 及格…，模型产出） */
     private String grade;
-    /** 评语 */
+    /** LEGACY：旧评语列（已迁移到 custom，停止写入） */
     private String comment;
-    /** 扣分明细（JSONB，JSON 数组文本） */
+    /** LEGACY：旧扣分明细列（JSONB，JSON 数组文本；已迁移到 custom，停止写入） */
     private String deductions;
+    /** 自定义导出列的值（JSONB，JSON 对象文本） */
+    private String custom;
     /** 模型实际读取的文件相对路径（JSONB，JSON 数组文本） */
     private String readFiles;
     /** 产出本批结果的工作流会话 id（溯源） */

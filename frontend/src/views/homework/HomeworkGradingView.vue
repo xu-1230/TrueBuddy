@@ -5,7 +5,10 @@
       <ConfigPanel
         v-model:space-ids="config.spaceIds"
         v-model:description="config.description"
-        v-model:export-format="config.exportFormat"
+        v-model:score-min="config.scoreMin"
+        v-model:score-max="config.scoreMax"
+        v-model:pass-score="config.passScore"
+        v-model:custom-fields="config.customFields"
         v-model:workflow="config.workflow"
         v-model:folder="folder"
         :knowledge-bases="kbOptions"
@@ -97,6 +100,8 @@
                 :record="card.record"
                 :description="activeDescription"
                 :workflow-label="activeWorkflowLabel"
+                :fields="activeCustomFields"
+                :range="activeScoreRange"
                 :index="card.position"
                 :total="records.length"
                 @prev="step(-1)"
@@ -271,6 +276,14 @@ import HumanCardDialog from '@/views/workflow2/components/HumanCardDialog.vue'
 import { runGradingWorkflow } from './utils/grading-run'
 import { buildFileTree } from './utils/file-tree'
 import { buildResultWritePayload } from './utils/result-payload'
+import {
+  SCORE_RANGE_DEFAULT,
+  buildCustomValues,
+  defaultCustomFields,
+  normalizeCustomFieldType,
+  validateCustomFields,
+  validateScoreRange,
+} from './utils/custom-fields'
 import { statusTextOf, statusToneOf } from './utils/status'
 import { formatDateTime, formatFileSize } from './utils/format'
 
@@ -333,7 +346,10 @@ const DEFAULT_KB = {
 const config = reactive({
   spaceIds: [DEFAULT_KB.id],
   description: '',
-  exportFormat: 'xlsx',
+  scoreMin: SCORE_RANGE_DEFAULT.min,
+  scoreMax: SCORE_RANGE_DEFAULT.max,
+  passScore: SCORE_RANGE_DEFAULT.pass,
+  customFields: defaultCustomFields(),
   workflow: '',
 })
 
@@ -382,7 +398,7 @@ const confirmCardVisible = ref(false)
 let settleConfirm = null
 /** 当前阶段（预留，工作流阶段回显用） */
 const currentStage = ref(null)
-/** 当前结果对应的任务信息：{ taskId, description, workflow, exportFormat } */
+/** 当前结果对应的任务信息：{ taskId, description, workflow, scoreRange, customFields } */
 const taskMeta = ref(null)
 
 /** 已选作业份数（卡头副行、空态清单、开始批改按钮共用） */
@@ -391,11 +407,33 @@ const fileCount = computed(() => folder.value?.files?.length ?? 0)
 /** 是否已填写批改要求（空态清单的第二项） */
 const descriptionFilled = computed(() => Boolean(config.description.trim()))
 
+/** 评分区间 / 自定义列的前端即时校验（后端 /homework/grade 会再校验） */
+const scoreRangeError = computed(() => validateScoreRange({
+  min: config.scoreMin,
+  max: config.scoreMax,
+  pass: config.passScore,
+}))
+const customFieldsError = computed(() => validateCustomFields(config.customFields))
+
 const canGrade = computed(
-  () => fileCount.value > 0 && descriptionFilled.value && !grading.value,
+  () => fileCount.value > 0
+    && descriptionFilled.value
+    && !grading.value
+    && !scoreRangeError.value
+    && !customFieldsError.value,
 )
 
 const canExport = computed(() => records.value.length > 0 && !grading.value)
+
+/** 当前卡片使用的评分区间 / 自定义列：优先当次任务快照，回落到面板当前值 */
+const activeScoreRange = computed(() => taskMeta.value?.scoreRange ?? {
+  min: config.scoreMin,
+  max: config.scoreMax,
+  pass: config.passScore,
+})
+const activeCustomFields = computed(
+  () => taskMeta.value?.customFields ?? config.customFields,
+)
 
 /**
  * 把中断卡片交给用户：返回一个 promise，弹窗点「确定」→ `{ values }`，关掉弹窗 → `null`。
@@ -514,8 +552,10 @@ const belongsToStudent = (file, studentName) => {
  *
  * @param {object} record 输出契约里的一条记录
  * @param {Array} files 本次上传的文件清单（用来匹配该学生提交了哪些文件）
+ * @param {number} index 第几条（0 起，用于唯一 key）
+ * @param {Array} fields 当次任务的自定义导出列定义（静态列填默认值）
  */
-function toRecordFromGrading(record, files, index = 0) {
+function toRecordFromGrading(record, files, index = 0, fields = []) {
   const studentName = textOf(record?.student)
   const ownFiles = listOf(files).filter((file) => belongsToStudent(file, studentName))
   const score = Number(record?.score)
@@ -527,8 +567,8 @@ function toRecordFromGrading(record, files, index = 0) {
     studentName,
     score: Number.isFinite(score) ? score : null,
     grade: textOf(record?.grade),
-    comment: textOf(record?.comment),
-    deductions: listOf(record?.deductions),
+    // 自定义导出列的值：静态列填定义里的默认值，动态列取模型产出
+    custom: buildCustomValues(fields, record?.custom),
     readFiles: listOf(record?.readFiles).map(textOf).filter(Boolean),
     files: ownFiles,
     // 这两项本轮拿不到真实值，但**必须给空值**：ScoreCard 会读它们，
@@ -571,11 +611,17 @@ async function handleGrade() {
       }
     })
 
+    // 当次区间 / 自定义列快照：之后面板怎么改都不影响已显示的卡片
     taskMeta.value = {
       taskId: data.taskId,
       description: config.description.trim(),
       workflow: config.workflow,
-      exportFormat: config.exportFormat,
+      scoreRange: {
+        min: Number(config.scoreMin),
+        max: Number(config.scoreMax),
+        pass: Number(config.passScore),
+      },
+      customFields: config.customFields.map((field) => ({ ...field })),
     }
 
     if (!(data.files ?? []).length) {
@@ -604,7 +650,10 @@ async function handleGrade() {
         // 文件清单（含相对路径、fileId 与 MinIO 预签名 URL），直接透传第一步的返回
         files: data.files ?? [],
         description: config.description.trim(),
-        exportFormat: config.exportFormat,
+        scoreMin: Number(config.scoreMin),
+        scoreMax: Number(config.scoreMax),
+        passScore: Number(config.passScore),
+        customFields: config.customFields.map((field) => ({ ...field })),
         workflowId: config.workflow,
       })
 
@@ -617,13 +666,28 @@ async function handleGrade() {
           file_tree: data.files ?? [],
           description: config.description.trim(),
           know: config.spaceIds.filter((id) => id !== DEFAULT_KB.id),
+          score_min: Number(config.scoreMin),
+          score_max: Number(config.scoreMax),
+          pass_score: Number(config.passScore),
+          // 显式空数组表示「本次没有自定义列」，startnode 不会再用默认两列覆盖
+          custom_fields: config.customFields.map((field) => ({
+            key: field.key,
+            description: field.description,
+            type: field.type,
+            ...(field.schema?.type ? { schema: { type: field.schema.type } } : {}),
+          })),
         },
         title: `作业批改 #${data.taskId}`,
         onConfirm: askConfirm,
         onRecord: (record) => {
           records.value = [
             ...records.value,
-            toRecordFromGrading(record, data.files ?? [], records.value.length),
+            toRecordFromGrading(
+              record,
+              data.files ?? [],
+              records.value.length,
+              taskMeta.value?.customFields ?? config.customFields,
+            ),
           ]
         },
       })
@@ -632,7 +696,12 @@ async function handleGrade() {
       // 已经流式上过牌就不动 —— 以流式那一份为准，顺序与名单一致。
       if (!records.value.length && result.records.length) {
         records.value = result.records.map((record, index) => (
-          toRecordFromGrading(record, data.files ?? [], index)
+          toRecordFromGrading(
+            record,
+            data.files ?? [],
+            index,
+            taskMeta.value?.customFields ?? config.customFields,
+          )
         ))
         resetCardDeck()
       }
@@ -958,23 +1027,38 @@ async function handleOpenHistoryRecord(record) {
   historyDetailLoadingId.value = record.id
   try {
     const detail = await getHomeworkTaskDetail(record.id)
-    // 配置回显：批改要求与知识库写回左侧面板，教师可对照，也可直接续选文件夹再发起同配置批改
+    // 配置回显：批改要求、知识库、评分区间与自定义列写回左侧面板，
+    // 教师可对照，也可直接续选文件夹再发起同配置批改
     config.description = detail.description || ''
     const ids = (detail.spaceIds ?? []).filter((id) => kbOptions.value.some((kb) => kb.id === id))
     config.spaceIds = ids.length ? ids : [DEFAULT_KB.id]
+    config.scoreMin = detail.scoreMin == null ? SCORE_RANGE_DEFAULT.min : Number(detail.scoreMin)
+    config.scoreMax = detail.scoreMax == null ? SCORE_RANGE_DEFAULT.max : Number(detail.scoreMax)
+    config.passScore = detail.passScore == null ? SCORE_RANGE_DEFAULT.pass : Number(detail.passScore)
+    config.customFields = Array.isArray(detail.customFields)
+      ? detail.customFields.map((field) => ({
+          ...field,
+          type: normalizeCustomFieldType(field.type),
+        }))
+      : []
 
     const results = detail.results ?? []
     if (results.length) {
       // 评分回看：按成绩卡形态恢复画布（与服务端流式上牌同一映射，一个学生一张卡）
       records.value = results.map((result, index) => (
-        toRecordFromGrading(result, detail.files ?? [], index)
+        toRecordFromGrading(result, detail.files ?? [], index, detail.customFields ?? [])
       ))
       resetCardDeck()
       taskMeta.value = {
         taskId: detail.id,
         description: detail.description || '',
         workflow: config.workflow,
-        exportFormat: config.exportFormat,
+        scoreRange: {
+          min: config.scoreMin,
+          max: config.scoreMax,
+          pass: config.passScore,
+        },
+        customFields: config.customFields.map((field) => ({ ...field })),
       }
       historyDetail.value = null
     } else {

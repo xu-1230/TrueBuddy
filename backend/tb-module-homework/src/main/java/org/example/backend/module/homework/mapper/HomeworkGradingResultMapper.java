@@ -14,14 +14,15 @@ public interface HomeworkGradingResultMapper {
 
     /**
      * 覆盖式回写：整批插入。
-     * deductions / read_files 为 JSON 文本，显式 ::jsonb cast（JDBC 按字符串传参，JSONB 列需显式转换）。
+     * custom / read_files 为 JSON 文本，显式 ::jsonb cast（JDBC 按字符串传参，JSONB 列需显式转换）。
+     * 旧 comment / deductions 列不写入，由表默认值兜底（legacy，已迁移到 custom）。
      */
     @Insert("<script>"
             + "INSERT INTO homework_grading_result "
-            + "(task_id, student, score, grade, comment, deductions, read_files, conversation_id) VALUES "
+            + "(task_id, student, score, grade, custom, read_files, conversation_id) VALUES "
             + "<foreach collection='records' item='r' separator=','>"
-            + "(#{r.taskId}, #{r.student}, #{r.score}, #{r.grade}, #{r.comment}, "
-            + "#{r.deductions}::jsonb, #{r.readFiles}::jsonb, #{r.conversationId})"
+            + "(#{r.taskId}, #{r.student}, #{r.score}, #{r.grade}, "
+            + "#{r.custom}::jsonb, #{r.readFiles}::jsonb, #{r.conversationId})"
             + "</foreach>"
             + "</script>")
     int insertBatch(@Param("records") List<HomeworkGradingResultDO> records);

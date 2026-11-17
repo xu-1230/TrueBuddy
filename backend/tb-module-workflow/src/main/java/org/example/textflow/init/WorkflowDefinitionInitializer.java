@@ -15,10 +15,14 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 内置模板初始化：把「标准批改作业」写进 {@code workflow} 表，使工作流下拉开箱就有一个可选项。
+ * 内置模板初始化：把「标准批改作业」写进 {@code workflow} 表，并在每次启动时**对比刷新**。
  *
- * <p>触发条件是「表内没有任何未删除记录」——即首次部署（或表被清空）时写入一次。
- * 只要表里已有记录（含用户自建的工作流），就跳过，因此**幂等**，重启不会重复插入、更不会覆盖用户数据。
+ * <p>内置模板在 UI 层是禁止保存修改的（{@code WorkflowServiceImpl#saveWorkflow} 直接拒绝），
+ * 因此它实际上是一份只读种子：每次启动拿 classpath 下的 {@code standard-grading.json} 与库里的
+ * {@code schema_json} 比较，不同就按固定 id upsert。这样已部署环境无需手工执行 SQL，也不会
+ * 覆盖任何用户自建的工作流（只碰 {@link WorkflowConstants#BUILTIN_WORKFLOW_ID} 这一行）。
+ *
+ * <p>软删的内置行会被恢复；表里有其它工作流但内置行缺失时也会补上。
  *
  * <p>记录使用固定 id {@link WorkflowConstants#BUILTIN_WORKFLOW_ID}，服务层据此把该条标记为
  * {@code builtin}，前端下拉沿用「批改工作流 / 用户自定义工作流」的分组展示。
@@ -45,22 +49,25 @@ public class WorkflowDefinitionInitializer implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         try {
-            if (workflowRepository.countNotDeleted() > 0) {
-                return;
-            }
             String schemaJson = readSeed();
             // 先校验种子定义合法（连线 id 非空唯一），避免把坏数据写进库
             WorkflowProcessLoader.parse(schemaJson);
 
-            WorkflowDO workflow = new WorkflowDO();
-            workflow.setId(WorkflowConstants.BUILTIN_WORKFLOW_ID);
-            workflow.setName(BUILTIN_NAME);
-            workflow.setDescription(BUILTIN_DESCRIPTION);
-            workflow.setSchemaJson(schemaJson);
-            workflow.setStatus(WorkflowConstants.STATUS_DRAFT);
-            workflow.setVisibility(0);
-            workflowRepository.insert(workflow);
-            log.info("[WorkflowDefinitionInitializer] 已写入内置工作流模板，id={}", WorkflowConstants.BUILTIN_WORKFLOW_ID);
+            WorkflowDO existing = workflowRepository
+                    .selectById(WorkflowConstants.BUILTIN_WORKFLOW_ID)
+                    .orElse(null);
+            if (existing != null && schemaJson.equals(existing.getSchemaJson())) {
+                return;
+            }
+
+            workflowRepository.upsertBuiltin(
+                    WorkflowConstants.BUILTIN_WORKFLOW_ID,
+                    BUILTIN_NAME,
+                    BUILTIN_DESCRIPTION,
+                    schemaJson);
+            log.info("[WorkflowDefinitionInitializer] 已同步内置工作流模板，id={}（{}）",
+                    WorkflowConstants.BUILTIN_WORKFLOW_ID,
+                    existing == null ? "新建" : "schema 有变化，刷新");
         } catch (Exception e) {
             // 初始化失败不阻断应用启动：执行 / 保存链路都不依赖这条种子记录
             log.warn("[WorkflowDefinitionInitializer] 内置工作流模板初始化失败: {}", e.getMessage());

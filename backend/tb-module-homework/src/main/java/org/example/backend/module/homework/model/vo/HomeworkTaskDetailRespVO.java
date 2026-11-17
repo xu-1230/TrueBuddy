@@ -14,6 +14,8 @@ public class HomeworkTaskDetailRespVO extends HomeworkTaskItemVO {
 
     /** 任务下全部作业（按相对路径升序，即目录树阅读顺序；含预签名 URL 与 MIME） */
     private List<HomeworkFileItemVO> files;
+    /** 自定义导出列定义（历史回看恢复面板与成绩卡字段） */
+    private List<HomeworkCustomFieldVO> customFields;
     /** 逐学生评分记录（按名单顺序；未回写终态时为空列表） */
     private List<HomeworkResultRecordVO> results;
     /** 漏批份数（fileCount - 评分记录数，负值归 0） */
