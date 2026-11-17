@@ -31,7 +31,8 @@ import static org.example.backend.framework.common.pojo.CommonResult.success;
  *
  * <p><b>鉴权</b>：{@code /chat/**} **不在** {@code tb.security.permit-all-urls} 白名单里，
  * 因此要求登录——会话与执行实例都要记 {@code creator}，会话列表也要按用户隔离。
- * （这也是它没有挂在 {@code /workflow} 前缀下的原因：{@code /workflow/**} 是免登录的。）
+ * （执行链路与定义读写分属两条前缀：{@code /workflow/**} 自 ADR 0007 起同样要求登录，
+ * 不再有「定义免登录、执行需登录」的差异。）
  */
 @RestController
 @RequestMapping("/chat")

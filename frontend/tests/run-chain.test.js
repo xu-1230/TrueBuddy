@@ -132,7 +132,8 @@ const loadHandleRun = (store, options = {}) => {
   const handleRun = evaluateFunction(readFileSync(VIEW_PATH, 'utf8'), 'const handleRun = async () => {', {
     runState: { value: { streaming: Boolean(options.streaming) } },
     currentWorkflowId: { value: options.workflowId === undefined ? WORKFLOW_ID : options.workflowId },
-    isPublicReadonly: { value: Boolean(options.readonly) },
+    // builtin 只读可运行：运行闸看 canRunCurrent，而不是只读标记本身
+    canRunCurrent: { value: !options.readonly },
     START_NODE_TYPE: '1',
     startInputsVisible,
     startInputsOutputs,
@@ -407,7 +408,7 @@ test('链路：他人公有流的只读画布点运行 → 提示 fork，不清�
 
   await handleRun()
 
-  assert.deepEqual(calls.warning, ['他人发布的工作流不能直接运行，请先 fork 为自己的副本'])
+  assert.deepEqual(calls.warning, ['他人发布的工作流不能直接运行，请先添加为自己的副本'])
   assert.equal(calls.cleanOrphan, 0, '只读闸在最前面，连悬空子块清理都不做')
   assert.equal(calls.popup.length + calls.execute.length + calls.startRun.length, 0, '不进入校验与执行')
 })
@@ -459,7 +460,9 @@ test('链路：运行按钮只有一条路径（ToolsWrap 点击 → run 事件 
   const view = readFileSync(VIEW_PATH, 'utf8')
 
   assert.match(tools, /@click="\$emit\('run'\)"/, '按钮点击必须派发 run')
-  assert.match(tools, /:disabled="running \|\| readonly"/, '执行中 / 只读画布都禁用运行按钮')
+  // 运行与保存的禁用条件已拆开：builtin 只读但可运行，不能拿 readonly 一并禁用
+  assert.match(tools, /:disabled="running \|\| runDisabled"/, '执行中 / 他人公有流都禁用运行按钮')
+  assert.match(view, /:run-disabled="!canRunCurrent"/, '画布页必须把运行闸接到 ToolsWrap')
   // 模板里属性是跨行写的，断言不能要求单行形态
   assert.match(
     view,
