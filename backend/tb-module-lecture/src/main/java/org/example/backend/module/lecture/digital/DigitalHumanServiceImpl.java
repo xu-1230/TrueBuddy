@@ -3,11 +3,14 @@ package org.example.backend.module.lecture.digital;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.example.backend.framework.security.LoginUser;
+import org.example.backend.framework.security.util.SecurityFrameworkUtils;
 import org.example.backend.module.lecture.config.DigitalHumanProperties;
 import org.example.backend.module.lecture.digital.tts.TtsSynthPort;
 import org.example.backend.module.lecture.model.LectureMeetingDO;
 import org.example.backend.module.lecture.model.vo.DigitalSpeakReqVO;
 import org.example.backend.module.lecture.model.vo.DigitalStatusVO;
+import org.example.backend.module.lecture.ppt.service.PptVoiceService;
 import org.example.backend.module.lecture.service.MeetingService;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -55,14 +58,17 @@ public class DigitalHumanServiceImpl implements DigitalHumanService {
     private final DigitalHumanProperties properties;
     private final TtsSynthPort ttsPort;
     private final MeetingService meetingService;
+    private final PptVoiceService pptVoiceService;
     private final ExecutorService synthExecutor;
 
     public DigitalHumanServiceImpl(DigitalHumanProperties properties,
                                    TtsSynthPort ttsPort,
-                                   MeetingService meetingService) {
+                                   MeetingService meetingService,
+                                   PptVoiceService pptVoiceService) {
         this.properties = properties;
         this.ttsPort = ttsPort;
         this.meetingService = meetingService;
+        this.pptVoiceService = pptVoiceService;
         this.synthExecutor = Executors.newFixedThreadPool(Math.max(1, properties.getMaxConcurrentSpeak()), runnable -> {
             Thread thread = new Thread(runnable, "digital-human-tts");
             thread.setDaemon(true);
@@ -125,31 +131,56 @@ public class DigitalHumanServiceImpl implements DigitalHumanService {
         }
         // 带齐会议号与凭据才落库；凭据不合法直接抛错（静默跳过会让老师以为播报进了聊天记录）
         Long meetingId = resolveMeetingId(reqVO);
+        PptVoiceService.VoiceSelection selection = resolveVoice(reqVO.getVoiceCode());
 
         // 0 = 不超时：一条播报最长几十秒，超时判断交给合成侧自己的上限
         SseEmitter emitter = new SseEmitter(0L);
         PcmSseWriter writer = new PcmSseWriter(emitter);
-        // 先报格式再交给合成线程：老师点完按钮立刻有回音，采样率也不必写死在两个地方
+        // 先报格式再交给合成线程：老师点完按钮立刻有回音，采样率也不必写死在两个地方。
+        // 同时把实际音色与回退标记告诉前端：请求的复刻音色不可用时，这里的 voiceCode 是默认音色。
         writer.status("started", Map.of(
                 "sampleRate", PCM_SAMPLE_RATE,
                 "channels", PCM_CHANNELS,
-                "encoding", PCM_ENCODING));
-        synthExecutor.execute(() -> synthesize(emitter, writer, text, meetingId));
+                "encoding", PCM_ENCODING,
+                "voiceCode", emptyIfNull(selection.voiceCode()),
+                "voiceFallback", selection.fallback(),
+                "voiceFallbackReason", emptyIfNull(selection.fallbackReason())));
+        synthExecutor.execute(() -> synthesize(emitter, writer, text, meetingId, selection));
         return emitter;
     }
 
-    /** 合成 → SSE。失败一律收尾成一条 {@code error} 事件，不让连接悬着。 */
-    private void synthesize(SseEmitter emitter, PcmSseWriter writer, String text, Long meetingId) {
+    /**
+     * 解析本次播报实际使用的音色。
+     *
+     * <p>音色表查询失败（例如 SQL 未执行 / 数据库短暂不可用）不能让公开的 speak 接口整体失败：
+     * 回退到配置里的默认音色，并把原因标成 lookup_failed 告诉前端。
+     */
+    private PptVoiceService.VoiceSelection resolveVoice(String voiceCode) {
         try {
-            TtsSynthPort.TtsStats stats = ttsPort.synthesize(text, writer);
+            return pptVoiceService.resolveForSpeak(voiceCode, currentUserId());
+        } catch (RuntimeException e) {
+            log.warn("[speak][音色解析失败，回退默认音色 voiceCode={}]: {}", voiceCode, e.getMessage());
+            String fallbackVoice = properties.getTtsVoice() == null ? "" : properties.getTtsVoice();
+            String fallbackModel = properties.getTtsModel() == null ? "" : properties.getTtsModel();
+            return new PptVoiceService.VoiceSelection(fallbackVoice, fallbackModel,
+                    voiceCode != null && !voiceCode.isBlank(), "lookup_failed");
+        }
+    }
+
+    /** 合成 → SSE。失败一律收尾成一条 {@code error} 事件，不让连接悬着。 */
+    private void synthesize(SseEmitter emitter, PcmSseWriter writer, String text, Long meetingId,
+                            PptVoiceService.VoiceSelection selection) {
+        try {
+            TtsSynthPort.TtsStats stats = ttsPort.synthesize(text, selection.voiceCode(), selection.model(), writer);
             Map<String, Object> done = new LinkedHashMap<>();
             done.put("state", "done");
             done.put("bytes", stats.bytes());
             done.put("firstChunkMs", stats.firstChunkMs());
             done.put("durationMs", stats.durationMs());
             writer.status("done", done);
-            log.info("[speak][播报完成 meetingId={}, bytes={}, firstChunkMs={}, durationMs={}]",
-                    meetingId, stats.bytes(), stats.firstChunkMs(), stats.durationMs());
+            log.info("[speak][播报完成 meetingId={}, voice={}, model={}, fallback={}, bytes={}, firstChunkMs={}, durationMs={}]",
+                    meetingId, selection.voiceCode(), selection.model(), selection.fallback(),
+                    stats.bytes(), stats.firstChunkMs(), stats.durationMs());
             persist(meetingId, text);
         } catch (RuntimeException e) {
             if (writer.isBroken()) {
@@ -197,6 +228,16 @@ public class DigitalHumanServiceImpl implements DigitalHumanService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /** 当前登录用户 id；speak 是公开接口，未登录时返回 null（复刻音色会回退默认）。 */
+    private static Long currentUserId() {
+        LoginUser loginUser = SecurityFrameworkUtils.getLoginUser();
+        return loginUser == null ? null : loginUser.getId();
+    }
+
+    private static String emptyIfNull(String value) {
+        return value == null ? "" : value;
     }
 
     private static String rootMessage(Throwable error) {

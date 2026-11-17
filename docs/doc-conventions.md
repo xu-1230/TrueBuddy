@@ -144,7 +144,7 @@
 | `/homework/**` | `/index/homework-grading`（页面随 `/index` 要求登录；API 仍放行用于未登录态联调） |
 | ~~`/workflow/**`~~ | **2026-11-17 起移出白名单**（ADR 0007）：工作流列表 / 详情 / 可见性 / fork / 删除全部要求登录并按 `creator` 授权；执行入口 `POST /chat` 同样要求登录 |
 | `/meeting/**` | `/meeting/:meetingNo`（免登录入会）；`/index/meeting`（页面随 `/index` 要求登录，用 hostToken） |
-| `/ppt/**` | `/index/ppt`（页面随 `/index` 要求登录；讲稿生成与播报接口本身无状态放行） |
+| `/ppt/speech/speak` | `/index/ppt`（页面随 `/index` 要求登录）；**只有播报保留无状态放行**（2026-11-18）；讲稿生成、narrate、形象目录、音色库、偏好均要求登录 |
 | `/admin/**`（仅身份接口已实现） | `/admin/**` 页面；其余业务接口为前端 mock，安全边界在后端 |
 
 > `/doc-template/**` 自 2026-11-17 起**移出免登录白名单**：生成 / 历史 / 详情 / AI 编辑 / 撤回都要求登录并按 `creator` 隔离；`/index/doc-template/:id?` 页面未登录时不拉数据、显示登录提示。

@@ -130,8 +130,9 @@ tb:
       # 模拟会议：学生点入会链接免登录参会（会议内身份用 hostToken / attendeeToken；
       # 实时媒体与聊天走 LiveKit 自己的端口 7880/7881，不经过本服务）
       - /meeting/**
-      # PPT 讲稿生成：前端 /index/ppt 目前不依赖登录态（无状态接口，不碰数据库）
-      - /ppt/**
+      # PPT 播报只保留 speak 公开：放映页刷新 / 令牌过期时仍能出声；
+      # 讲稿生成、形象目录、音色库、偏好均走登录态（/index 本身要求登录）
+      - /ppt/speech/speak
   # 讲课模块：模拟会议（本期）
   lecture:
     meeting:
@@ -171,6 +172,8 @@ tb:
       dashscope-api-key: ${DASHSCOPE_API_KEY}
       tts-model: ${TB_DH_TTS_MODEL}
       tts-voice: ${TB_DH_TTS_VOICE}
+      # 声音复刻上传样本的公网可达存储地址（可选）；为空时设置弹窗禁用上传，只保留音频链接
+      public-base-url: ${TB_DH_PUBLIC_BASE_URL:}
       # 并发播报数（决定合成线程池大小）与单条文本长度上限
       max-concurrent-speak: ${TB_DH_MAX_SPEAK:2}
       max-text-length: ${TB_DH_MAX_TEXT_LENGTH:1000}

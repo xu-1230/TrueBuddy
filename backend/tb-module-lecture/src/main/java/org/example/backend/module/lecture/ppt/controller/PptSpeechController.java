@@ -31,8 +31,9 @@ import static org.example.backend.framework.common.pojo.CommonResult.success;
  *       声音因此随共享轨一起到学生端（见 docs/16 §5.7）。</li>
  * </ul>
  *
- * <p>放行：{@code /ppt/**} 已在 {@code tb.security.permit-all-urls} 中，与 {@code /meeting/**} 同理
- * （PPT 页目前不依赖登录态）。
+ * <p>放行：只有 {@code /ppt/speech/speak} 在 {@code tb.security.permit-all-urls} 中——
+ * 放映页刷新 / accessToken 过期时仍能出声；{@code /optimize}、{@code /narrate} 与音色库、
+ * 偏好接口都要求登录（前端走 axios，令牌过期会自动刷新）。
  */
 @RestController
 @RequestMapping("/ppt/speech")

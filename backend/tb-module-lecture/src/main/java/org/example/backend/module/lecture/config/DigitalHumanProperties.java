@@ -48,4 +48,15 @@ public class DigitalHumanProperties {
      */
     private Integer maxTextLength = 1000;
 
+    /**
+     * 公网可达的存储地址（可选），用于声音复刻时让 DashScope 拉取上传的音频样本。
+     *
+     * <p>本项目的 MinIO 默认是 `http://localhost:9000`，阿里云侧无法访问；只有把
+     * MinIO（或反向代理）暴露到公网、并允许匿名读取对应对象时，上传复刻才可用。
+     * 未配置时设置弹窗会禁用「上传音频」，只保留「音频链接」。
+     *
+     * <p>形如 `https://static.example.com`；拼出的地址是 `{publicBaseUrl}/{bucket}/{objectName}`。
+     */
+    private String publicBaseUrl = "";
+
 }

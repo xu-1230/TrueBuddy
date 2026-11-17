@@ -41,6 +41,7 @@
 | `DOCMIND_ENDPOINT` / `DOCMIND_LLM_ENHANCEMENT` / `DOCMIND_ENHANCEMENT_MODE` / `DOCMIND_FORMULA_ENHANCEMENT` / `DOCMIND_OUTPUT_HTML_TABLE` | 否 | 解析行为开关（增强模式必须 `llm-enhancement=true`） |
 | `LIVEKIT_URL` / `LIVEKIT_PORT` / `LIVEKIT_TOKEN_TTL_HOURS` | 否 | 信令地址（留空按局域网 IP 推导）/ 端口 / 令牌有效期 |
 | `TB_DH_ENABLED` / `TB_DH_MAX_SPEAK` / `TB_DH_TTS_MODEL` / `TB_DH_TTS_VOICE` / `TB_DH_MAX_TEXT_LENGTH` | 否 | 数字人播报开关与合成参数（`tb.lecture.digital-human.*`） |
+| `TB_DH_PUBLIC_BASE_URL` | 否 | 声音复刻上传样本的公网存储基址（`tb.lecture.digital-human.public-base-url`）；留空时设置弹窗禁用「上传音频」，只用公网音频链接。需保证 MinIO 桶允许匿名读取，地址形如 `https://static.example.com` |
 | `TB_MEETING_PUBLIC_BASE_URL` / `TB_MEETING_FRONTEND_PORT` / `TB_MEETING_HISTORY_LIMIT` | 否 | 入会链接基址（留空自动探测局域网 IPv4）、前端端口、历史消息条数 |
 | `TB_PPT_MAX_PAGE_INPUT_CHARS` 等 `TB_PPT_*` | 否 | 讲稿生成的单页输入上限与分批大小 |
 | `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_BUCKET` | 否 | MinIO 地址 / AK / 桶名 |

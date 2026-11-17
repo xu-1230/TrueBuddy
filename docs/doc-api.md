@@ -1,6 +1,6 @@
 # doc-api · API 接口设计
 
-> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-16
+> 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-18
 > 适用范围：后端接口定义与前端 `src/api/` 调用层
 > 相关：[doc-conventions.md](./doc-conventions.md)（路由与安全对应）、[doc.md](./doc.md)（全局硬约束）、[doc-workflow.md](./doc-workflow.md)（SSE 执行协议）、[doc-devops.md](./doc-devops.md)（配置）
 
@@ -60,7 +60,7 @@
 | 机制 | 位置 | 说明 |
 | --- | --- | --- |
 | `@PermitAll` | 方法 / 类 | 标注即免登录（现有 `AuthController.login`） |
-| `tb.security.permit-all-urls` | `application.yml` | URL 白名单：`/system/auth/login`、`/system/auth/refresh`、`/test2/read-pptx`、`/test2/file-text`、`/homework/**`、`/meeting/**`（实时媒体与聊天走自托管 LiveKit 的 7880/7881，不经过本服务；会议内身份是 `hostToken` / `attendeeToken`，离会接口 `POST /meeting/leave` 也靠它校验）、`/ppt/**`（PPT 讲稿生成，无状态接口）。`/doc-template/**` 自 2026-11-17 起移出白名单：生成 / 历史 / 详情 / 聊天记录 / AI 编辑 / 撤回全部要求登录并按 `creator` 隔离；**`/workflow/**` 同日移出**（ADR 0007）：列表 / 详情 / 可见性 / fork / 删除全部要求登录 |
+| `tb.security.permit-all-urls` | `application.yml` | URL 白名单：`/system/auth/login`、`/system/auth/refresh`、`/test2/read-pptx`、`/test2/file-text`、`/homework/**`、`/meeting/**`（实时媒体与聊天走自托管 LiveKit 的 7880/7881，不经过本服务；会议内身份是 `hostToken` / `attendeeToken`，离会接口 `POST /meeting/leave` 也靠它校验）、**`/ppt/speech/speak`**（仅播报：放映页刷新 / accessToken 过期时仍能出声）。`/ppt/**` 的其余接口（讲稿生成 / narrate / 形象目录 / 音色库 / 偏好）自 2026-11-18 起要求登录。`/doc-template/**` 自 2026-11-17 起移出白名单：生成 / 历史 / 详情 / 聊天记录 / AI 编辑 / 撤回全部要求登录并按 `creator` 隔离；**`/workflow/**` 同日移出**（ADR 0007）：列表 / 详情 / 可见性 / fork / 删除全部要求登录 |
 | 兜底 | `SecurityConfig` | `anyRequest().authenticated()`；静态资源与 `DispatcherType.ASYNC` 放行 |
 
 > 新增免登录接口优先使用 `@PermitAll`；批量前缀放行才写入 `permit-all-urls` 并同步本文档。
@@ -129,10 +129,16 @@
 | 47 | `MeetingController` | POST | `/meeting/close` | 结束会议（`meetingNo` + `hostToken`）：置为已结束、给台账补离会时间并**删除 LiveKit 房间**（房间内学生立即断开） | `CommonResult<Boolean>` |
 | 48 | `MeetingController` | GET | `/meeting/digital/status` | 语音可用性（**无参数**）：只看开关与 DashScope 合成配置是否齐备，**不探测任何进程**（worker 已删）。播报本身不在会议接口里，见 50 | `CommonResult<DigitalStatusVO>` |
 | 49 | `PptSpeechController` | POST | `/ppt/speech/optimize` | PPT 讲稿生成（`pages` 长度 1 = 本页，长度 N = 全部）；无状态、不落库，内部按 `tb.lecture.ppt.batch-size` 分批调用模型，部分失败走 `failedIndexes` | `CommonResult<PptSpeechOptimizeRespVO>` |
-| 50 | `PptSpeechController` | POST | `/ppt/speech/speak` | **讲稿流式播报**（SSE，`produces=text/event-stream`）：`{ text, meetingNo?, hostToken? }` → 事件 `status`（started / done）、`chunk`（base64 的 48kHz 单声道 16bit PCM）、`error`；**调用方断开即取消合成**。带齐会议号与凭据时以数字人身份落库（`kind=2`），否则是彩排试听。链路见 [16](./doc-lecture.md) §5.7 | `SseEmitter` |
+| 50 | `PptSpeechController` | POST | `/ppt/speech/speak` | **讲稿流式播报**（SSE，`produces=text/event-stream`）：`{ text, voiceCode?, meetingNo?, hostToken? }` → 事件 `status`（started / done）、`chunk`（base64 的 48kHz 单声道 16bit PCM）、`error`；`status started` 带 `voiceCode`、`voiceFallback`、`voiceFallbackReason`（音色不可用时回退默认）。**调用方断开即取消合成**。带齐会议号与凭据时以数字人身份落库（`kind=2`），否则是彩排试听。链路见 [16](./doc-lecture.md) §5.7 | `SseEmitter` |
 | 51 | `AdminAuthController` | GET | `/admin/auth/profile` | 当前管理端账号资料 + 角色 + 权限；`@PreAuthorize("hasAuthority('admin:dashboard')")` | `CommonResult<AdminProfileRespVO>` |
 | 52 | `AdminAuthController` | GET | `/admin/auth/permissions` | 当前账号权限码集合；同样要求 `admin:dashboard` | `CommonResult<List<String>>` |
 | 53 | `AuthController` | POST | `/system/auth/refresh` | 刷新令牌：旧 refreshToken 一次性消费，返回新 accessToken + refreshToken 与最新角色/权限 | `CommonResult<AuthLoginRespVO>` |
+| 54 | `PptAvatarController` | GET | `/ppt/avatar/list` | 数字人形象目录（启用中的形象，按 `sort,id`）：`model_code/name/kind/preview_image`；模型地址仍由前端 `configs/avatar.js` 维护 | `CommonResult<List<AvatarModelVO>>` |
+| 55 | `PptVoiceController` | GET | `/ppt/voice/list` | 音色库：内置音色 + 当前用户复刻音色；附 `defaultVoiceCode`、`cloneEnabled`、`uploadEnabled`；复刻音色仅创建者可见 | `CommonResult<AvatarVoiceListRespVO>` |
+| 56 | `PptPreferenceController` | GET | `/ppt/preference` | 当前用户的数字人与音色偏好；无记录时两个编码为空（表示默认） | `CommonResult<AvatarPreferenceVO>` |
+| 57 | `PptPreferenceController` | PUT | `/ppt/preference` | 保存偏好 `{ avatarModelCode?, voiceCode? }`；形象必须在启用目录里、音色必须对当前用户可见；空值表示回退默认 | `CommonResult<AvatarPreferenceVO>` |
+| 58 | `PptVoiceController` | POST | `/ppt/voice/clone` | 声音复刻（multipart）：`name`、`gender` 必填；`trait`/`language` 选填；`sourceType=upload|url`；`file` 或 `url`。上传路径需 `tb.lecture.digital-human.public-base-url`；复刻音色落 `avatar_voice`（`source=2`） | `CommonResult<AvatarVoiceVO>` |
+| 59 | `PptVoiceController` | DELETE | `/ppt/voice/{id}` | 删除自己的复刻音色：软删 + 清空引用它的偏好 + 尽力删除 DashScope 云端音色 | `CommonResult<Boolean>` |
 
 > 接口 24~33 属**自定义工作流模块**（包根 `org.example.textflow`），分两块：
 >
@@ -218,7 +224,7 @@ service.interceptors.response.use(
 | `homework.js` | `uploadHomeworkFiles(files, paths, folderName, onUploadProgress)`、`submitGrading(payload)`、`listHomeworkTasks(limit)`、`getHomeworkTaskDetail(taskId)`、`startHomeworkGrading(taskId)`、`writeHomeworkResults(taskId, payload)` | 接口 34~39：上传成功后串行提交批改（上传带进度回调）；任务列表/详情供历史抽屉，start 与 results 由执行链路调用（见 [doc-homework.md](./doc-homework.md) §6）。历史的 `gradeHomework` / `getGradingHistory` / `getGradingDetail` / `exportGradingResult` 属演示态，已随页面改造移除 |
 | `workflow.js` | `buildChatBody`、`buildCardSubmitBody`、`buildRunDefinition`、`buildWorkflowSchema`、`saveWorkflow`、`getWorkflowDetail`、`listWorkflows`、`updateWorkflowVisibility(workflowId, visibility)`、`getPublicWorkflows()`、`forkWorkflow(workflowId)`、`renameWorkflow(workflowId, name)`、`deleteWorkflow(workflowId)`、`createConversation`、`listConversations`；常量 `CHAT_API`（SSE / 会话地址，其中 `chat` **含** `/api` 前缀）与 `WORKFLOW_REST_API`（REST 路径，无前缀） | 接口 25~33、30a、30b：`views/workflow2/WorkflowListView.vue`（我的工作流 / 公有库、fork / 可见性 / 重命名 / 删除）、`views/workflow2/WorkflowView.vue`（画布编辑 + 保存对话框 + 按路由 `:id` 打开 + 只读画布 fork + 建会话 + 试运行 + 节点下方人工确认卡片）、`views/homework/HomeworkGradingView.vue` 与 `views/system/SystemHomeView.vue`（`listWorkflows`）；SSE 读取封装见 `src/utils/event-stream.js`。**没有轮询兜底**：`GET /workflow/get_process` 从未实现，终态只认 SSE 帧 |
 | `meeting.js` | `createMeeting`、`joinMeeting`、`leaveMeeting`、`getMeetingDetail`、`getMeetingState`、`sendMeetingMessage`、`closeMeeting`、`getDigitalStatus`；常量 `MEETING_REST_API` | 接口 31~38：`createMeeting` 由 **`views/ppt/index.vue`**（PPT 页的「创建会议」入口）调用，其余在 `views/meeting/MeetingConsoleView.vue`（老师控制台）与 `views/meeting/MeetingRoomView.vue`（学生会议室）。`leaveMeeting` 走 `navigator.sendBeacon`（组件卸载路径上普通请求会被浏览器掐掉），因此带 `/api` 前缀而非用 axios 实例。实时能力不在本文件内：LiveKit 房间客户端见 `views/meeting/hooks/useLiveKitRoom.js`（屏幕共享带 `audio: true`，学生端 attach `screen_share_audio`），「在线成员 vs 入会台账」的裁决见 `views/meeting/utils/attendees.js`，主持人凭据的本地存取见 `src/utils/hostSession.js`（PPT 页写、控制台读） |
-| `ppt.js` | `optimizeSpeech(payload, signal)`；常量 `PPT_REST_API` | 接口 39：`views/ppt/index.vue`（备注区星形按钮 = 本页、工具栏按钮 = 全部）+ 两个对比弹窗（`views/ppt/components/ai/`）。整篇是**一次长请求**，离开页面用 `AbortController` 中止。**播报不走本文件**：放映页用 `@/utils/event-stream` 直接读接口 40 的 SSE，播放与口型在 `views/ppt/utils/speech-player.js`（见 docs/16 §5.7） |
+| `ppt.js` | `optimizeSpeech(payload, signal)`、`narrateSpeech(payload, signal)`、`getAvatarList()`、`getVoiceList()`、`getAvatarPreference()`、`saveAvatarPreference(payload)`、`cloneVoice(formData)`、`deleteVoice(id)`；常量 `PPT_REST_API` | 接口 39 / 54~59：`views/ppt/index.vue`（备注区星形按钮 = 本页、工具栏按钮 = 全部；页面挂载读偏好、保存设置）+ 两个对比弹窗（`views/ppt/components/ai/`）+ 数字人设置弹窗（`views/ppt/components/settings/`）。整篇是**一次长请求**，离开页面用 `AbortController` 中止。**播报不走本文件**：放映页用 `@/utils/event-stream` 直接读接口 50 的 SSE，播放与口型在 `views/ppt/utils/speech-player.js`（见 docs/16 §5.7） |
 
 ### 3.4 调用约定
 
@@ -296,7 +302,8 @@ async function load() {
 | `ChatController` | `/chat` | `/api/chat`（SSE 执行入口，**不挂在 `/workflow` 下**：执行链路与会话归属独立成前缀；`/workflow/**` 与 `/chat/**` 自 ADR 0007 起都要求登录） |
 | `HomeworkController` | `/homework` | `/api/homework` |
 | `MeetingController` | `/meeting` | `/api/meeting`（实时媒体与聊天走自托管 LiveKit，不经过本服务的 Controller） |
-| `PptSpeechController` | `/ppt/speech` | `/api/ppt/speech` |
+| `PptSpeechController` | `/ppt/speech` | `/api/ppt/speech`（仅 `/speak` 公开） |
+| `PptAvatarController` / `PptVoiceController` / `PptPreferenceController` | `/ppt/avatar`、`/ppt/voice`、`/ppt/preference` | `/api/ppt/*`（要求登录） |
 
 ### 6.3 路径风格
 
