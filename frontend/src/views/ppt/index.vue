@@ -32,7 +32,7 @@
         <el-tooltip content="用 AI 把全部页的备注改写成演讲稿" placement="bottom" :show-after="300">
           <el-button type="warning" plain :loading="aiRunning" @click="optimizeAllRemarks">
             <AiSparkIcon class="btn-icon" :size="14" />
-            AI 优化全部备注
+            {{ optimizeAllButtonText }}
           </el-button>
         </el-tooltip>
         <!-- 数字人与声音设置：形象 / 音色的选择与复刻都在这个弹窗里 -->
@@ -307,6 +307,8 @@ import { readEventStream } from '@/utils/event-stream'
 import { createLessonRunner } from './utils/lesson-runner'
 import { createSpeechPlayer } from './utils/speech-player'
 import { buildSpeechPages, extractSlideTitle, htmlToPlainText } from './utils/slide-text'
+import { buildSlideImages, clearSlideImageCache } from './utils/slide-images'
+import { buildDeckOutline, chunkEntries, mergeSpeechResults } from './utils/speech-chunks'
 import ThumbnailSlide from './components/thumbnail/ThumbnailSlide.vue'
 import ScreenSlide from './components/screen/ScreenSlide.vue'
 import ScreenView from './screen/ScreenView.vue'
@@ -587,10 +589,12 @@ const lessonRunner = createLessonRunner({
   stopSpeaking,
   // 照读的文本与备注区同一口径：pptx 解析出的 HTML 统一转纯文本
   getPageText: (page) => htmlToPlainText(slides.value[page]?.remark ?? '').trim(),
-  // ai 模式：页面信息（narrate 蓝本）+ 讲词生成 + 自动翻页 + 总页数
-  getPageInfo: (page) => {
+  // ai 模式：页面信息（narrate 蓝本，含压缩后的本页图片）+ 讲词生成 + 自动翻页 + 总页数
+  getPageInfo: async (page) => {
     const slide = slides.value[page]
-    return slide ? buildSpeechPages([{ index: page + 1, slide }])[0] : null
+    if (!slide) return null
+    const [info] = await buildPagesForSpeech([{ index: page + 1, slide }])
+    return info
   },
   generateSpeech: (payload) => narrateSpeech(payload),
   advance: advanceToNextSlide,
@@ -813,6 +817,8 @@ onBeforeUnmount(() => {
   speechPlayer.destroy()
   // 离开 PPT 页就别再等讲稿了（后端仍会把当前批次跑完，这是无状态接口的固有代价）
   aiAbortController?.abort()
+  // 压缩后的图片 data URL 体积不小：离开页面即释放，回来重新压一次
+  clearSlideImageCache()
 })
 onUnmounted(() => canvasResizeObserver && canvasResizeObserver.disconnect())
 
@@ -912,6 +918,8 @@ const aiSingle = reactive({
   visible: false, pageIndex: 0, slideId: '', original: '', remark: '', chars: 0, seconds: 0, regenerating: false,
 })
 const aiBatch = reactive({ visible: false, pages: [], retrying: false })
+/** 整篇分片进度：只用于按钮文案「生成中 n/N 页」，不新增弹窗 */
+const aiProgress = reactive({ done: 0, total: 0 })
 /** 当前请求的中止句柄：离开 PPT 页 / 切路由时中止等待（后端仍会把当前批次跑完，见 docs/16 风险表） */
 let aiAbortController = null
 
@@ -920,6 +928,13 @@ const aiTargetSeconds = () => {
   const minutes = Number(AI_TARGET_MINUTES)
   return Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : undefined
 }
+
+/** 「优化全部」按钮文案：分片跑批时显示进度，其余时候保持原文案 */
+const optimizeAllButtonText = computed(() => (
+  aiRunning.value && aiProgress.total
+    ? `生成中 ${aiProgress.done}/${aiProgress.total} 页`
+    : 'AI 优化全部备注'
+))
 
 /**
  * 请求前的快照：页码 → { slideId, title, original }。
@@ -933,10 +948,37 @@ const snapshotOf = (entries) => entries.map(({ index, slide }) => ({
   original: htmlToPlainText(slide.remark),
 }))
 
-async function requestSpeech(pages) {
+/** 开始一次新请求：中止上一次等待，返回本次的 signal（分片跑批全程共用） */
+function beginSpeechRequest() {
   aiAbortController?.abort()
   aiAbortController = new AbortController()
-  return optimizeSpeech({ targetSeconds: aiTargetSeconds(), pages }, aiAbortController.signal)
+  return aiAbortController.signal
+}
+
+async function requestSpeech(payload, signal = beginSpeechRequest()) {
+  return optimizeSpeech({ targetSeconds: aiTargetSeconds(), ...payload }, signal)
+}
+
+/** 全篇上下文：分片请求必须带上，否则后端会把每片 6 页当成整篇 */
+const deckContext = () => {
+  const entries = slides.value.map((slide, i) => ({ index: i + 1, slide }))
+  return { totalPages: entries.length, outline: buildDeckOutline(entries) }
+}
+
+/**
+ * 文本页信息 + 本页图片 data URL。
+ *
+ * 图片全部压缩失败（EMF/WMF、损坏数据）时退回纯文本页，不阻断其他页。
+ */
+async function buildPagesForSpeech(entries) {
+  const pages = []
+  // 逐页压图而不是一次性 Promise.all：一轮最多 3 张 canvas，避免大文档把内存顶满
+  for (const { index, slide } of entries ?? []) {
+    const [page] = buildSpeechPages([{ index, slide }])
+    const images = await buildSlideImages(slide, viewportRatio.value)
+    pages.push(images.length ? { ...page, images } : page)
+  }
+  return pages
 }
 
 /** 主动中止不算失败：老师切页/离开时必然发生一次，不该弹红字 */
@@ -944,8 +986,8 @@ const isAborted = (error) => error?.name === 'CanceledError' || error?.code === 
 
 /** 生成一页讲稿：单页按钮、整篇里的补生成、单页「重新生成」都走这里，保证输入口径一致 */
 async function generatePageScript(slide, index) {
-  const [page] = buildSpeechPages([{ index, slide }])
-  const result = await requestSpeech([page])
+  const [page] = await buildPagesForSpeech([{ index, slide }])
+  const result = await requestSpeech({ pages: [page], ...deckContext() })
   return result?.pages?.[0] ?? null
 }
 
@@ -1012,7 +1054,12 @@ const applyCurrentRemark = (remark) => {
   ElMessage.success('已应用 AI 讲稿')
 }
 
-/** 工具栏按钮：优化全部页备注（一次请求，后端内部按批跑） */
+/**
+ * 工具栏按钮：优化全部页备注。
+ *
+ * 带图后整篇单次请求可能是几十 MB，因此按 6 页分片发送；每片都携带全篇页数与大纲，
+ * 后端的时长均摊与大纲口径不变。某片 HTTP 失败只标记该片页面，其他片继续。
+ */
 const optimizeAllRemarks = async () => {
   const entries = slides.value.map((slide, i) => ({ index: i + 1, slide }))
   if (!entries.length) {
@@ -1030,10 +1077,32 @@ const optimizeAllRemarks = async () => {
   if (!confirmed) return
 
   const snapshot = snapshotOf(entries)
+  const context = deckContext()
+  const chunks = chunkEntries(entries)
+  const results = []
+  const signal = beginSpeechRequest()
+
   aiRunning.value = true
+  aiProgress.done = 0
+  aiProgress.total = entries.length
   try {
-    const result = await requestSpeech(buildSpeechPages(entries))
-    const byIndex = new Map((result?.pages ?? []).map(item => [item.index, item]))
+    for (const chunk of chunks) {
+      if (signal.aborted) break
+      try {
+        const pages = await buildPagesForSpeech(chunk)
+        results.push(await requestSpeech({ pages, ...context }, signal))
+      } catch (error) {
+        if (isAborted(error)) break
+        // 这一片失败只影响该片：其余片继续，结果弹窗里按失败页标红
+        results.push({ pages: [], failedIndexes: chunk.map(({ index }) => index) })
+      }
+      aiProgress.done = Math.min(aiProgress.total, aiProgress.done + chunk.length)
+    }
+    // 已离开页面 / 已开始下一次请求：不再打开结果弹窗
+    if (signal.aborted) return
+
+    const merged = mergeSpeechResults(results)
+    const byIndex = new Map(merged.pages.map(item => [item.index, item]))
     aiBatch.pages = snapshot.map(item => {
       const generated = byIndex.get(item.index)
       return {
@@ -1052,6 +1121,8 @@ const optimizeAllRemarks = async () => {
     if (!isAborted(error)) ElMessage.error(error?.message || '讲稿生成失败')
   } finally {
     aiRunning.value = false
+    aiProgress.done = 0
+    aiProgress.total = 0
   }
 }
 
@@ -1068,17 +1139,34 @@ const applyBatchRemarks = (indexes) => {
   ElMessage.success(`已应用 ${applied.length} 页 AI 讲稿`)
 }
 
-/** 只重试失败的页：不重跑全篇，避免又等一两分钟 */
+/** 只重试失败的页：不重跑全篇，避免又等一两分钟；同样按 6 页分片 */
 const retryFailedRemarks = async () => {
   const entries = aiBatch.pages
     .filter(page => page.failed)
     .map(page => ({ index: page.index, slide: slides.value.find(item => item.id === page.slideId) }))
     .filter(entry => entry.slide)
   if (!entries.length) return
+
+  const context = deckContext()
+  const chunks = chunkEntries(entries)
+  const results = []
+  const signal = beginSpeechRequest()
+
   aiBatch.retrying = true
   try {
-    const result = await requestSpeech(buildSpeechPages(entries))
-    const byIndex = new Map((result?.pages ?? []).map(item => [item.index, item]))
+    for (const chunk of chunks) {
+      if (signal.aborted) break
+      try {
+        const pages = await buildPagesForSpeech(chunk)
+        results.push(await requestSpeech({ pages, ...context }, signal))
+      } catch (error) {
+        if (isAborted(error)) break
+        results.push({ pages: [], failedIndexes: chunk.map(({ index }) => index) })
+      }
+    }
+    if (signal.aborted) return
+
+    const byIndex = new Map(mergeSpeechResults(results).pages.map(item => [item.index, item]))
     let recovered = 0
     aiBatch.pages = aiBatch.pages.map(page => {
       const generated = byIndex.get(page.index)
@@ -1212,6 +1300,8 @@ const importSlideData = (data) => {
   const ratio = ratioFromSize || data.viewportRatio
   if (ratio) slidesStore.setViewportRatio(ratio)
 
+  // 新文档的图片 data URL 与上一份无关：清掉压缩缓存，避免长期占内存
+  clearSlideImageCache()
   slidesStore.setSlides(normalizeSlideData(data.slides))
   ElMessage.success(`导入成功，共 ${data.slides.length} 页幻灯片`)
 }

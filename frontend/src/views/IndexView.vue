@@ -153,10 +153,12 @@
             aria-label="账户菜单"
             aria-haspopup="menu"
           >
-            <el-avatar :size="32" class="sidebar__avatar">{{ user.initial }}</el-avatar>
+            <el-avatar :size="32" class="sidebar__avatar" :src="user.avatar || undefined">
+              {{ user.initial }}
+            </el-avatar>
             <span class="sidebar__user-info">
               <span class="sidebar__username">{{ user.name }}</span>
-              <span class="sidebar__role">{{ user.role }}</span>
+              <span v-if="user.role" class="sidebar__role">{{ user.role }}</span>
             </span>
           </button>
           <template #dropdown>
@@ -213,7 +215,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -228,6 +230,7 @@ import {
   SwitchButton,
 } from '@element-plus/icons-vue'
 import AdminIcon from '@/views/admin/components/AdminIcon.vue'
+import { getProfile } from '@/api/auth'
 import { useAppearance } from '@/composables/useAppearance'
 import { removeToken } from '@/utils/auth'
 import { isChildPath, isPathActive } from '@/utils/route'
@@ -256,10 +259,35 @@ const isFullBleed = computed(
   () => route.path === '/index/meeting' || isChildPath(route.path, '/index/workflow'),
 )
 
-const user = reactive({
-  name: '张三',
-  role: '免费用户',
-  initial: '张',
+/** 角色编码 → 展示文案：与后端 RBAC 的 system_role.code 一致，口径同 useAdminSession */
+const ROLE_LABELS = {
+  admin: '管理员',
+  auditor: '审核员',
+  member: '会员',
+  normal: '普通用户',
+}
+
+/** 当前登录用户资料：页脚账户入口的唯一数据源，来自 GET /system/auth/profile */
+const profile = ref(null)
+
+/** 资料未到达 / 请求失败时给出可读兜底，避免页脚出现空白；角色为空则不占位 */
+const user = computed(() => {
+  const nickname = profile.value?.nickname || profile.value?.username || '用户'
+  const roles = Array.isArray(profile.value?.roles) ? profile.value.roles : []
+  return {
+    name: nickname,
+    role: roles.map((role) => ROLE_LABELS[role] || role).join(' / '),
+    initial: String(nickname).slice(0, 1),
+    avatar: profile.value?.avatar || '',
+  }
+})
+
+onMounted(async () => {
+  try {
+    profile.value = await getProfile()
+  } catch {
+    // 资料拉取失败不阻断布局：页脚保留兜底文案，令牌失效由接口层统一刷新 / 跳转
+  }
 })
 
 /**

@@ -4,6 +4,7 @@ import org.example.backend.module.lecture.ppt.model.vo.PptSpeechPageVO;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -74,6 +75,18 @@ public final class SpeechScriptUtils {
     public static String buildUserPrompt(Integer targetSeconds, int totalPages, int perPageChars,
                                          List<String> outline, List<PptSpeechPageVO> batchPages,
                                          int maxPageInputChars) {
+        return buildUserPrompt(targetSeconds, totalPages, perPageChars, outline, batchPages,
+                maxPageInputChars, Map.of());
+    }
+
+    /**
+     * 拼一个批次的 user prompt（带图片归属说明）。
+     *
+     * @param imagePositions 页码 → 本页图片在请求图片列表中的序号（1 基），无图片时为空 Map
+     */
+    public static String buildUserPrompt(Integer targetSeconds, int totalPages, int perPageChars,
+                                         List<String> outline, List<PptSpeechPageVO> batchPages,
+                                         int maxPageInputChars, Map<Integer, List<Integer>> imagePositions) {
         StringBuilder prompt = new StringBuilder();
         if (targetSeconds != null && targetSeconds > 0 && totalPages > 0) {
             long perPageSeconds = Math.round(targetSeconds / (double) totalPages);
@@ -88,12 +101,27 @@ public final class SpeechScriptUtils {
             prompt.append(i + 1).append(". ").append(blankToNone(outline.get(i))).append('\n');
         }
 
+        Map<Integer, List<Integer>> positions = imagePositions == null ? Map.of() : imagePositions;
+
         // 逐页压平后列出：备注里的换行会撑坏「=== 第 N 页 ===」的结构，必须先 sanitize
         for (PptSpeechPageVO page : batchPages) {
             prompt.append("\n=== 第 ").append(page.getIndex()).append(" 页 ===\n");
             prompt.append("标题：").append(blankToNone(sanitize(page.getTitle()))).append('\n');
             prompt.append("正文：").append(blankToNone(truncate(sanitize(page.getText()), maxPageInputChars))).append('\n');
             prompt.append("现有备注：").append(blankToNone(truncate(sanitize(page.getRemark()), maxPageInputChars))).append('\n');
+            List<Integer> imageIndexes = positions.get(page.getIndex());
+            if (imageIndexes != null && !imageIndexes.isEmpty()) {
+                prompt.append("页面图片：本页有 ").append(imageIndexes.size())
+                        .append(" 张（对应下方图片列表第 ").append(rangeText(imageIndexes)).append(" 张）\n");
+            }
+        }
+
+        if (!positions.isEmpty()) {
+            prompt.append("\n附带的图片按以下顺序排列（图片本身不带页码）：\n");
+            positions.forEach((pageIndex, imageIndexes) -> prompt.append("- 第 ")
+                    .append(rangeText(imageIndexes)).append(" 张：第 ").append(pageIndex).append(" 页\n"));
+            prompt.append("请把每张图视为对应页面的一部分；图片与正文/备注不一致时，"
+                    + "比较两者后自行判断，无法判断时不要陈述有争议的数据。\n");
         }
 
         prompt.append("\n请只针对以上 ").append(batchPages.size())
@@ -118,6 +146,17 @@ public final class SpeechScriptUtils {
      */
     public static String buildNarratePrompt(String title, String text, String remark,
                                             Integer pageCount, Integer elapsedMin, int maxPageInputChars) {
+        return buildNarratePrompt(title, text, remark, pageCount, elapsedMin, maxPageInputChars, 0);
+    }
+
+    /**
+     * 拼 narrate 的 user prompt（带图片说明）。
+     *
+     * @param imageCount 本页附带的图片张数（0 表示无图）
+     */
+    public static String buildNarratePrompt(String title, String text, String remark,
+                                            Integer pageCount, Integer elapsedMin, int maxPageInputChars,
+                                            int imageCount) {
         StringBuilder prompt = new StringBuilder();
         if (pageCount != null && pageCount > 0) {
             prompt.append("现场进度：共 ").append(pageCount).append(" 页。");
@@ -132,6 +171,10 @@ public final class SpeechScriptUtils {
         prompt.append("标题：").append(blankToNone(sanitize(title))).append('\n');
         prompt.append("正文：").append(blankToNone(truncate(sanitize(text), maxPageInputChars))).append('\n');
         prompt.append("现有备注：").append(blankToNone(truncate(sanitize(remark), maxPageInputChars))).append('\n');
+        if (imageCount > 0) {
+            prompt.append("页面图片：本页附带 ").append(imageCount)
+                    .append(" 张图片，见请求中的图片列表；请结合图片中可见的内容讲解。\n");
+        }
         prompt.append("\n请输出这一页的口播讲稿正文（纯文本，不要任何解释）。");
         return prompt.toString();
     }
@@ -240,6 +283,16 @@ public final class SpeechScriptUtils {
 
     private static String blankToNone(String text) {
         return text == null || text.isBlank() ? "（无）" : text;
+    }
+
+    /** 图片序号区间：1 张写「3」，连续多张写「1~2」；列表为空时写「0」 */
+    private static String rangeText(List<Integer> indexes) {
+        if (indexes == null || indexes.isEmpty()) {
+            return "0";
+        }
+        int first = indexes.get(0);
+        int last = indexes.get(indexes.size() - 1);
+        return first == last ? String.valueOf(first) : first + "~" + last;
     }
 
 }

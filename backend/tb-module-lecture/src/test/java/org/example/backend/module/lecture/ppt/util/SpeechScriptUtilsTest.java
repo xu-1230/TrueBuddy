@@ -5,7 +5,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -208,6 +210,37 @@ class SpeechScriptUtilsTest {
         assertThrows(IllegalArgumentException.class, () -> SpeechScriptUtils.extractPlainText("   "));
         // 只有一对空围栏：剥完什么都没有
         assertThrows(IllegalArgumentException.class, () -> SpeechScriptUtils.extractPlainText("```\n```"));
+    }
+
+    @Test
+    @DisplayName("prompt：图片按页标注归属，图片列表顺序与页码映射一致")
+    void buildUserPrompt_imagePositions() {
+        List<PptSpeechPageVO> batch = List.of(
+                page(3, "架构", "正文", "备注"),
+                page(4, null, null, null)
+        );
+        Map<Integer, List<Integer>> positions = new LinkedHashMap<>();
+        positions.put(3, List.of(1, 2));
+        positions.put(4, List.of(3));
+
+        String prompt = SpeechScriptUtils.buildUserPrompt(
+                null, 10, 0, List.of("封面", "架构"), batch, 1200, positions);
+
+        assertTrue(prompt.contains("页面图片：本页有 2 张（对应下方图片列表第 1~2 张）"), prompt);
+        assertTrue(prompt.contains("页面图片：本页有 1 张（对应下方图片列表第 3 张）"), prompt);
+        assertTrue(prompt.contains("第 1~2 张：第 3 页"), prompt);
+        assertTrue(prompt.contains("第 3 张：第 4 页"), prompt);
+        assertTrue(prompt.contains("图片与正文/备注不一致时"), prompt);
+    }
+
+    @Test
+    @DisplayName("narrate prompt：有图时写入图片张数说明，无图时不出现该行")
+    void buildNarratePrompt_imageCount() {
+        String withImages = SpeechScriptUtils.buildNarratePrompt("标题", "正文", "备注", 10, 2, 1200, 2);
+        assertTrue(withImages.contains("页面图片：本页附带 2 张图片"), withImages);
+
+        String withoutImages = SpeechScriptUtils.buildNarratePrompt("标题", "正文", "备注", 10, 2, 1200);
+        assertFalse(withoutImages.contains("页面图片"), withoutImages);
     }
 
     private PptSpeechPageVO page(int index, String title, String text, String remark) {

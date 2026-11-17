@@ -2,10 +2,12 @@
  * PPT 讲稿生成接口层。
  *
  * 前端 PPT 数据来自本地导入（`pptx-to-pptist`），服务端不持有这份文档，因此接口是**无状态**的：
- * 每次把要生成的页（标题 + 正文 + 现有备注）整批送上去，拿回每页的讲稿。
+ * 每次把要生成的页（标题 + 正文 + 现有备注 + 压缩后的图片）送上去，拿回每页的讲稿。
  *
- * `pages` 长度 1 就是「优化本页」，长度 N 就是「优化全部」——整篇是**一次请求**，
- * 后端内部按 `tb.lecture.ppt.batch-size` 分批调用模型（输出有 token 上限，整篇一次问会被截断）。
+ * `pages` 长度 1 就是「优化本页」；「优化全部」由 `views/ppt/utils/speech-chunks.js`
+ * 每 6 页分片发请求（带图后单次请求可能是几十 MB），每片带全篇 `totalPages` / `outline`。
+ * 后端内部再按 `tb.lecture.ppt.batch-size`（含图批次 2 页）分批调用模型
+ * （输出有 token 上限，整篇一次问会被截断）。
  */
 import service from './index'
 
@@ -58,7 +60,8 @@ export function deleteVoice(id) {
 /**
  * 生成讲稿。
  *
- * @param {{ targetSeconds?: number, pages: Array<object> }} payload 页清单与目标总时长（秒）
+ * @param {{ targetSeconds?: number, totalPages?: number, outline?: string[], pages: Array<object> }} payload
+ *   页清单、目标总时长（秒）与全篇上下文（分片时必带 `totalPages` / `outline`）
  * @param {AbortSignal} [signal] 离开 PPT 页时中止等待（已知代价：后端会把当前批次跑完，见 docs/16 风险表）
  * @returns {Promise<{ pages: Array<{ index: number, remark: string, chars: number, seconds: number }>, failedIndexes: number[] }>}
  */

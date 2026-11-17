@@ -13,9 +13,13 @@ import org.example.backend.module.lecture.ppt.prompt.PptPromptConstants;
 import org.example.backend.module.lecture.ppt.service.PptSpeechService;
 import org.example.backend.module.lecture.ppt.util.SpeechScriptUtils;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.content.Media;
 import org.springframework.stereotype.Service;
+import org.springframework.util.MimeTypeUtils;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +59,19 @@ public class PptSpeechServiceImpl implements PptSpeechService {
     /** 补跑轮数：首轮 + 一轮补跑（Q11：缺失的页自动补跑一次） */
     private static final int MAX_ROUNDS = 2;
 
+    /** 含图片的批次最多 2 页：图片本身不带页码，批次越大越容易对错页 */
+    private static final int VISION_BATCH_SIZE = 2;
+    /** 单页最多送给模型的图片数（前端已裁到 3 张，这里是接口侧兜底） */
+    private static final int MAX_IMAGES_PER_PAGE = 3;
+    /** 单张图片解码后的字节上限（前端目标 ≤300KB，留出余量） */
+    private static final int MAX_IMAGE_BYTES = 512 * 1024;
+    /** data URL 字符上限，避免把超大 base64 解进内存 */
+    private static final int MAX_IMAGE_DATA_URL_LENGTH = 800 * 1024;
+    /** 只接受浏览器/模型都能稳定处理的位图格式 */
+    private static final Set<String> ALLOWED_IMAGE_MIME_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
+    /** 全篇页数上限：只用于给 outline 补齐，防止恶意 totalPages 构造超长列表 */
+    private static final int MAX_TOTAL_PAGES = 2000;
+
     private final ChatClient pptChatClient;
     private final PptProperties properties;
 
@@ -67,16 +84,18 @@ public class PptSpeechServiceImpl implements PptSpeechService {
     public PptSpeechOptimizeRespVO optimize(PptSpeechOptimizeReqVO reqVO) {
         List<PptSpeechPageVO> pages = normalizePages(reqVO);
         Integer targetSeconds = reqVO.getTargetSeconds();
-        int perPageChars = SpeechScriptUtils.perPageChars(targetSeconds, pages.size(), properties.getCharsPerSecond());
-        List<String> outline = buildOutline(pages);
+        // 分片请求必须用全篇页数均摊时长；缺省按本片页数（旧调用方行为不变）
+        int totalPages = resolveTotalPages(reqVO, pages);
+        int perPageChars = SpeechScriptUtils.perPageChars(targetSeconds, totalPages, properties.getCharsPerSecond());
+        List<String> outline = resolveOutline(reqVO, pages, totalPages);
         int batchSize = positive(properties.getBatchSize(), DEFAULT_BATCH_SIZE);
         int maxPageInputChars = positive(properties.getMaxPageInputChars(), DEFAULT_MAX_PAGE_INPUT_CHARS);
 
         Map<Integer, String> generated = new LinkedHashMap<>();
         List<PptSpeechPageVO> pending = pages;
         for (int round = 1; round <= MAX_ROUNDS && !pending.isEmpty(); round++) {
-            for (List<PptSpeechPageVO> batch : SpeechScriptUtils.splitBatches(pending, batchSize)) {
-                generated.putAll(generateBatch(targetSeconds, pages.size(), perPageChars,
+            for (List<PptSpeechPageVO> batch : splitBatches(pending, batchSize)) {
+                generated.putAll(generateBatch(targetSeconds, totalPages, perPageChars,
                         outline, batch, maxPageInputChars));
             }
             pending = pages.stream().filter(page -> !generated.containsKey(page.getIndex())).toList();
@@ -97,8 +116,9 @@ public class PptSpeechServiceImpl implements PptSpeechService {
     public PptSpeechNarrateRespVO narrate(PptSpeechNarrateReqVO reqVO) {
         String remark = SpeechScriptUtils.sanitize(reqVO == null ? null : reqVO.getRemark());
         String text = SpeechScriptUtils.sanitize(reqVO == null ? null : reqVO.getText());
-        // 备注与正文全空 = 没有可讲的内容：前端工作项对这种页应当走「跳过」，这里是接口侧兜底
-        if (remark.isBlank() && text.isBlank()) {
+        List<Media> images = collectImages(reqVO == null ? null : reqVO.getImages());
+        // 备注、正文与图片全空 = 没有可讲的内容：前端工作项对这种页应当走「跳过」，这里是接口侧兜底
+        if (remark.isBlank() && text.isBlank() && images.isEmpty()) {
             throw exception(PPT_SPEECH_NARRATE_INPUT_EMPTY);
         }
 
@@ -108,15 +128,19 @@ public class PptSpeechServiceImpl implements PptSpeechService {
         String userPrompt = SpeechScriptUtils.buildNarratePrompt(title, text, remark,
                 context == null ? null : context.getPageCount(),
                 context == null ? null : context.getElapsedMin(),
-                maxPageInputChars);
+                maxPageInputChars, images.size());
 
+        log.debug("[narrate][发送消息 index={} images={}]", reqVO.getIndex(), images.size());
         String response;
         try {
-            response = pptChatClient.prompt()
-                    .system(PptPromptConstants.NARRATE_SYSTEM)
-                    .user(userPrompt)
-                    .call()
-                    .content();
+            ChatClient.ChatClientRequestSpec promptSpec = pptChatClient.prompt()
+                    .system(PptPromptConstants.NARRATE_SYSTEM);
+            if (images.isEmpty()) {
+                response = promptSpec.user(userPrompt).call().content();
+            } else {
+                UserMessage userMessage = UserMessage.builder().text(userPrompt).media(images).build();
+                response = promptSpec.messages(userMessage).call().content();
+            }
         } catch (Exception e) {
             log.warn("[narrate][模型调用失败 index={}] {}", reqVO.getIndex(), e.getMessage());
             throw exception(PPT_SPEECH_NARRATE_FAILED);
@@ -157,18 +181,38 @@ public class PptSpeechServiceImpl implements PptSpeechService {
                                                int maxPageInputChars) {
         Map<Integer, String> result = new LinkedHashMap<>();
         Set<Integer> allowed = batchPages.stream().map(PptSpeechPageVO::getIndex).collect(Collectors.toSet());
+
+        // 图片按「页序 → 页内面积序」追加到消息里；prompt 用同一顺序标注每张图属于哪页
+        List<Media> images = new ArrayList<>();
+        Map<Integer, List<Integer>> imagePositions = new LinkedHashMap<>();
+        for (PptSpeechPageVO page : batchPages) {
+            List<Integer> positions = new ArrayList<>();
+            for (Media image : collectImages(page.getImages())) {
+                images.add(image);
+                positions.add(images.size());
+            }
+            if (!positions.isEmpty()) {
+                imagePositions.put(page.getIndex(), positions);
+            }
+        }
+
         String userPrompt = SpeechScriptUtils.buildUserPrompt(targetSeconds, totalPages, perPageChars,
-                outline, batchPages, maxPageInputChars);
+                outline, batchPages, maxPageInputChars, imagePositions);
+        log.debug("[generateBatch][发送批次 pages={} images={} positions={}]",
+                batchPages.size(), images.size(), imagePositions);
 
         String response;
         try {
-            response = pptChatClient.prompt()
-                    .system(PptPromptConstants.SPEECH_SYSTEM)
-                    .user(userPrompt)
-                    .call()
-                    .content();
+            ChatClient.ChatClientRequestSpec promptSpec = pptChatClient.prompt()
+                    .system(PptPromptConstants.SPEECH_SYSTEM);
+            if (images.isEmpty()) {
+                response = promptSpec.user(userPrompt).call().content();
+            } else {
+                UserMessage userMessage = UserMessage.builder().text(userPrompt).media(images).build();
+                response = promptSpec.messages(userMessage).call().content();
+            }
         } catch (Exception e) {
-            log.warn("[generateBatch][模型调用失败 indexes={}] {}", allowed, e.getMessage());
+            log.warn("[generateBatch][模型调用失败 indexes={} images={}] {}", allowed, images.size(), e.getMessage());
             return result;
         }
 
@@ -233,6 +277,112 @@ public class PptSpeechServiceImpl implements PptSpeechService {
             throw exception(PPT_SPEECH_PAGES_TOO_MANY, maxPages);
         }
         return pages;
+    }
+
+    /**
+     * 按「是否含图片」切批：含图的批次最多 {@link #VISION_BATCH_SIZE} 页，纯文字批次仍用 batch-size。
+     *
+     * <p>图片在消息里只按顺序排列、不带页码；一个批次里页数越多，模型把图对错页的概率越高。
+     * 纯文字页没有这个风险，保持原有 8 页批量以避免把文本生成也拖慢。
+     */
+    private List<List<PptSpeechPageVO>> splitBatches(List<PptSpeechPageVO> pages, int textBatchSize) {
+        List<List<PptSpeechPageVO>> batches = new ArrayList<>();
+        List<PptSpeechPageVO> current = new ArrayList<>();
+        boolean currentHasImages = false;
+
+        for (PptSpeechPageVO page : pages) {
+            boolean pageHasImages = page.getImages() != null && !page.getImages().isEmpty();
+            int limit = pageHasImages || currentHasImages ? VISION_BATCH_SIZE : textBatchSize;
+            if (!current.isEmpty() && current.size() >= limit) {
+                batches.add(current);
+                current = new ArrayList<>();
+                currentHasImages = false;
+                limit = pageHasImages ? VISION_BATCH_SIZE : textBatchSize;
+            }
+            current.add(page);
+            currentHasImages = currentHasImages || pageHasImages;
+        }
+
+        if (!current.isEmpty()) {
+            batches.add(current);
+        }
+        return batches;
+    }
+
+    /** 全篇页数：分片请求以前端传入值为准；非法值回退到本片页数，并限制上限 */
+    private int resolveTotalPages(PptSpeechOptimizeReqVO reqVO, List<PptSpeechPageVO> pages) {
+        Integer requested = reqVO.getTotalPages();
+        if (requested == null || requested <= 0) {
+            return pages.size();
+        }
+        return Math.min(Math.max(pages.size(), requested), MAX_TOTAL_PAGES);
+    }
+
+    /** 全篇大纲：分片请求以前端传入值为准（按 totalPages 补齐/截断），否则按本批页面生成 */
+    private List<String> resolveOutline(PptSpeechOptimizeReqVO reqVO, List<PptSpeechPageVO> pages, int totalPages) {
+        List<String> requested = reqVO.getOutline();
+        if (requested == null || requested.isEmpty()) {
+            return buildOutline(pages);
+        }
+        List<String> outline = new ArrayList<>();
+        for (int i = 0; i < totalPages; i++) {
+            String raw = i < requested.size() ? requested.get(i) : null;
+            String title = SpeechScriptUtils.truncate(SpeechScriptUtils.sanitize(raw), 40);
+            outline.add(title.isBlank() ? "第 " + (i + 1) + " 页" : title);
+        }
+        return outline;
+    }
+
+    /** 收集一页的图片：过滤非法 data URL、超限格式与超过 3 张的余量 */
+    private List<Media> collectImages(List<String> dataUrls) {
+        if (dataUrls == null || dataUrls.isEmpty()) {
+            return List.of();
+        }
+        List<Media> images = new ArrayList<>();
+        for (String dataUrl : dataUrls) {
+            if (images.size() >= MAX_IMAGES_PER_PAGE) {
+                break;
+            }
+            Media image = parseImage(dataUrl);
+            if (image != null) {
+                images.add(image);
+            }
+        }
+        return images;
+    }
+
+    /**
+     * data URL → Spring AI Media。
+     *
+     * <p>只接受 image/jpeg、image/png、image/webp；格式/体积不合法的图片静默丢弃
+     * （前端已负责压缩与跳过 EMF/WMF，这里是接口侧兜底，不因一张坏图拖垮整批）。
+     */
+    private Media parseImage(String dataUrl) {
+        if (dataUrl == null || dataUrl.length() > MAX_IMAGE_DATA_URL_LENGTH || !dataUrl.startsWith("data:image/")) {
+            return null;
+        }
+        int comma = dataUrl.indexOf(',');
+        if (comma <= 0) {
+            return null;
+        }
+        String header = dataUrl.substring(5, comma);
+        if (!header.endsWith(";base64")) {
+            return null;
+        }
+        String mimeType = header.substring(0, header.length() - ";base64".length());
+        if (!ALLOWED_IMAGE_MIME_TYPES.contains(mimeType)) {
+            return null;
+        }
+        try {
+            byte[] bytes = Base64.getDecoder().decode(dataUrl.substring(comma + 1));
+            if (bytes.length == 0 || bytes.length > MAX_IMAGE_BYTES) {
+                return null;
+            }
+            return Media.builder().mimeType(MimeTypeUtils.parseMimeType(mimeType)).data(bytes).build();
+        } catch (IllegalArgumentException e) {
+            log.debug("[parseImage][跳过非法图片 dataUrlLength={}]", dataUrl.length());
+            return null;
+        }
     }
 
     /** 全篇大纲：每页一行标题（取正文首行，前端提取），空标题退化成「第 N 页」 */
