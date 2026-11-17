@@ -73,8 +73,8 @@
 | ~~Q15（首轮）~~ | 模块命名 | 已作废（以 Q30 为准） |
 | Q1（讲稿） | 范围 | 后端**无状态接口** + 前端两个按钮；**不做** pptx 上传解析与 `ppt_document` / `ppt_page` 落库 |
 | Q2（讲稿） | 结果落点 | AI 结果**写回页面的 `remark`**（讲稿即备注）。早先设定的 `ppt_page.speech_script` + `source` 双模式**作废** |
-| Q3 / Q12（讲稿） | 输入口径 | 每页送 `title` + 正文纯文本 + 现有备注；**全篇大纲**由后端从各页 `title` 拼；字段名沿用 `index` / `text` / `remark`，页码 1 基 |
-| Q5 / Q9 / Q18（讲稿） | 请求形态 | **一次请求整篇**（`pages` 长度 1 即本页）；后端内部按 `batch-size` 分批调用模型——模型输出有 token 上限，整篇一次问会被截断 |
+| Q3 / Q12（讲稿） | 输入口径 | 每页送 `title` + 正文纯文本 + 现有备注 + （2026-11-18 起）图片 `images[]`；**全篇大纲**由后端从各页 `title` 拼；字段名沿用 `index` / `text` / `remark` / `images`，页码 1 基 |
+| Q5 / Q9 / Q18（讲稿） | 请求形态 | 前端按页发请求（`pages` 长度 1 即本页）；整篇「优化全部」**每 6 页分片**（带图后单次请求可能几十 MB），后端内部按 `batch-size`（含图批次 2 页）分批调用模型——模型输出有 token 上限，整篇一次问会被截断 |
 | Q4 / Q10 / Q20（讲稿） | 结果形态 | **对比弹窗**（左原 / 右新），不做直接覆盖、不做流式；整篇弹窗内**逐页勾选、默认全选** |
 | Q6（讲稿） | 全量确认与回滚 | 跑之前确认一次；采纳后页面顶部给「**撤销本次优化**」入口（快照存内存，关闭提示即放弃撤销） |
 | Q7 / Q15（讲稿） | 时长约束 | 工具栏「本场时长（分钟）」；后端按 `chars-per-second`（4.0 字/秒）与页数均摊出每页目标字数（换算**只在后端一处**） |
@@ -503,7 +503,7 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 | 按钮 | 位置 | 行为 |
 | --- | --- | --- |
 | AI 优化本页备注（星形图标） | 备注区**右上角常显** | 只送当前页，结果进单页对比弹窗 |
-| AI 优化全部备注 | 顶部工具栏（含「本场时长」输入） | 一次请求整篇，结果进整篇对比弹窗（逐页勾选） |
+| AI 优化全部备注 | 顶部工具栏（含「本场时长」输入） | 每 6 页分片请求整篇，结果合并后进整篇对比弹窗（逐页勾选） |
 
 **口径与最初设想的差异**（以 §1.5 的 Q1/Q2（讲稿）为准）：
 
@@ -519,8 +519,16 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 // 请求
 {
   "targetSeconds": 480,                 // 可空：本场目标总时长（秒）
+  "totalPages": 30,                     // 新增，可空：分片请求带全篇页数（缺省 pages.size()）
+  "outline": ["封面", "项目背景"],       // 新增，可空：分片请求带全篇大纲
   "pages": [
-    { "index": 1, "title": "封面", "text": "<正文纯文本>", "remark": "<现有备注>" }
+    {
+      "index": 1,
+      "title": "封面",
+      "text": "<正文纯文本>",
+      "remark": "<现有备注>",
+      "images": ["data:image/jpeg;base64,..."]  // 新增，可空，最多 3 张
+    }
   ]
 }
 // 响应（部分失败不报错，见 Q11/Q13（讲稿））
@@ -530,14 +538,25 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 }
 ```
 
-- `pages` 长度 1 = 本页，长度 N = 全部；`title` / `text` / `remark` 字段名对齐 test2 的 `PptxPage`；
-- 全篇大纲由后端从各页 `title` 拼（前端不必另传）；
-- 后端按 `tb.lecture.ppt.batch-size`（默认 8 页）分批调用模型；失败的页补跑一轮，仍未成功才进 `failedIndexes`；**全部失败**才返回错误码。
+- `pages` 长度 1 = 本页，长度 N = 一片；`title` / `text` / `remark` 字段名对齐 test2 的 `PptxPage`；
+- 全篇大纲缺省由后端从各页 `title` 拼；分片时前端每片带全篇 `totalPages` / `outline`，后端优先使用，避免把 6 页当成整篇；
+- 后端按 `tb.lecture.ppt.batch-size`（默认 8 页）分批调用模型；**含图片的批次最多 2 页**（图片不带页码，批次越大越容易对错页）；失败的页补跑一轮，仍未成功才进 `failedIndexes`；**全部失败**才返回错误码。
+
+**多模态图片（2026-11-18 落地）**：
+
+- 前端 `views/ppt/utils/slide-images.js` 只取 `type = image` 的元素：每页最多 3 张、按面积降序、过滤小于页面 1% 的装饰图、同 `src` 去重；Canvas 压到最长边 1280px / JPEG 0.82 / 单张 data URL ≤420KB，有 `clip.range` 时按可见区域裁剪；
+- EMF/WMF 等浏览器无法解码的格式**静默跳过**；背景图与形状图片填充不发；
+- 带图页面多时，「优化全部」由 `views/ppt/utils/speech-chunks.js` 每 6 页分片发 HTTP 请求，按钮显示 `生成中 n/N 页`；
+- 后端 `PptSpeechServiceImpl` 把 data URL 解成 Spring AI `Media`，有图时走 `UserMessage.builder().text(prompt).media(images)`；无图时仍走 `.user(String)`，旧行为不变；
+- prompt 会写明「第 1~2 张图属于第 N 页」，并允许模型在图片与文字冲突时比较后自行判断，但不得编造不可见信息；
+- narrate 的纯图片页不再被 `lesson-runner` 当成空页跳过（`remark / text / images` 任一非空即可生成）。
+
+`POST /api/ppt/speech/narrate` 同样新增顶层 `images: string[]`；`remark` / `text` / `images` 三者全空才拒绝。
 
 ### 12.3 提示词与结构化输出
 
-- system：讲稿要口语化可照念、保留原意与专业术语、**不得编造正文里没有的事实**；只输出 `[{"index":n,"remark":"…"}]`；
-- user：目标总时长与每页目标字数 + 全篇大纲 + 本批每页的标题/正文/现有备注（**换行先压平**，否则会撑坏分页边界）；
+- system：讲稿要口语化可照念、保留原意与专业术语、**不得编造正文/备注/图片里都没有的事实**；图片是页面内容的一部分；图片与文字冲突时比较后自行判断；只输出 `[{"index":n,"remark":"…"}]`；
+- user：目标总时长与每页目标字数 + 全篇大纲 + 本批每页的标题/正文/现有备注（**换行先压平**，否则会撑坏分页边界）+ 图片归属说明（`第 1~2 张：第 N 页`）；
 - 解析：`SpeechScriptUtils.extractJsonArray`（取首个 `[` 到末个 `]`，剥 ```json 包裹），与 doctemplate 的 `extractJson` 同手法；**不用** `response_format`。
 
 ### 12.4 配置与错误码
@@ -550,6 +569,8 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 | `max-remark-chars` | `1500` | 单页讲稿字数硬上限 |
 | `max-page-input-chars` | `1200` | 单页正文/备注进 prompt 的字符上限 |
 
+> 图片相关上限为代码常量：含图批次 2 页、单页最多 3 张、单张解码后 ≤512KB、data URL ≤800KB（`PptSpeechServiceImpl`）。
+
 | 错误码（`1_008_000_xxx`） | 文案 |
 | --- | --- |
 | `1_008_000_000` | 请提供需要优化的页面 |
@@ -560,8 +581,11 @@ cd frontend && npm run lint                     # 注意：既有 tests/repro-it
 
 | 文件 | 作用 |
 | --- | --- |
-| `src/api/ppt.js` | `optimizeSpeech(payload, signal)` |
-| `views/ppt/utils/slide-text.js` | `extractSlideText` / `extractSlideTitle` / `buildSpeechPages` / `htmlToPlainText`（`text` / `shape` / `table` / `chart` 四类按 `top,left` 排序） |
+| `src/api/ppt.js` | `optimizeSpeech(payload, signal)` / `narrateSpeech(payload, signal)` |
+| `views/ppt/utils/slide-text.js` | `extractSlideText` / `extractSlideTitle` / `buildSpeechPages` / `htmlToPlainText`（`text` / `shape` / `table` / `chart` 四类按 `top,left` 排序；图片不参与文本提取） |
+| `views/ppt/utils/slide-images.js` | 选图（面积 / 去重 / 最多 3 张）、按 `clip.range` 裁剪、Canvas 压成 JPEG data URL、缓存与清理 |
+| `views/ppt/utils/speech-chunks.js` | 「优化全部」每 6 页分片、全篇 `outline`、分片结果按页码合并 |
+| `views/ppt/utils/lesson-runner.js` | AI 现场讲词编排；`getPageInfo` 可为 Promise，空页判断包含 `images` |
 | `views/ppt/components/ai/AiSparkIcon.vue` | 星形 AI 图标（内联 SVG） |
 | `views/ppt/components/ai/AiRemarkDialog.vue` | 单页对比弹窗（原 / 新 + 采纳 / 放弃 / 重新生成） |
 | `views/ppt/components/ai/AiRemarkBatchDialog.vue` | 整篇对比弹窗（逐页勾选默认全选 + 失败页标红 + 只重试失败页） |

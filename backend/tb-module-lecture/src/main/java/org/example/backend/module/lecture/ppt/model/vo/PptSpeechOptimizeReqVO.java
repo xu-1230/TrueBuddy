@@ -19,4 +19,20 @@ public class PptSpeechOptimizeReqVO {
     /** 需要生成讲稿的页面（顺序即幻灯片顺序） */
     private List<PptSpeechPageVO> pages;
 
+    /**
+     * 全篇总页数，可空：分片请求时由前端传入。
+     *
+     * <p>缺省按本次 {@code pages.size()} 处理。分片时若只用本片页数，
+     * 「每页目标字数 = 总时长 ÷ 页数」会被放大，讲稿篇幅失真。
+     */
+    private Integer totalPages;
+
+    /**
+     * 全篇大纲（每页一行标题），可空：分片请求时由前端传入。
+     *
+     * <p>缺省按本批 {@code pages} 的标题生成。分片时带上全篇大纲，
+     * 模型才能看到前后页结构与过渡关系。
+     */
+    private List<String> outline;
+
 }

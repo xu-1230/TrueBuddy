@@ -2,6 +2,8 @@ package org.example.backend.module.lecture.ppt.model.vo;
 
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * AI 现场讲词（narrate）请求体。
  *
@@ -22,8 +24,15 @@ public class PptSpeechNarrateReqVO {
     /** 该页正文纯文本（可空） */
     private String text;
 
-    /** 该页现有备注（可空）——讲词蓝本；与 text 至少一个非空 */
+    /** 该页现有备注（可空）——讲词蓝本；与 text / images 至少一个非空 */
     private String remark;
+
+    /**
+     * 该页图片（{@code data:image/jpeg;base64,...}），最多 3 张，可为空。
+     *
+     * <p>纯图片页没有正文与备注时，图片就是唯一可讲内容，不能按空页跳过。
+     */
+    private List<String> images;
 
     /** 现场上下文（前端组装，全部可空）：让讲词有「正在讲课」的现场感 */
     private Context context;

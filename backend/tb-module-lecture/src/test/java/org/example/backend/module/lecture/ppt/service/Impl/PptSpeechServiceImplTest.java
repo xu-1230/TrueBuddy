@@ -4,6 +4,9 @@ import org.example.backend.framework.common.exception.ServiceException;
 import org.example.backend.module.lecture.ppt.config.PptProperties;
 import org.example.backend.module.lecture.ppt.model.vo.PptSpeechNarrateReqVO;
 import org.example.backend.module.lecture.ppt.model.vo.PptSpeechNarrateRespVO;
+import org.example.backend.module.lecture.ppt.model.vo.PptSpeechOptimizeReqVO;
+import org.example.backend.module.lecture.ppt.model.vo.PptSpeechOptimizeRespVO;
+import org.example.backend.module.lecture.ppt.model.vo.PptSpeechPageVO;
 import org.example.backend.module.lecture.ppt.prompt.PptPromptConstants;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,10 +17,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -40,6 +48,10 @@ class PptSpeechServiceImplTest {
 
     private static final String SPEECH_TEXT = "同学们好，接下来我们看微服务的拆分原则。";
 
+    /** 1×1 PNG：只用于验证 data URL 解析与多模态消息，不关心画面内容 */
+    private static final String TINY_PNG =
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
     @Mock
     private ChatClient pptChatClient;
 
@@ -57,6 +69,7 @@ class PptSpeechServiceImplTest {
         when(pptChatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.system(anyString())).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
+        when(requestSpec.messages(any(Message[].class))).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
         when(callResponseSpec.content()).thenReturn(SPEECH_TEXT);
     }
@@ -81,6 +94,36 @@ class PptSpeechServiceImplTest {
                 () -> service.narrate(narrateReq("只有标题没有内容", "   ", "")));
 
         // 标题不算可讲内容：没有 remark/text 就不能讲（前端工作项据此走「跳过」）
+        assertTrue(error.getMessage().contains("没有可讲的内容"));
+        verify(pptChatClient, org.mockito.Mockito.never()).prompt();
+    }
+
+    @Test
+    @DisplayName("纯图片页：remark/text 为空但有 images 时不报空输入，并走 UserMessage 多模态消息")
+    void narrate_imageOnlyPage() {
+        PptSpeechNarrateReqVO reqVO = narrateReq("", "   ", "");
+        reqVO.setImages(List.of(TINY_PNG));
+
+        PptSpeechNarrateRespVO respVO = service.narrate(reqVO);
+
+        verify(requestSpec).messages(any(Message[].class));
+        org.mockito.ArgumentCaptor<Message[]> captor = org.mockito.ArgumentCaptor.forClass(Message[].class);
+        verify(requestSpec).messages(captor.capture());
+        assertEquals(1, captor.getValue().length, "一页最多 3 张，这里只有 1 张");
+        UserMessage message = (UserMessage) captor.getValue()[0];
+        assertEquals(1, message.getMedia().size(), "图片必须作为 Media 进入消息");
+        assertTrue(message.getText().contains("页面图片：本页附带 1 张图片"), message.getText());
+        assertEquals(SPEECH_TEXT, respVO.getSpeechText());
+    }
+
+    @Test
+    @DisplayName("非法图片 + 无文字：仍按空输入拒绝，且不触发模型调用")
+    void narrate_invalidImagesOnly() {
+        PptSpeechNarrateReqVO reqVO = narrateReq("", "", "");
+        reqVO.setImages(List.of("data:image/x-emf;base64,AAAA", "not-a-data-url"));
+
+        ServiceException error = assertThrows(ServiceException.class, () -> service.narrate(reqVO));
+
         assertTrue(error.getMessage().contains("没有可讲的内容"));
         verify(pptChatClient, org.mockito.Mockito.never()).prompt();
     }
@@ -140,6 +183,35 @@ class PptSpeechServiceImplTest {
         org.mockito.Mockito.doReturn(callResponseSpec).when(requestSpec).call();
         when(callResponseSpec.content()).thenReturn("   ");
         assertThrows(ServiceException.class, () -> service.narrate(narrateReq("标题", "正文", "备注")));
+    }
+
+    @Test
+    @DisplayName("optimize 分片上下文：totalPages / outline 用全篇口径，而不是本片 1 页")
+    void optimize_chunkedContext() {
+        when(callResponseSpec.content()).thenReturn("[{\"index\":1,\"remark\":\"第 1 页讲稿\"}]");
+
+        PptSpeechPageVO page = new PptSpeechPageVO();
+        page.setIndex(1);
+        page.setTitle("封面");
+        page.setText("正文");
+        page.setRemark("备注");
+
+        PptSpeechOptimizeReqVO reqVO = new PptSpeechOptimizeReqVO();
+        reqVO.setTargetSeconds(480);
+        reqVO.setTotalPages(10);
+        reqVO.setOutline(List.of("封面", "二", "三", "四", "五", "六", "七", "八", "九", "结尾"));
+        reqVO.setPages(List.of(page));
+
+        PptSpeechOptimizeRespVO respVO = service.optimize(reqVO);
+
+        org.mockito.ArgumentCaptor<String> captor = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(requestSpec).user(captor.capture());
+        String prompt = captor.getValue();
+        assertTrue(prompt.contains("全篇共 10 页"), prompt);
+        assertTrue(prompt.contains("每页约 48 秒"), prompt);
+        assertTrue(prompt.contains("10. 结尾"), prompt);
+        assertEquals(1, respVO.getPages().size());
+        assertEquals("第 1 页讲稿", respVO.getPages().get(0).getRemark());
     }
 
 }

@@ -239,6 +239,16 @@ test( 'decideAfterPage：非尾页 advance、尾页 end', () => {
   assert.equal(decideAfterPage(2, 3), 'end')
 })
 
+test('纯图片页：remark/text 都为空但有 images 时仍调用 narrate', async () => {
+  const infos = [{ index: 1, title: '', text: '', remark: '', images: ['data:image/jpeg;base64,AAAA'] }]
+  const { runner, events, narrateCalls } = setupAi({ pageCount: 1, infos })
+  runner.start(0, { mode: 'ai' })
+  await settle()
+  assert.deepEqual(narrateCalls(), [1], '图片也是页面内容，不能在这里被跳过')
+  assert.equal(events.some((e) => e.type === 'page-skipped'), false)
+  runner.stop()
+})
+
 test('ai 全流程：narrate → 播 → drained → advance → 下一页 → 尾页 lesson-done', async () => {
   const { runner, events, narrateCalls, advanceCalls, resolveCurrent } = setupAi({ pageCount: 3 })
   runner.start(0, { mode: 'ai' })
