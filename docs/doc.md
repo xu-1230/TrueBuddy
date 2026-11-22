@@ -15,7 +15,7 @@
 | `backend/` | Spring Boot 4 多模块 Maven（Java 17），端口 `8086`、context-path `/api` |
 | `frontend/` | Vue 3 + Vite + Pinia + Element Plus（纯 JS，无 TypeScript） |
 | `docx-mcp/` | Python MCP 工具服务（uv），由后端 stdio 子进程拉起 |
-| 数据/存储 | PostgreSQL + pgvector（`127.0.0.1:5432/tb`）、MinIO（9000）、自托管 LiveKit（7880，仓库外 `D:\ctf\livekit`） |
+| 数据/存储 | PostgreSQL + pgvector（`127.0.0.1:5432/tb`）、MinIO（9000）、自托管 LiveKit（7880，已纳入 `deploy/docker-compose.yml`） |
 
 ## 2. 模块地图
 
@@ -40,6 +40,7 @@
 | [doc-ui.md](./doc-ui.md) | 样式/主题/动效 + 展示页模块全流程 |
 | [doc-integration.md](./doc-integration.md) | 第三方集成（LLM/TTS/解析/存储/LiveKit/MCP） |
 | [doc-devops.md](./doc-devops.md) | 配置、环境变量、启动、容器化、LiveKit 部署 |
+| [doc-deployment.md](./doc-deployment.md) | 空白主机 Docker 一键部署、验证、排障、自启与日志 |
 | [adr/](./adr/) | 不可逆决策记录 0001–0004（append-only，不回溯修改） |
 | [specs/](./specs/) | 单次变更规格与验收口径（过程记录，保留不改写） |
 | [ui.html](./ui.html) | 视觉样张：先改样张 → 再改 `theme.css` |

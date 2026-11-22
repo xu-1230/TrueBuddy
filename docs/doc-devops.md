@@ -81,11 +81,12 @@ npm install
 npm run dev          # 5173，/api 代理到 8086
 ```
 
-## 5. 前端容器化（后端暂无容器化）
+## 5. 容器化
 
-- `frontend/Dockerfile`：多阶段——`node:22-alpine`（npmmirror 镜像源）执行 `vite build` → `nginx:1.27-alpine` 只托管 `dist/`；`REGISTRY_PREFIX` 默认 `docker.1ms.run/library`。
-- `frontend/docker-compose.yml`：单服务，**8080:80**；`extra_hosts: host.docker.internal:host-gateway`（供反代访问宿主机后端）。
-- `frontend/nginx.conf` 要点：`location /api/` 运行时解析反代到 `http://host.docker.internal:8086`（后端未启动页面也能打开）；**SSE/WebSocket 不缓冲**（`proxy_buffering off`、升级头 map、读写超时 300s）；`client_max_body_size 200m`；`/assets` 缓存 30d；SPA `try_files ... /index.html` 回退，`index.html` no-cache。
+- **既有前端单独方案（现状）**：`frontend/Dockerfile` 多阶段——`node:22-alpine`（npmmirror 镜像源）执行 `vite build` → `nginx:1.27-alpine` 只托管 `dist/`；`REGISTRY_PREFIX` 默认 `docker.1ms.run/library`。`frontend/docker-compose.yml` 单服务、**8080:80**，`extra_hosts: host.docker.internal:host-gateway`；`frontend/nginx.conf` 把 `/api` 反代到宿主机 `host.docker.internal:8086`，SSE/WS 不缓冲、SPA 回退、上传 200m。
+- **全栈一键方案（2026-11-19 新增）**：`deploy/` 下提供后端 Dockerfile（含 docx-mcp 同容器）、前端 Dockerfile、compose 四服务编排与双平台部署脚本，可在仅装 Docker 的主机上一键起全栈。完整步骤、验证、排障与自启说明见 [doc-deployment.md](./doc-deployment.md)。
+- 容器部署的真实值来源改为仓库根 `.env`（由 `deploy/.env.example` 生成），不再是本地裸机启动用的 `backend/.env`；两套配置互不影响。
+- compose 版前端配置是 `deploy/nginx.conf`，反代目标是服务名 `backend:8086`，不是 `host.docker.internal`；不要混用两个 nginx 配置。
 
 ## 6. 质量门禁与测试现状
 
@@ -99,9 +100,11 @@ npm run dev          # 5173，/api 代理到 8086
 
 > docx-mcp 目前**零测试**（有 `.pytest_cache` 但无 test 文件）。测试规范与优先级见 doc-conventions.md §10。
 
-## 7. LiveKit 自托管部署（仓库外 `D:\ctf\livekit`）
+## 7. LiveKit 部署（已纳入 compose；仓库外方案为历史）
 
-| 项 | 说明 |
+> 2026-11-22 起 `deploy/docker-compose.yml` 已包含 `livekit` 服务，用 `LIVEKIT_CONFIG` / `LIVEKIT_KEYS` / `NODE_IP` / `UDP_PORT` 环境变量注入配置；完整步骤见 [doc-deployment.md](./doc-deployment.md)。下表保留仓库外 `D:\ctf\livekit` 的历史口径，供对照，不再是部署入口。
+
+| 项 | 说明（历史方案） |
 | --- | --- |
 | 版本 | `livekit-server:v1.9.12`（钉死），镜像走 `docker.m.daocloud.io` |
 | 目录内容 | `.env`（API key/secret、LAN_IP）、`livekit.yaml.template`（`rtc.node_ip` 注入、UDP 收敛 50000-50100、TCP 兜底 7881、room 上限 20）、`start.ps1`、钉版本的 `docker-compose.yml`、`make-token.mjs`、`gate/` 验证页 |
@@ -110,6 +113,6 @@ npm run dev          # 5173，/api 代理到 8086
 
 ## 8. 部署形态现状（如实记录）
 
-- **无 CI**（无 `.github/`）、**后端无 Dockerfile**、无部署脚本——门禁为本地人工执行（§6）。
+- **无 CI**（无 `.github/`）；**后端已有 Dockerfile 与部署脚本**（2026-11-19，`deploy/` 目录，见 doc-deployment.md），但质量门禁仍是本地人工执行（§6）。
 - `frontend/package.json` scripts：`dev` / `build` / `preview` / `test` / `lint`（`run-s lint:oxlint lint:eslint`）；Node 要求 `^22.18.0 || >=24.12.0`。
 - 数据库无迁移工具：建表 SQL 手工放 `backend/sql/`（每表一文件 + 日期命名的增量补丁），见 doc-database.md §1。

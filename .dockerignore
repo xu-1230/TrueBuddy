@@ -1,0 +1,15 @@
+.git
+.gitignore
+.codebuddy
+.repro
+.workbuddy
+**/node_modules
+**/dist
+**/target
+**/.venv
+**/__pycache__
+**/*.pyc
+**/*.log
+.env
+backend/.env
+frontend/.env
