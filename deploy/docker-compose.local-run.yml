@@ -1,0 +1,8 @@
+services:
+  backend:
+    env_file:
+      - .env.local-run
+  frontend:
+    container_name: truebuddy-frontend-deploy
+  minio:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
