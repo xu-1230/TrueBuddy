@@ -42,7 +42,7 @@ ARG PIP_INDEX_URL
 RUN if [ -n "$PIP_INDEX_URL" ]; then pip config set global.index-url "$PIP_INDEX_URL"; fi
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openjdk-21-jre-headless \
+ && apt-get install -y --no-install-recommends openjdk-21-jre-headless curl \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
