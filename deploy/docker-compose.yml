@@ -1,0 +1,154 @@
+# =============================================================================
+# TrueBuddy 一键编排：db(pgvector) + minio + backend(+docx-mcp) + frontend(nginx) + livekit
+# 用法（仓库根执行）：
+#   docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
+# 说明：所有相对路径以本文件所在目录 deploy/ 为基准，因此业务目录统一写 ../
+# 数据库初始化只挂载白名单 SQL，显式排除 newsql/public.sql 与恢复脚本。
+# =============================================================================
+
+services:
+  db:
+    image: ${DB_IMAGE:-pgvector/pgvector:pg16}
+    container_name: truebuddy-db
+    environment:
+      POSTGRES_DB: tb
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # 扩展必须先于表创建；逐个白名单挂载，避免执行仓库里的 DROP TABLE 恢复脚本
+      - ../backend/sql/init.sql:/docker-entrypoint-initdb.d/000_init.sql:ro
+      - ../backend/sql/system_role.sql:/docker-entrypoint-initdb.d/010_system_role.sql:ro
+      - ../backend/sql/system_user.sql:/docker-entrypoint-initdb.d/011_system_user.sql:ro
+      - ../backend/sql/system_menu.sql:/docker-entrypoint-initdb.d/012_system_menu.sql:ro
+      - ../backend/sql/system_role_menu.sql:/docker-entrypoint-initdb.d/013_system_role_menu.sql:ro
+      - ../backend/sql/system_user_role.sql:/docker-entrypoint-initdb.d/014_system_user_role.sql:ro
+      - ../backend/sql/system_oauth2_access_token.sql:/docker-entrypoint-initdb.d/015_system_oauth2_access_token.sql:ro
+      - ../backend/sql/system_oauth2_refresh_token.sql:/docker-entrypoint-initdb.d/016_system_oauth2_refresh_token.sql:ro
+      - ../backend/sql/infra_file.sql:/docker-entrypoint-initdb.d/020_infra_file.sql:ro
+      - ../backend/sql/doc_template.sql:/docker-entrypoint-initdb.d/030_doc_template.sql:ro
+      - ../backend/sql/doc_template_version.sql:/docker-entrypoint-initdb.d/031_doc_template_version.sql:ro
+      - ../backend/sql/doc_template_chat_message.sql:/docker-entrypoint-initdb.d/032_doc_template_chat_message.sql:ro
+      - ../backend/sql/doc_template_chat_edit_20261117.sql:/docker-entrypoint-initdb.d/033_doc_template_chat_edit.sql:ro
+      - ../backend/sql/doc_template_chat_history_20261117.sql:/docker-entrypoint-initdb.d/034_doc_template_chat_history.sql:ro
+      - ../backend/sql/homework_task.sql:/docker-entrypoint-initdb.d/040_homework_task.sql:ro
+      - ../backend/sql/homework_file.sql:/docker-entrypoint-initdb.d/041_homework_file.sql:ro
+      - ../backend/sql/homework_grading_result.sql:/docker-entrypoint-initdb.d/042_homework_grading_result.sql:ro
+      - ../backend/sql/homework_score_range_custom_20261117.sql:/docker-entrypoint-initdb.d/043_homework_score_range.sql:ro
+      - ../backend/sql/kb_space.sql:/docker-entrypoint-initdb.d/050_kb_space.sql:ro
+      - ../backend/sql/kb_document.sql:/docker-entrypoint-initdb.d/051_kb_document.sql:ro
+      - ../backend/sql/kb_document_parse_block.sql:/docker-entrypoint-initdb.d/052_kb_document_parse_block.sql:ro
+      - ../backend/sql/kb_document_chunk.sql:/docker-entrypoint-initdb.d/053_kb_document_chunk.sql:ro
+      - ../backend/sql/vector_store.sql:/docker-entrypoint-initdb.d/060_vector_store.sql:ro
+      - ../backend/sql/lecture_meeting.sql:/docker-entrypoint-initdb.d/070_lecture_meeting.sql:ro
+      - ../backend/sql/lecture_meeting_attendee.sql:/docker-entrypoint-initdb.d/071_lecture_meeting_attendee.sql:ro
+      - ../backend/sql/lecture_meeting_message.sql:/docker-entrypoint-initdb.d/072_lecture_meeting_message.sql:ro
+      - ../backend/sql/lecture_avatar_preference.sql:/docker-entrypoint-initdb.d/073_lecture_avatar_preference.sql:ro
+      - ../backend/sql/avatar_model.sql:/docker-entrypoint-initdb.d/074_avatar_model.sql:ro
+      - ../backend/sql/avatar_voice.sql:/docker-entrypoint-initdb.d/075_avatar_voice.sql:ro
+      - ../backend/sql/workflow.sql:/docker-entrypoint-initdb.d/080_workflow.sql:ro
+      - ../backend/sql/workflow_conversation.sql:/docker-entrypoint-initdb.d/081_workflow_conversation.sql:ro
+      - ../backend/sql/workflow_run.sql:/docker-entrypoint-initdb.d/082_workflow_run.sql:ro
+      - ../backend/sql/index_and_column_fixes_20261023.sql:/docker-entrypoint-initdb.d/090_index_fixes.sql:ro
+      - ../backend/sql/drop_system_user_sex_20261022.sql:/docker-entrypoint-initdb.d/091_drop_user_sex.sql:ro
+      - ../backend/sql/rbac_seed.sql:/docker-entrypoint-initdb.d/095_rbac_seed.sql:ro
+      - ../backend/sql/visibility_creator_backfill_20261116.sql:/docker-entrypoint-initdb.d/099_visibility_backfill.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d tb"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    container_name: truebuddy-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-change-me-please}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+
+  livekit:
+    image: ${LIVEKIT_IMAGE:-livekit/livekit-server:v1.9.12}
+    container_name: truebuddy-livekit
+    environment:
+      # LiveKit 1.9.12 直接用 CLI 对应的环境变量，无需落配置文件
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-change-me}: ${LIVEKIT_API_SECRET:-change-me}"
+      LIVEKIT_PORT: "7880"
+      LIVEKIT_RTC_TCP_PORT: "7881"
+      LIVEKIT_RTC_PORT_RANGE_START: "50000"
+      LIVEKIT_RTC_PORT_RANGE_END: "50100"
+      NODE_IP: ${PUBLIC_HOST}
+      UDP_PORT: 50000-50100
+    ports:
+      - "${LIVEKIT_PORT:-7880}:7880/tcp"
+      - "${LIVEKIT_TCP_PORT:-7881}:7881/tcp"
+      - "50000-50100:50000-50100/udp"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+      args:
+        REGISTRY_PREFIX: ${REGISTRY_PREFIX:-}
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+    container_name: truebuddy-backend
+    env_file:
+      - ../.env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tb
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-postgres}
+      # 预签名 URL 必须浏览器可达；后端经宿主机映射端口访问同一地址
+      MINIO_ENDPOINT: http://${PUBLIC_HOST}:${MINIO_PORT:-9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-admin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-change-me-please}
+      MINIO_BUCKET: ${MINIO_BUCKET:-test-bucket}
+      MINIO_PUBLIC_BASE_URL: http://${PUBLIC_HOST}:${MINIO_PORT:-9000}
+      TB_MEETING_PUBLIC_BASE_URL: http://${PUBLIC_HOST}:${FRONTEND_PORT:-8080}
+      TB_MEETING_FRONTEND_PORT: ${FRONTEND_PORT:-8080}
+      LIVEKIT_URL: ws://${PUBLIC_HOST}:${LIVEKIT_PORT:-7880}
+      LIVEKIT_PORT: ${LIVEKIT_PORT:-7880}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-change-me}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-change-me}
+      TB_DOCTEMPLATE_TEMP_DIR: /app/data/tb-doctemplate
+      SPRING_AI_MCP_CLIENT_STDIO_SERVERS_CONFIGURATION: file:/app/config/mcp-servers-config.json
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      livekit:
+        condition: service_started
+    ports:
+      - "${BACKEND_PORT:-8086}:8086"
+    volumes:
+      - doctemplate-data:/app/data/tb-doctemplate
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+      args:
+        REGISTRY_PREFIX: ${REGISTRY_PREFIX:-}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+    container_name: truebuddy-frontend
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  minio-data:
+  doctemplate-data:

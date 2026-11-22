@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "docx-mcp": {
+      "command": "/usr/local/bin/python",
+      "args": [
+        "/app/docx-mcp/main.py"
+      ],
+      "env": {}
+    }
+  }
+}
