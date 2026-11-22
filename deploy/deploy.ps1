@@ -1,4 +1,4 @@
-# TrueBuddy 空白主机一键部署（Windows + Docker Desktop）
+﻿# TrueBuddy 空白主机一键部署（Windows + Docker Desktop）
 # 前置：仅 Docker Desktop（含 docker compose）；无需 Java / Node / Python / Maven / psql。
 # 用法：在仓库根目录执行 powershell -ExecutionPolicy Bypass -File deploy/deploy.ps1
 $ErrorActionPreference = 'Stop'
@@ -17,7 +17,7 @@ function Get-EnvValue([string]$Name) {
 }
 
 function Set-EnvValue([string]$Name, [string]$Value) {
-    $lines = Get-Content -LiteralPath $EnvFile
+    $lines = Get-Content -LiteralPath $EnvFile -Encoding utf8
     $replaced = $false
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -match "^\s*$Name=") {
@@ -29,6 +29,47 @@ function Set-EnvValue([string]$Name, [string]$Value) {
     if (-not $replaced) { $lines += "$Name=$Value" }
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllLines($EnvFile, [string[]]$lines, $utf8NoBom)
+}
+
+function New-RandomHex([int]$Bytes) {
+    $buf = New-Object byte[] $Bytes
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($buf) } finally { $rng.Dispose() }
+    return (-join ($buf | ForEach-Object { $_.ToString('x2') }))
+}
+
+function Test-Placeholder([string]$Value) {
+    return ([string]::IsNullOrWhiteSpace($Value) -or $Value -in @('change-me', 'change-me-please', 'postgres'))
+}
+
+function Generate-Secrets {
+    $generated = 0
+    $pg = Get-EnvValue 'POSTGRES_PASSWORD'
+    $ds = Get-EnvValue 'SPRING_DATASOURCE_PASSWORD'
+    if ((Test-Placeholder $pg) -or (Test-Placeholder $ds)) {
+        $dbPass = New-RandomHex 16
+        Set-EnvValue 'POSTGRES_PASSWORD' $dbPass
+        Set-EnvValue 'SPRING_DATASOURCE_PASSWORD' $dbPass
+        $generated++
+    }
+
+    if (Test-Placeholder (Get-EnvValue 'MINIO_SECRET_KEY')) {
+        Set-EnvValue 'MINIO_SECRET_KEY' (New-RandomHex 24)
+        $generated++
+    }
+
+    if (Test-Placeholder (Get-EnvValue 'LIVEKIT_API_KEY')) {
+        Set-EnvValue 'LIVEKIT_API_KEY' ("lk_" + (New-RandomHex 12))
+        $generated++
+    }
+    if (Test-Placeholder (Get-EnvValue 'LIVEKIT_API_SECRET')) {
+        Set-EnvValue 'LIVEKIT_API_SECRET' (New-RandomHex 24)
+        $generated++
+    }
+
+    if ($generated -gt 0) {
+        Write-Host "[初始化] 已生成 $generated 个本地随机凭据（未回显）"
+    }
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -71,44 +112,30 @@ if ([string]::IsNullOrWhiteSpace($currentHost) -or $currentHost -eq '__AUTO_IP__
     Write-Host "[初始化] PUBLIC_HOST=$ip"
 }
 
+Generate-Secrets
+
 $PublicHost = Get-EnvValue 'PUBLIC_HOST'
 $FrontendPort = Get-EnvValue 'FRONTEND_PORT'
 $BackendPort = Get-EnvValue 'BACKEND_PORT'
 $MinioPort = Get-EnvValue 'MINIO_PORT'
 $ConsolePort = Get-EnvValue 'MINIO_CONSOLE_PORT'
-$PostgresUser = Get-EnvValue 'POSTGRES_USER'
+$LivekitPort = Get-EnvValue 'LIVEKIT_PORT'
 
 $Base = @('compose', '-f', $ComposeFile, '--env-file', $EnvFile)
 
-Write-Host '[1/5] 拉取基础镜像并构建应用镜像（首次执行较慢）...'
+Write-Host '[1/3] 拉取基础镜像并构建应用镜像（首次执行较慢）...'
 & docker @Base build --pull
 if ($LASTEXITCODE -ne 0) { throw '镜像构建失败。' }
 
-Write-Host '[2/5] 启动全部服务...'
-& docker @Base up -d
-if ($LASTEXITCODE -ne 0) { throw '容器启动失败。' }
+Write-Host '[2/3] 启动全部服务并等待健康检查（最多 300 秒）...'
+& docker @Base up -d --wait --wait-timeout 300
+if ($LASTEXITCODE -ne 0) { throw '容器启动或健康检查失败。' }
 
-Write-Host '[3/5] 等待数据库就绪...'
-$dbOk = $false
-for ($i = 0; $i -lt 60; $i++) {
-    & docker @Base exec -T db pg_isready -U $PostgresUser -d tb 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { $dbOk = $true; break }
-    Start-Sleep -Seconds 2
-}
-if (-not $dbOk) { throw '数据库未在 120 秒内就绪，请查看：docker compose -f deploy/docker-compose.yml logs db' }
-
-Write-Host '[4/5] 等待后端 API 就绪...'
-$apiOk = $false
-for ($i = 0; $i -lt 90; $i++) {
-    $body = & docker @Base exec -T frontend wget -qO- "http://backend:8086/api/homework/task/list" 2>$null
-    if ("$body" -match '"code":0') { $apiOk = $true; break }
-    Start-Sleep -Seconds 2
-}
-if (-not $apiOk) { throw '后端未在 180 秒内就绪，请查看：docker compose -f deploy/docker-compose.yml logs backend' }
-
-Write-Host '[5/5] 检查 MinIO...'
+Write-Host '[3/3] 检查 MinIO 与 LiveKit...'
 & docker @Base exec -T frontend wget -qO- "http://minio:9000/minio/health/live" 2>$null | Out-Null
 if ($LASTEXITCODE -eq 0) { Write-Host 'MinIO 健康' } else { Write-Warning 'MinIO 未通过健康检查，请查看 minio 容器日志。' }
+& docker @Base exec -T frontend wget -qO- "http://livekit:7880/" 2>$null | Out-Null
+if ($LASTEXITCODE -eq 0) { Write-Host 'LiveKit 信令可达' } else { Write-Warning 'LiveKit 未通过检查，请查看 livekit 容器日志。' }
 
 Write-Host ''
 Write-Host '部署完成：'
@@ -116,6 +143,7 @@ Write-Host "  前端页面   http://$PublicHost`:$FrontendPort"
 Write-Host "  后端 API   http://$PublicHost`:$BackendPort/api"
 Write-Host "  MinIO API  http://$PublicHost`:$MinioPort"
 Write-Host "  MinIO 控制台 http://$PublicHost`:$ConsolePort"
+Write-Host "  LiveKit 信令 ws://$PublicHost`:$LivekitPort"
 Write-Host ''
-Write-Host '查看日志：docker compose -f deploy/docker-compose.yml logs -f backend'
+Write-Host '日常管理：powershell -ExecutionPolicy Bypass -File deploy/manage.ps1 <start|stop|restart|recreate|logs|ps|pull|env-check>'
 Write-Host '停止服务：docker compose -f deploy/docker-compose.yml down'
