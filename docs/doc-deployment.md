@@ -2,7 +2,7 @@
 
 > 项目：TrueBuddy ｜ 规范入口：[doc.md](./doc.md) ｜ 最近核对代码现状：2026-11-22
 > 适用范围：仅装有 Docker 的空白主机上完成全栈部署、验证、排障、自启与日志查看
-> 相关：[doc-devops.md](./doc-devops.md)（配置与端口）、[doc-integration.md](./doc-integration.md)（外部服务）、[specs/2026-11-19-Docker一键部署.md](./specs/2026-11-19-Docker一键部署.md)、[specs/2026-11-22-LiveKit纳入Docker编排.md](./specs/2026-11-22-LiveKit纳入Docker编排.md)
+> 相关：[doc-devops.md](./doc-devops.md)（配置与端口）、[doc-integration.md](./doc-integration.md)（外部服务）、[specs/2026-11-19-Docker一键部署.md](./specs/2026-11-19-Docker一键部署.md)、[specs/2026-11-22-LiveKit纳入Docker编排.md](./specs/2026-11-22-LiveKit纳入Docker编排.md)、[specs/2026-11-22-一键部署惯例对齐.md](./specs/2026-11-22-一键部署惯例对齐.md)
 
 ## 1. 交付物与架构
 
@@ -50,10 +50,12 @@ powershell -ExecutionPolicy Bypass -File deploy/deploy.ps1
 
 1. 检查 `docker` / `docker compose` 是否可用；
 2. 若根目录 `.env` 不存在，从 `deploy/.env.example` 复制，并把 `PUBLIC_HOST=__AUTO_IP__` 替换为探测到的局域网 IP；
-3. `docker compose build --pull` 拉取基础镜像并构建前后端镜像；
-4. `docker compose up -d` 启动五个服务（含 LiveKit）；
-5. 轮询数据库 `pg_isready`、经 nginx 容器轮询后端 `/api/homework/task/list`、检查 MinIO 健康端点；
-6. 打印访问地址。
+3. 为数据库、MinIO、LiveKit 生成随机本地凭据（仅当值为空或模板占位时），**不回显密钥**；
+4. `docker compose build --pull` 拉取基础镜像并构建前后端镜像；
+5. `docker compose up -d --wait --wait-timeout 300` 启动五个服务并等待健康检查通过（后端 healthcheck 请求真实 API，前端等待后端 healthy）；
+6. 检查 MinIO 与 LiveKit 可达性，打印访问地址。
+
+外部服务密钥（DeepSeek / DashScope / DocMind / 邮件）不会自动生成；用 `bash deploy/manage.sh env-check`（Windows 用 `manage.ps1 env-check`）可只列出仍为占位的键名，不输出值。
 
 首次构建需下载 Maven / npm / pip 依赖，耗时较长；后续仅变更应用层代码时走 Docker 层缓存。
 
@@ -151,6 +153,38 @@ docker logs -f --tail=200 truebuddy-backend
 
 后端日志只输出到控制台，没有文件日志路径；nginx 访问日志在 `frontend` 容器的 `/var/log/nginx/access.log`。
 
+### 5.1 日常管理命令
+
+参考 Supabase `run.sh` 的子命令形态，提供跨平台管理脚本：
+
+```bash
+bash deploy/manage.sh <命令> [服务名...]
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/manage.ps1 <命令> [服务名...]
+```
+
+| 命令 | 作用 |
+| --- | --- |
+| `start` | 启动并等待健康检查 |
+| `stop` | 停止并移除容器，保留数据卷 |
+| `restart` | 重启全部或指定服务 |
+| `recreate` | 强制重建全部或指定服务，用于环境变量变更 |
+| `logs` | 滚动查看全部或指定服务日志 |
+| `ps` | 查看服务状态 |
+| `pull` | 拉取服务镜像 |
+| `env-check` | 只列出仍为占位值的外部密钥键名，不输出值 |
+| `help` | 查看帮助 |
+
+示例：
+
+```bash
+bash deploy/manage.sh logs backend
+bash deploy/manage.sh recreate livekit backend frontend
+bash deploy/manage.sh env-check
+```
+
 ## 6. 常见部署问题排查
 
 | 现象 | 定位 | 处理 |
@@ -170,7 +204,7 @@ docker logs -f --tail=200 truebuddy-backend
 
 | 项 | 现状 | 规范要求 / 待整改 |
 | --- | --- | --- |
-| 全栈容器 | **已落地**（2026-11-22）：`deploy/` 下五服务 compose + 双平台一键脚本 | — |
+| 全栈容器 | **已落地**（2026-11-22）：`deploy/` 下五服务 compose + 双平台一键脚本 + `manage.sh/ps1` 日常管理 | — |
 | 外部密钥 | 模板给可启动占位值，真实能力需用户替换 | 对外发布前必须轮换历史泄露密钥（见 doc-devops §3） |
 | LiveKit | **已纳入编排**（2026-11-22）：信令 7880 / TCP 7881 / UDP 50000-50100，配置由环境变量注入 | 换网络后需重建 livekit/backend/frontend；媒体黑屏优先查 `PUBLIC_HOST` 与 UDP 放行 |
 | HTTPS | 仅 HTTP 明文，未接证书 | 规划：前置 TLS 终止或 Let's Encrypt |

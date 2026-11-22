@@ -4,7 +4,7 @@
 
 **AI 驱动的教学辅助平台 —— 把 AI 能力落到教师每天真正要交的五类产物上**
 
-`Java 17` · `Spring Boot 4` · `Vue 3` · `PostgreSQL + pgvector` · `MCP`
+`Java 17` · `Spring Boot 4` · `Vue 3` · `PostgreSQL + pgvector` · `MCP` · `LiveKit` · `Docker Compose`
 
 </div>
 
@@ -26,7 +26,7 @@
 
 ```mermaid
 flowchart LR
-    FE["frontend<br/>Vue 3 SPA :5173"]
+    FE["frontend<br/>Vue 3 SPA<br/>dev :5173 / docker :8080"]
 
     subgraph BE["backend · Spring Boot 4 (Java 17) :8086 /api"]
         SRV["tb-server"]
@@ -39,10 +39,10 @@ flowchart LR
 
     MCP["docx-mcp<br/>Python MCP · stdio"]
 
-    subgraph LOCAL["本地 / 内网基础设施"]
+    subgraph LOCAL["本地 / 内网基础设施（Docker Compose 五服务）"]
         PG[("PostgreSQL<br/>+ pgvector :5432")]
-        MO[("MinIO :9000")]
-        LK["LiveKit :7880<br/>(自托管 Docker)"]
+        MO[("MinIO :9000 / 9001")]
+        LK["LiveKit :7880 / 7881<br/>UDP 50000-50100"]
     end
 
     subgraph CLOUD["外部 AI 服务"]
@@ -91,8 +91,15 @@ TrueBuddy/
 │   ├── tb-module-infra/         #   文件与基础设施
 │   ├── tb-server/               #   启动器(:8086,context-path /api)
 │   └── sql/                     #   建表 SQL(手工执行,每表一文件)
-├── frontend/                    # Vue 3 前端(Vite,:5173,/api 代理到 8086)
+├── frontend/                    # Vue 3 前端(Vite,:5173,/api 代理到 8086;Docker 下 nginx :80)
 ├── docx-mcp/                    # Python MCP 工具服务(uv,stdio 由后端拉起)
+├── deploy/                      # Docker 一键部署(前后端 + MinIO + pgvector + LiveKit)
+│   ├── backend.Dockerfile       #   Maven 构建 + Java 21 运行时(含 docx-mcp)
+│   ├── frontend.Dockerfile      #   Vite 构建 + nginx 托管
+│   ├── docker-compose.yml       #   五服务编排与白名单数据库初始化
+│   ├── .env.example             #   容器部署环境变量模板
+│   ├── deploy.sh / deploy.ps1   #   Linux/macOS/WSL 与 Windows 一键脚本
+│   └── manage.sh / manage.ps1   #   start/stop/restart/recreate/logs/ps/pull/env-check
 └── docs/                        # 文档体系:doc-*.md 规范 / adr 决策 / specs 变更规格
 ```
 
@@ -100,20 +107,57 @@ TrueBuddy/
 
 ### 前置条件
 
-| 依赖 | 版本 | 用途 |
+| 场景 | 必需依赖 | 说明 |
 | --- | --- | --- |
-| JDK | 17 | 后端编译与运行 |
-| Node.js | `^22.18.0 \|\| >=24.12.0` | 前端开发与构建 |
-| Python + uv | Python ≥3.12 | 拉起 docx-mcp 工具服务 |
-| PostgreSQL | + pgvector 扩展 | 业务数据与向量检索(`127.0.0.1:5432/tb`) |
-| MinIO | 任意近期版本 | 对象存储(`localhost:9000`) |
-| Docker | 可选 | 自托管 LiveKit(PPT 智能课堂实时会议需要) |
+| Docker 一键部署（推荐） | Docker Engine + Docker Compose 插件 | 不需要 JDK / Node / Python / Maven / psql;首次构建需联网拉基础镜像与依赖 |
+| 本地开发 | JDK 17 · Node.js `^22.18.0 \|\| >=24.12.0` · Python ≥3.12 + uv · PostgreSQL + pgvector · MinIO | 后端 / 前端 / docx-mcp 分别以本机进程运行 |
 
-### 1️⃣ 初始化数据库
+### 方式 A:Docker 一键部署（推荐）
+
+仅装 Docker 的服务器或本机按以下步骤执行:
+
+```bash
+cd <仓库根>
+# 首次会生成根目录 .env;脚本自动补齐缺失键、探测 PUBLIC_HOST
+bash deploy/deploy.sh
+```
+
+Windows(Docker Desktop):
+
+```powershell
+cd <仓库根>
+powershell -ExecutionPolicy Bypass -File deploy/deploy.ps1
+```
+
+脚本会构建前后端镜像并启动五个服务:`db`(pgvector)、`minio`、`backend`(+ docx-mcp)、`frontend`(nginx)、`livekit`。数据库表与内置工作流会自动初始化。
+
+部署前按 [deploy/.env.example](./deploy/.env.example) 填写真实外部服务密钥;数据库 / MinIO / LiveKit 的本地凭据由脚本在占位时自动生成且**不回显**。
+
+默认端口:
+
+| 端口 | 说明 |
+| --- | --- |
+| `8080/tcp` | 前端页面与 `/api` 反代 |
+| `8086/tcp` | 后端 API(可选直连) |
+| `9000/tcp` / `9001/tcp` | MinIO S3 API / 控制台 |
+| `7880/tcp` / `7881/tcp` | LiveKit 信令 / TCP 兜底 |
+| `50000-50100/udp` | LiveKit WebRTC 媒体通道(会议必须放行) |
+
+日常管理:
+
+```bash
+bash deploy/manage.sh <start|stop|restart|recreate|logs|ps|pull|env-check|help>
+```
+
+`env-check` 只列出仍为占位的**键名**,不输出任何值。完整步骤、防火墙与排障见 [docs/doc-deployment.md](./docs/doc-deployment.md)。
+
+### 方式 B:本地开发（不使用 Docker）
+
+#### 1️⃣ 初始化数据库
 
 手工执行 `backend/sql/` 下的建表脚本(`init.sql` 及各表 `.sql`,含 `vector_store.sql`;脚本均可重复执行)。`vector_store` 也可由 Spring AI 的 `initialize-schema` 自动创建,但先跑脚本能保证 `metadata` 直接是 `jsonb`。
 
-### 2️⃣ 准备环境变量
+#### 2️⃣ 准备环境变量
 
 ```bash
 # 对照仓库根 .env.example 的变量名清单,填写真实值
@@ -132,13 +176,13 @@ cp .env.example backend/.env
 | `DASHSCOPE_API_KEY` | 讲稿播报 | CosyVoice 流式语音合成 |
 | `SPRING_MAIL_USERNAME` / `_PASSWORD` | 邮件功能 | 注册 / 验证码 / 找回密码 |
 
-完整清单与默认值见 [`.env.example`](./.env.example) 与 [docs/doc-devops.md §2](./docs/doc-devops.md)。
+完整清单与默认值见 [`.env.example`](./.env.example) 与 [docs/doc-devops.md §2](./docs/doc-devops.md)。Docker 部署另用 [`deploy/.env.example`](./deploy/.env.example) 生成根目录 `.env`,两套配置互不影响。
 
-### 3️⃣ 调整 docx-mcp 路径
+#### 3️⃣ 调整 docx-mcp 路径
 
-后端 `mcp-servers-config.json` 中以**绝对路径**引用 docx-mcp,换机器部署需按本机路径修改(详见 [docs/doc-integration.md §8](./docs/doc-integration.md))。
+本地开发时,后端 `mcp-servers-config.json` 中以**绝对路径**引用 docx-mcp,换机器部署需按本机路径修改(详见 [docs/doc-integration.md §8](./docs/doc-integration.md))。Docker 部署无需手工改:`deploy/mcp-servers-config.json` 已覆盖为容器内 Linux 路径。
 
-### 4️⃣ 启动后端
+#### 4️⃣ 启动后端
 
 ```bash
 cd backend
@@ -146,7 +190,7 @@ cd backend
 java -jar tb-server/target/tb-server-0.0.1-SNAPSHOT.jar
 ```
 
-### 5️⃣ 启动前端
+#### 5️⃣ 启动前端
 
 ```bash
 cd frontend
@@ -154,18 +198,11 @@ npm install
 npm run dev        # http://localhost:5173,/api 代理到 8086
 ```
 
-### 6️⃣(可选)启动 LiveKit
+#### 6️⃣(可选)启动 LiveKit
 
-PPT 智能课堂的实时会议功能需要自托管 LiveKit(信令 7880 / TCP 兜底 7881 / UDP 50000-50100),部署要点见 [docs/doc-devops.md §7](./docs/doc-devops.md)。不启动时其余功能完全可用。
+本地开发时,实时会议仍需自托管 LiveKit(信令 7880 / TCP 兜底 7881 / UDP 50000-50100);方式 A 已把它纳入 Compose,无需单独处理。部署要点见 [docs/doc-devops.md §7](./docs/doc-devops.md)。
 
-### 🐳 Docker 部署(前端)
-
-```bash
-cd frontend
-docker compose up -d    # nginx 托管 dist,映射 8080:80;/api 反代宿主机 8086
-```
-
-> 前端已容器化(多阶段构建,`nginx.conf` 已处理 SSE / WebSocket 不缓冲与 200m 上传);后端暂无 Dockerfile,以本机 Java 进程运行。
+> 仅前端容器化仍可用 `frontend/docker-compose.yml`(`8080:80`,`/api` 反代宿主机 8086),但全栈一键部署请使用方式 A 的根 `deploy/docker-compose.yml`。
 
 ## ✅ 质量门禁
 
@@ -175,6 +212,7 @@ docker compose up -d    # nginx 托管 dist,映射 8080:80;/api 反代宿主机 
 | --- | --- |
 | 前端 | `cd frontend && npm run lint && npm test` |
 | 后端 | `cd backend && ./mvnw clean install && ./mvnw test` |
+| Docker 配置 | `docker compose -f deploy/docker-compose.yml --env-file .env config -q` |
 
 ## 📖 文档
 
@@ -188,6 +226,7 @@ docker compose up -d    # nginx 托管 dist,映射 8080:80;/api 反代宿主机 
 | [doc-database.md](./docs/doc-database.md) | 全部表结构(事实源 `backend/sql/`) |
 | [doc-integration.md](./docs/doc-integration.md) | 第三方集成(LLM / TTS / 解析 / 存储 / LiveKit / MCP) |
 | [doc-devops.md](./docs/doc-devops.md) | 配置、环境变量、启动、容器化 |
+| [doc-deployment.md](./docs/doc-deployment.md) | Docker 一键部署:五服务编排、端口、密钥生成、管理脚本、排障 |
 | [adr/](./docs/adr/) | 不可逆决策记录(append-only) |
 | [specs/](./docs/specs/) | 单次变更规格与验收口径 |
 
@@ -205,7 +244,7 @@ docker compose up -d    # nginx 托管 dist,映射 8080:80;/api 反代宿主机 
 如实记录(详见 docs),欢迎 Issue / PR:
 
 - 无 CI 流水线,门禁为本地人工执行;数据库无迁移工具(SQL 手工执行)
-- 后端尚未容器化
+- Docker 一键部署已覆盖五服务,但未实现自动升级与 HTTPS/TLS 终止;外部 AI / 邮件密钥仍需手工填写
 - 演示用的管理员口令校验未接入 BCrypt,上线前需整改(docs/doc-devops.md §3)
 - 历史提交中含旧密钥,对外发布前建议全部轮换
 
