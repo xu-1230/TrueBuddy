@@ -8,6 +8,67 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT/deploy/docker-compose.yml"
 ENV_FILE="$ROOT/.env"
 
+get_env_value() {
+  grep "^$1=" "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d= -f2- || true
+}
+
+set_env_value() {
+  TMP_ENV="$(mktemp)"
+  awk -v k="$1" -v v="$2" \
+    '{ if ($0 ~ "^" k "=") print k "=" v; else print }' \
+    "$ENV_FILE" > "$TMP_ENV"
+  mv "$TMP_ENV" "$ENV_FILE"
+}
+
+random_hex() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex "$1"
+  else
+    od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'
+  fi
+}
+
+is_placeholder() {
+  case "$1" in
+    ''|change-me|change-me-please|postgres) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+generate_secrets() {
+  local pg ds minio lk_key lk_secret generated=0
+  pg="$(get_env_value POSTGRES_PASSWORD)"
+  ds="$(get_env_value SPRING_DATASOURCE_PASSWORD)"
+  if is_placeholder "$pg" || is_placeholder "$ds"; then
+    local db_pass
+    db_pass="$(random_hex 16)"
+    set_env_value POSTGRES_PASSWORD "$db_pass"
+    set_env_value SPRING_DATASOURCE_PASSWORD "$db_pass"
+    generated=$((generated + 1))
+  fi
+
+  minio="$(get_env_value MINIO_SECRET_KEY)"
+  if is_placeholder "$minio"; then
+    set_env_value MINIO_SECRET_KEY "$(random_hex 24)"
+    generated=$((generated + 1))
+  fi
+
+  lk_key="$(get_env_value LIVEKIT_API_KEY)"
+  lk_secret="$(get_env_value LIVEKIT_API_SECRET)"
+  if is_placeholder "$lk_key"; then
+    set_env_value LIVEKIT_API_KEY "lk_$(random_hex 12)"
+    generated=$((generated + 1))
+  fi
+  if is_placeholder "$lk_secret"; then
+    set_env_value LIVEKIT_API_SECRET "$(random_hex 24)"
+    generated=$((generated + 1))
+  fi
+
+  if [ "$generated" -gt 0 ]; then
+    echo "[初始化] 已生成 $generated 个本地随机凭据（未回显）"
+  fi
+}
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "[错误] 未找到 docker，请先安装 Docker Engine。" >&2
   exit 1
@@ -47,6 +108,8 @@ if [ -z "$CURRENT_PUBLIC_HOST" ] || [ "$CURRENT_PUBLIC_HOST" = "__AUTO_IP__" ]; 
   echo "[初始化] PUBLIC_HOST=$DETECTED_IP"
 fi
 
+generate_secrets
+
 set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
@@ -57,50 +120,26 @@ FRONTEND_PORT="${FRONTEND_PORT:-8080}"
 BACKEND_PORT="${BACKEND_PORT:-8086}"
 MINIO_PORT="${MINIO_PORT:-9000}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9001}"
-POSTGRES_USER="${POSTGRES_USER:-postgres}"
+LIVEKIT_PORT="${LIVEKIT_PORT:-7880}"
 
 DC=(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE")
 
-echo "[1/5] 拉取基础镜像并构建应用镜像（首次执行较慢）..."
+echo "[1/3] 拉取基础镜像并构建应用镜像（首次执行较慢）..."
 "${DC[@]}" build --pull
 
-echo "[2/5] 启动全部服务..."
-"${DC[@]}" up -d
+echo "[2/3] 启动全部服务并等待健康检查（最多 300 秒）..."
+"${DC[@]}" up -d --wait --wait-timeout 300
 
-echo "[3/5] 等待数据库就绪..."
-DB_OK=0
-for _ in $(seq 1 60); do
-  if "${DC[@]}" exec -T db pg_isready -U "$POSTGRES_USER" -d tb >/dev/null 2>&1; then
-    DB_OK=1
-    break
-  fi
-  sleep 2
-done
-if [ "$DB_OK" -ne 1 ]; then
-  echo "[错误] 数据库未在 120 秒内就绪，请执行：docker compose -f deploy/docker-compose.yml logs db" >&2
-  exit 1
-fi
-
-echo "[4/5] 等待后端 API 就绪..."
-API_OK=0
-for _ in $(seq 1 90); do
-  if "${DC[@]}" exec -T frontend wget -qO- "http://backend:8086/api/homework/task/list" 2>/dev/null \
-      | grep -q '"code":0'; then
-    API_OK=1
-    break
-  fi
-  sleep 2
-done
-if [ "$API_OK" -ne 1 ]; then
-  echo "[错误] 后端未在 180 秒内就绪，请执行：docker compose -f deploy/docker-compose.yml logs backend" >&2
-  exit 1
-fi
-
-echo "[5/5] 检查 MinIO..."
+echo "[3/3] 检查 MinIO 与 LiveKit..."
 if "${DC[@]}" exec -T frontend wget -qO- "http://minio:9000/minio/health/live" >/dev/null 2>&1; then
   echo "MinIO 健康"
 else
   echo "[警告] MinIO 未通过健康检查，请查看：docker compose -f deploy/docker-compose.yml logs minio"
+fi
+if "${DC[@]}" exec -T frontend wget -qO- "http://livekit:7880/" >/dev/null 2>&1; then
+  echo "LiveKit 信令可达"
+else
+  echo "[警告] LiveKit 未通过检查，请查看：docker compose -f deploy/docker-compose.yml logs livekit"
 fi
 
 cat <<EOF
@@ -110,7 +149,8 @@ cat <<EOF
   后端 API   http://${PUBLIC_HOST}:${BACKEND_PORT}/api
   MinIO API  http://${PUBLIC_HOST}:${MINIO_PORT}
   MinIO 控制台 http://${PUBLIC_HOST}:${MINIO_CONSOLE_PORT}
+  LiveKit 信令 ws://${PUBLIC_HOST}:${LIVEKIT_PORT}
 
-查看日志：docker compose -f deploy/docker-compose.yml logs -f backend
+日常管理：bash deploy/manage.sh <start|stop|restart|recreate|logs|ps|pull|env-check>
 停止服务：docker compose -f deploy/docker-compose.yml down
 EOF
